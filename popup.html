@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+  <title>Synapse 2.0</title>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">Synapse 2.0</span>
+    <span class="tagline">Cognitive settings</span>
+  </div>
+
+  <div class="section">
+    <label>Model provider</label>
+    <select id="provider">
+      <option value="claude">Claude</option>
+      <option value="gemini">Gemini</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Claude API key</label>
+    <input id="claude-key" type="password" placeholder="sk-ant-...">
+  </div>
+
+  <div class="section">
+    <label>Gemini API key</label>
+    <input id="gemini-key" type="password" placeholder="AIza...">
+  </div>
+
+  <div class="section">
+    <label>How do you prefer to read?</label>
+    <select id="format">
+      <option value="bullet points">Bullet points & lists</option>
+      <option value="short paragraphs">Short paragraphs</option>
+      <option value="numbered steps">Numbered steps</option>
+      <option value="plain flowing prose">Plain flowing prose</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Anything else the model should know?</label>
+    <textarea id="notes"
+      placeholder="e.g. I lose focus after 3 nested points."></textarea>
+  </div>
+
+  <button id="save-btn">Save profile</button>
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
