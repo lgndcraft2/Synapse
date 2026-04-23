@@ -6,11 +6,20 @@
   <title>Synapse 2.0</title>
 </head>
 <body>
+
   <div class="header">
     <span class="logo">Synapse 2.0</span>
     <span class="tagline">Cognitive settings</span>
   </div>
 
+  <!-- Profile update banner (hidden until triggered) -->
+  <div id="update-banner" class="update-banner" style="display:none">
+    <span class="update-icon">✦</span>
+    <span id="update-msg">Synapse updated your profile.</span>
+    <button id="dismiss-update" class="update-dismiss">✕</button>
+  </div>
+
+  <!-- Model -->
   <div class="section">
     <label>Model provider</label>
     <select id="provider">
@@ -29,10 +38,11 @@
     <input id="gemini-key" type="password" placeholder="AIza...">
   </div>
 
+  <!-- Profile -->
   <div class="section">
     <label>How do you prefer to read?</label>
     <select id="format">
-      <option value="bullet points">Bullet points & lists</option>
+      <option value="bullet points">Bullet points &amp; lists</option>
       <option value="short paragraphs">Short paragraphs</option>
       <option value="numbered steps">Numbered steps</option>
       <option value="plain flowing prose">Plain flowing prose</option>
@@ -42,11 +52,22 @@
   <div class="section">
     <label>Anything else the model should know?</label>
     <textarea id="notes"
-      placeholder="e.g. I lose focus after 3 nested points."></textarea>
+      placeholder="e.g. I lose focus after 3 nested points. I need concrete examples before concepts."></textarea>
   </div>
 
   <button id="save-btn">Save profile</button>
   <div id="status"></div>
+
+  <div class="divider"></div>
+
+  <!-- Feedback stats -->
+  <div class="feedback-section">
+    <div class="feedback-header">
+      <span class="feedback-title">Learning history</span>
+      <button id="clear-feedback" class="clear-btn">Clear</button>
+    </div>
+    <p id="feedback-stats" class="feedback-stats">Loading...</p>
+  </div>
 
   <script src="popup.js"></script>
 </body>
