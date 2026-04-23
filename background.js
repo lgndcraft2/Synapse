@@ -1,5 +1,5 @@
 const CLAUDE_MODEL = "claude-sonnet-4-6";
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const defaultProfile = {
   preferredFormat: "bullet points",
@@ -194,6 +194,83 @@ async function callProvider(pageText, profile, apiKeys, feedbackLog) {
 }
 
 // ================================================================
+// SECTION ANALYSIS — identifies logical sections from page text
+// ================================================================
+const SECTION_SYSTEM_PROMPT = `You are a document structure analyser.
+Read the page text and divide it into 3–8 meaningful logical sections.
+Return ONLY a valid JSON array — no markdown, no explanation, nothing else.
+Each element must have exactly these keys:
+  "title"   — short section heading (max 6 words)
+  "content" — a brief 1-2 sentence excerpt that identifies this section. Do NOT copy large blocks of text.
+  "summary" — one sentence describing what this section covers
+If the page has fewer than 3 distinguishable sections, return as many as exist.
+Never return fewer than 1 element.`;
+
+async function analyseSections(pageText, profile, apiKeys) {
+  const provider = (profile.provider || "claude").toLowerCase();
+  const apiKey = getApiKey(provider, apiKeys);
+
+  let raw;
+  if (provider === "gemini") {
+    if (!apiKey) throw new Error("Gemini API key is not configured.");
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `Analyse and split into sections:\n\n${pageText}` }] }],
+          systemInstruction: { parts: [{ text: SECTION_SYSTEM_PROMPT }] },
+          generationConfig: { maxOutputTokens: 9000, temperature: 0.2 }
+        })
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || `Gemini error ${response.status}`);
+    raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  } else {
+    if (!apiKey) throw new Error("Claude API key is not configured.");
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 9500,
+        system: SECTION_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: `Analyse and split into sections:\n\n${pageText}` }]
+      })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    raw = data.content[0].text;
+  }
+
+  if (!raw) throw new Error("Empty response from LLM.");
+
+  // Strip markdown code fences if the model added them
+  const clean = raw.replace(/```json|```/gi, "").trim();
+
+  let sections;
+  try {
+    sections = JSON.parse(clean);
+  } catch (e) {
+    console.error("Synapse: failed to parse sections JSON. Raw response was:", raw);
+    throw new Error("LLM returned malformed JSON — check the service worker console for the raw output.");
+  }
+
+  if (!Array.isArray(sections) || sections.length === 0) {
+    throw new Error("LLM returned no sections.");
+  }
+
+  // Validate each entry has the required keys
+  return sections.filter(s => s.title && s.content);
+}
+
+// ================================================================
 // PROFILE AUTO-UPDATE
 // — After every 10 feedback entries, propose a profile amendment
 // ================================================================
@@ -253,6 +330,20 @@ Do not add new keys. Return the complete profile with updates applied.`,
 // MESSAGE LISTENER
 // ================================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+
+  // ── Section analysis request ──
+  if (msg.type === "ANALYSE_SECTIONS") {
+    getFullConfig().then(async ({ profile, apiKeys }) => {
+      try {
+        const sections = await analyseSections(msg.pageText, profile, apiKeys);
+        sendResponse({ sections });
+      } catch (err) {
+        console.error("Synapse section analysis error:", err);
+        sendResponse({ error: err.message });
+      }
+    });
+    return true;
+  }
 
   // ── Reformat request ──
   if (msg.type === "CALL_CLAUDE" || msg.type === "CALL_LLM") {
