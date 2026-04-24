@@ -50,7 +50,7 @@ function buildProfileInstructions(profile) {
 function buildSystemPrompt(profile, feedbackLog) {
   const feedbackSummary = buildFeedbackSummary(feedbackLog);
 
-  return `You are Synapse 2.0, a cognitive accessibility assistant.
+  return `You are Synapse, a cognitive accessibility assistant.
 Your job is to reformat page content into HTML that works best for this specific user's brain.
 
 ── HOW THIS USER NEEDS CONTENT PRESENTED ──
@@ -182,6 +182,57 @@ async function callProvider(pageText, profile, feedbackLog) {
 }
 
 // ================================================================
+// DOCUMENT READER (PDF / TXT / CSV sent as base64 to Claude)
+// ================================================================
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function callClaudeWithDocument(base64Data, mediaType, profile, feedbackLog) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Claude API key is not configured.");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+      "anthropic-beta": "pdfs-2024-09-25"
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      system: buildSystemPrompt(profile, feedbackLog),
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: { type: "base64", media_type: mediaType, data: base64Data }
+          },
+          {
+            type: "text",
+            text: "Reformat the content of this document for my cognitive profile. Return valid HTML wrapped in a single <div>."
+          }
+        ]
+      }]
+    })
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content[0].text;
+}
+
+// ================================================================
 // SECTION ANALYSIS — identifies logical sections from page text
 // ================================================================
 const SECTION_SYSTEM_PROMPT = `You are a document structure analyser.
@@ -262,7 +313,7 @@ async function maybeUpdateProfile(feedbackLog) {
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: 500,
-        system: `You are a cognitive profile updater for Synapse 2.0.
+        system: `You are a cognitive profile updater for Synapse.
 Based on feedback data, suggest minimal updates to a user's cognitive profile.
 Return ONLY a valid JSON object with the same keys as the profile.
 Only change values that the feedback clearly supports changing.
@@ -311,6 +362,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ error: err.message });
       }
     })();
+    return true;
+  }
+
+  // ── Document reader (PDF / TXT / CSV) ──
+  if (msg.type === "ANALYSE_DOCUMENT") {
+    getFullConfig().then(async ({ profile, feedbackLog }) => {
+      try {
+        const res = await fetch(msg.url);
+        if (!res.ok) throw new Error(`Could not fetch document: HTTP ${res.status}`);
+        const buffer = await res.arrayBuffer();
+        const base64 = arrayBufferToBase64(buffer);
+        const html   = await callClaudeWithDocument(base64, msg.mediaType, profile, feedbackLog);
+        sendResponse({ html });
+      } catch (err) {
+        console.error("Synapse document reader error:", err);
+        sendResponse({ error: err.message });
+      }
+    });
     return true;
   }
 

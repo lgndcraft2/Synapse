@@ -122,43 +122,21 @@ display:block!important;line-height:1!important}
 .sp-btn.ghost{background:${C.g100}!important;color:${C.g600}!important}
 .sp-btn.ghost:hover{background:${C.g200}!important}
 
-/* SECTION WRAPPERS */
-.synapse-section-wrap{position:relative!important;display:block!important;
-border-radius:8px!important;transition:box-shadow .2s,outline .2s!important;
-outline:2px solid transparent!important;outline-offset:6px!important}
-.synapse-section-wrap.s-highlighted{outline:2px solid ${C.greenMid}!important;
-box-shadow:0 0 0 6px rgba(29,158,117,.04)!important}
-.synapse-section-wrap.s-active{outline:2.5px solid ${C.green}!important;
-box-shadow:0 0 0 6px rgba(29,158,117,.08)!important}
+/* SECTION WRAPPERS — left-border highlight system */
+.synapse-section-wrap{display:block!important;
+border-left:3px solid ${C.g200}!important;
+padding-left:12px!important;
+margin-left:-15px!important;
+transition:border-color .22s,background .22s,box-shadow .22s!important;
+cursor:pointer!important;border-radius:0 6px 6px 0!important}
+.synapse-section-wrap:hover{border-left-color:${C.greenMid}!important;
+background:rgba(29,158,117,.04)!important}
+.synapse-section-wrap.s-loading{border-left-color:${C.greenMid}!important}
+.synapse-section-wrap.s-done{border-left-color:${C.green}!important}
+.synapse-section-wrap.s-active{border-left-color:${C.gold}!important;
+background:rgba(245,200,66,.05)!important;
+box-shadow:-3px 0 0 0 ${C.gold}!important}
 
-/* BADGES */
-.synapse-badge{position:absolute!important;top:-10px!important;left:-10px!important;
-width:24px!important;height:24px!important;border-radius:50%!important;
-background:${C.green}!important;color:white!important;font-size:11px!important;
-font-weight:700!important;display:flex!important;align-items:center!important;
-justify-content:center!important;cursor:pointer!important;z-index:10!important;
-border:2px solid white!important;transition:transform .18s,background .15s!important;
-box-shadow:0 2px 8px rgba(29,158,117,.3)!important;line-height:1!important}
-.synapse-badge:hover{transform:scale(1.18)!important;background:${C.greenDark}!important}
-.synapse-badge.s-loading{background:${C.greenMid}!important}
-.synapse-badge.s-done{background:${C.greenDark}!important}
-.synapse-badge svg.s-ring{position:absolute!important;top:-3px!important;left:-3px!important;
-width:30px!important;height:30px!important;transform:rotate(-90deg)!important;display:block!important}
-.s-ring circle{fill:none!important;stroke:${C.gold}!important;stroke-width:2.5!important;
-stroke-linecap:round!important;stroke-dasharray:75.4!important;stroke-dashoffset:75.4!important;
-transition:stroke-dashoffset .6s ease!important}
-
-/* BADGE TOOLTIP */
-.synapse-badge-tooltip{position:absolute!important;bottom:calc(100% + 10px)!important;
-left:50%!important;transform:translateX(-50%)!important;
-background:rgba(17,17,17,.92)!important;color:white!important;
-font-size:11px!important;font-family:-apple-system,'Segoe UI',sans-serif!important;
-padding:6px 10px!important;border-radius:8px!important;
-white-space:normal!important;max-width:200px!important;line-height:1.4!important;
-opacity:0!important;pointer-events:none!important;
-transition:opacity .15s!important;z-index:99999!important;text-align:center!important;
-width:max-content!important}
-.synapse-badge:hover .synapse-badge-tooltip{opacity:1!important}
 
 /* FLOATING CARD */
 .synapse-card{position:absolute!important;left:50%!important;
@@ -362,12 +340,76 @@ border:1.5px solid #ddd!important;border-radius:8px!important;
 margin-bottom:12px!important;font-family:inherit!important;background:#fafafa!important}
 .synapse-fp input:focus,.synapse-fp textarea:focus{
 border-color:${C.green}!important;outline:none!important;background:white!important}
+/* DOCUMENT READER */
+.synapse-reader{position:fixed!important;inset:0!important;z-index:2147483638!important;
+background:rgba(0,0,0,.55)!important;display:flex!important;justify-content:flex-end!important;
+backdrop-filter:blur(3px)!important;-webkit-backdrop-filter:blur(3px)!important;
+opacity:0!important;pointer-events:none!important;transition:opacity .25s!important}
+.synapse-reader.s-visible{opacity:1!important;pointer-events:all!important}
+.synapse-reader-panel{width:min(680px,100vw)!important;background:${C.white}!important;
+height:100%!important;overflow-y:auto!important;display:flex!important;flex-direction:column!important;
+box-shadow:-12px 0 48px rgba(0,0,0,.18)!important;
+transform:translateX(40px)!important;transition:transform .28s cubic-bezier(.16,1,.3,1)!important}
+.synapse-reader.s-visible .synapse-reader-panel{transform:translateX(0)!important}
+.synapse-reader-topbar{display:flex!important;align-items:center!important;
+justify-content:space-between!important;padding:18px 24px!important;
+border-bottom:1px solid ${C.g100}!important;position:sticky!important;top:0!important;
+background:${C.white}!important;z-index:1!important}
+.synapse-reader-title{font-size:13px!important;font-weight:700!important;
+color:${C.green}!important;display:flex!important;align-items:center!important;gap:7px!important}
+.synapse-reader-close{width:28px!important;height:28px!important;border-radius:50%!important;
+border:none!important;background:${C.g100}!important;cursor:pointer!important;
+font-size:15px!important;color:${C.g600}!important;display:flex!important;
+align-items:center!important;justify-content:center!important;transition:background .15s!important;
+font-family:inherit!important;line-height:1!important;flex-shrink:0!important}
+.synapse-reader-close:hover{background:${C.g200}!important}
+.synapse-reader-loading{display:flex!important;flex-direction:column!important;
+align-items:center!important;justify-content:center!important;
+gap:14px!important;padding:80px 24px!important;flex:1!important}
+.synapse-reader-content{padding:32px 36px!important;flex:1!important;
+font-family:'Segoe UI',system-ui,sans-serif!important;line-height:1.8!important;
+color:${C.g900}!important;font-size:1rem!important}
+.synapse-reader-content h1,.synapse-reader-content h2{font-size:1.15rem!important;
+font-weight:700!important;color:${C.g900}!important;margin:2rem 0 .6rem!important;
+padding-bottom:6px!important;border-bottom:2.5px solid ${C.green}!important}
+.synapse-reader-content h2:first-child,.synapse-reader-content h1:first-child{margin-top:0!important}
+.synapse-reader-content h3{font-size:1rem!important;font-weight:600!important;
+color:#333!important;margin:1.4rem 0 .4rem!important}
+.synapse-reader-content p{font-size:1rem!important;color:#333!important;margin-bottom:1rem!important}
+.synapse-reader-content ul,.synapse-reader-content ol{padding-left:1.4rem!important;margin-bottom:1rem!important}
+.synapse-reader-content li{margin-bottom:.5rem!important;font-size:1rem!important;color:#333!important}
+.synapse-reader-content strong{color:${C.g900}!important;font-weight:700!important}
+.synapse-reader-content mark{background:${C.greenLight}!important;color:${C.greenDeep}!important;
+padding:1px 6px!important;border-radius:3px!important;font-weight:500!important}
   `;
   document.head.appendChild(s);
 }
 
 // ================================================================
-// TEXT EXTRACTION
+// DOCUMENT DETECTION
+// ================================================================
+const DOC_TYPES = {
+  'application/pdf':  { label: 'PDF',       icon: '📄' },
+  'text/plain':       { label: 'Text file',  icon: '📝' },
+  'text/csv':         { label: 'CSV',        icon: '📊' },
+  'text/markdown':    { label: 'Markdown',   icon: '📝' },
+};
+
+function detectDocumentType() {
+  const mime = document.contentType || '';
+  const url  = window.location.href.toLowerCase();
+  if (DOC_TYPES[mime]) return { mime, ...DOC_TYPES[mime] };
+  if (/\.pdf(\?|#|$)/.test(url))       return { mime: 'application/pdf', ...DOC_TYPES['application/pdf'] };
+  if (/\.(txt|text)(\?|#|$)/.test(url)) return { mime: 'text/plain',       ...DOC_TYPES['text/plain'] };
+  if (/\.csv(\?|#|$)/.test(url))        return { mime: 'text/csv',          ...DOC_TYPES['text/csv'] };
+  if (/\.md(\?|#|$)/.test(url))         return { mime: 'text/markdown',     ...DOC_TYPES['text/markdown'] };
+  return null;
+}
+
+S.documentType = detectDocumentType(); // set once on load
+
+// ================================================================
+// TEXT EXTRACTION (HTML pages only)
 // ================================================================
 function extractFullPageText() {
   const main = document.querySelector(
@@ -489,7 +531,6 @@ function renderAISections(aiSections) {
     };
   });
 
-  // Wrap and badge
   S.sections.forEach((sec, idx) => {
     let wrap;
     if (sec.heading.closest('.synapse-section-wrap')) {
@@ -498,37 +539,24 @@ function renderAISections(aiSections) {
       wrap = document.createElement('div');
       wrap.className = 'synapse-section-wrap';
       wrap.dataset.synapseIdx = idx;
-      wrap.style.setProperty('position', 'relative', 'important');
-      wrap.style.setProperty('display', 'block', 'important');
-      wrap.style.setProperty('overflow', 'visible', 'important');
       sec.heading.parentNode.insertBefore(wrap, sec.heading);
       wrap.appendChild(sec.heading);
     }
     sec.wrap = wrap;
 
-    // Badge
-    const badge = document.createElement('div');
-    badge.className = 'synapse-badge';
-    badge.dataset.idx = idx;
-    badge.innerHTML = `${idx + 1}
-      <svg class="s-ring" viewBox="0 0 30 30">
-        <circle cx="15" cy="15" r="12"/>
-      </svg>
-      ${sec.summary
-        ? `<div class="synapse-badge-tooltip">${sec.summary}</div>`
-        : ''}`;
-    badge.title = sec.title;
-    wrap.appendChild(badge);
-    sec.badge = badge;
-
-    // Hover
+    // Hover highlight
     wrap.addEventListener('mouseenter', () => {
       if (S.activeCardIdx !== idx) wrap.classList.add('s-highlighted');
     });
     wrap.addEventListener('mouseleave', () => wrap.classList.remove('s-highlighted'));
 
-    badge.addEventListener('click', (e) => { e.stopPropagation(); openCard(idx); });
+    // Click anywhere on the section to open card
+    wrap.addEventListener('click', (e) => {
+      if (e.target.closest('.synapse-card')) return; // don't re-open if clicking card
+      openCard(idx);
+    });
   });
+
 
   buildDock();
   S.active = true;
@@ -548,8 +576,7 @@ function openCard(idx) {
 
   S.activeCardIdx = idx;
   S.sections.forEach(s => s.wrap?.classList.remove('s-active'));
-  sec.wrap?.classList.add('s-active');
-  sec.badge?.classList.add('s-loading');
+  sec.wrap?.classList.add('s-active', 's-loading');
   updateDockActive(idx);
 
   const card = document.createElement('div');
@@ -558,7 +585,7 @@ function openCard(idx) {
     <div class="sc-topbar">
       <div>
         <div class="sc-title">
-          <span class="sc-title-dot"></span>Synapse 2.0
+          <span class="sc-title-dot"></span>Synapse
         </div>
         <span class="sc-section-name">${sec.title}</span>
       </div>
@@ -582,7 +609,7 @@ function openCard(idx) {
 
   // Use cache
   if (sec.cachedHTML) {
-    sec.badge?.classList.remove('s-loading');
+    sec.wrap?.classList.remove('s-loading');
     showCardContent(card, sec, sec.cachedHTML);
     return;
   }
@@ -590,10 +617,10 @@ function openCard(idx) {
   chrome.runtime.sendMessage(
     { type: 'CALL_LLM', pageText: sec.text },
     (res) => {
-      sec.badge?.classList.remove('s-loading');
+      sec.wrap?.classList.remove('s-loading');
       if (res?.html) {
         sec.cachedHTML = res.html;
-        sec.badge?.classList.add('s-done');
+        sec.wrap?.classList.add('s-done');
         showCardContent(card, sec, res.html);
         updateDockPill(idx, 's-done');
       } else {
@@ -804,6 +831,7 @@ function setupScrollObserver() {
   S.sections.forEach(sec => sec.wrap && S.observer.observe(sec.wrap));
 }
 
+
 // ================================================================
 // DEACTIVATE SECTION MODE
 // ================================================================
@@ -814,8 +842,7 @@ function deactivateSectionMode() {
     const parent = sec.wrap.parentNode;
     while (sec.wrap.firstChild) {
       const child = sec.wrap.firstChild;
-      if (child.classList?.contains('synapse-badge') ||
-          child.classList?.contains('synapse-card')) {
+      if (child.classList?.contains('synapse-card')) {
         child.remove();
       } else {
         parent.insertBefore(child, sec.wrap);
@@ -884,7 +911,7 @@ function showFullPageBar() {
     bar.id = 'synapse-fullpage-bar';
     bar.innerHTML = `
       <span class="sfb-dot"></span>
-      <span>Synapse 2.0 — Page reformatted for your brain</span>
+      <span>Synapse — Page reformatted for your brain</span>
       <button class="sfb-revert" id="sfb-revert-btn">Revert to original</button>`;
     document.body.appendChild(bar);
     bar.querySelector('#sfb-revert-btn').addEventListener('click', revertFullPage);
@@ -898,6 +925,84 @@ function hideFullPageBar() {
 }
 
 // ================================================================
+// DOCUMENT READER MODE
+// ================================================================
+function activateDocumentMode() {
+  if (S.analysing) return;
+  S.analysing = true;
+
+  const btn = document.getElementById('sp-main-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reading document...'; }
+  showPanelHint('Claude is extracting and reformatted the document...');
+  
+  const fab = document.getElementById('synapse-fab');
+  fab?.classList.add('s-analysing', 's-active');
+
+  let reader = document.getElementById('synapse-reader-overlay');
+  if (!reader) {
+    reader = document.createElement('div');
+    reader.id = 'synapse-reader-overlay';
+    reader.className = 'synapse-reader';
+    reader.innerHTML = `
+      <div class="synapse-reader-panel">
+        <div class="synapse-reader-topbar">
+          <div class="synapse-reader-title">
+            <span class="sc-title-dot"></span>Synapse Document Reader
+          </div>
+          <button class="synapse-reader-close">✕</button>
+        </div>
+        <div class="synapse-reader-loading">
+          <div class="sc-spinner"></div>
+          <span class="sc-loading-text">Rebuilding document for your brain...</span>
+        </div>
+        <div class="synapse-reader-content" style="display:none"></div>
+      </div>
+    `;
+    document.body.appendChild(reader);
+    reader.querySelector('.synapse-reader-close').addEventListener('click', closeDocumentReader);
+  }
+
+  requestAnimationFrame(() => requestAnimationFrame(() => reader.classList.add('s-visible')));
+
+  chrome.runtime.sendMessage(
+    { 
+      type: 'ANALYSE_DOCUMENT', 
+      url: window.location.href, 
+      mediaType: S.documentType.mime 
+    },
+    (res) => {
+      S.analysing = false;
+      if (btn) { btn.disabled = false; btn.textContent = `Read ${S.documentType.label}`; }
+      fab?.classList.remove('s-analysing');
+
+      const loading = reader.querySelector('.synapse-reader-loading');
+      const content = reader.querySelector('.synapse-reader-content');
+
+      loading.style.setProperty('display', 'none', 'important');
+      content.style.setProperty('display', 'block', 'important');
+
+      if (res?.html) {
+        content.innerHTML = res.html;
+        showPanelHint('Document reformatted. Close the reader to return to the original.');
+      } else {
+        content.innerHTML = `<p style="color:${C.red}">${res?.error || 'Failed to read document.'}</p>`;
+        showPanelHint(res?.error || 'Document reading failed.', true);
+      }
+    }
+  );
+}
+
+function closeDocumentReader() {
+  const reader = document.getElementById('synapse-reader-overlay');
+  if (reader) {
+    reader.classList.remove('s-visible');
+    setTimeout(() => reader.remove(), 300);
+  }
+  document.getElementById('synapse-fab')?.classList.remove('s-active');
+  updatePanelState();
+}
+
+// ================================================================
 // FAB + PANEL
 // ================================================================
 function buildFloatingUI() {
@@ -906,7 +1011,7 @@ function buildFloatingUI() {
 
   const fab = document.createElement('button');
   fab.id = 'synapse-fab';
-  fab.title = 'Synapse 2.0';
+  fab.title = 'Synapse';
   fab.innerHTML = `
     <svg viewBox="0 0 24 24">
       <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14
@@ -920,7 +1025,7 @@ function buildFloatingUI() {
   panel.innerHTML = `
     <div class="sp-head">
       <div>
-        <span class="sp-logo">Synapse 2.0</span>
+        <span class="sp-logo">Synapse</span>
         <span class="sp-sub">Cognitive layer</span>
       </div>
       <span class="sp-logo-dot"></span>
@@ -973,6 +1078,7 @@ function buildFloatingUI() {
     S.panelOpen = false;
     panel.classList.remove('s-visible');
     fab.classList.remove('open');
+    if (S.documentType) return activateDocumentMode();
     S.mode === 'cards' ? activateSectionMode() : activateFullPage();
   });
 
@@ -999,11 +1105,24 @@ function updatePanelState() {
   const deacBtn = document.getElementById('sp-deactivate-btn');
   if (!hint || !mainBtn || !deacBtn) return;
 
+  // Document mode overrides everything
+  if (S.documentType) {
+    const { label, icon } = S.documentType;
+    hint.textContent = `${icon} ${label} detected. Synapse will fetch and reformat it for your brain.`;
+    mainBtn.style.display = 'block';
+    mainBtn.textContent   = `Read ${label}`;
+    deacBtn.style.display = 'none';
+    // hide mode toggle since it's irrelevant for documents
+    const modeRow = document.querySelector('.sp-mode-row');
+    if (modeRow) modeRow.style.display = 'none';
+    return;
+  }
+
   hint.className = 'sp-hint';
 
   if (S.mode === 'cards') {
     if (S.active) {
-      hint.textContent = `${S.sections.length} sections active. Click any badge to open a card.`;
+      hint.textContent = `${S.sections.length} sections active. Click any highlighted section to open a card.`;
       mainBtn.style.display = 'none';
       deacBtn.style.display = 'block';
       deacBtn.textContent = 'Remove section cards';
