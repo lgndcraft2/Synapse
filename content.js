@@ -498,7 +498,9 @@ function renderAISections(aiSections) {
       wrap = document.createElement('div');
       wrap.className = 'synapse-section-wrap';
       wrap.dataset.synapseIdx = idx;
-      wrap.style.cssText = 'position:relative;display:block;';
+      wrap.style.setProperty('position', 'relative', 'important');
+      wrap.style.setProperty('display', 'block', 'important');
+      wrap.style.setProperty('overflow', 'visible', 'important');
       sec.heading.parentNode.insertBefore(wrap, sec.heading);
       wrap.appendChild(sec.heading);
     }
@@ -609,7 +611,7 @@ function openCard(idx) {
 }
 
 function showCardContent(card, sec, html) {
-  card.querySelector('.sc-loading').style.display = 'none';
+  card.querySelector('.sc-loading').style.setProperty('display', 'none', 'important');
   const body = card.querySelector('.sc-body');
   body.classList.add('s-ready');
   body.innerHTML = html;

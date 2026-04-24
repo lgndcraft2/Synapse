@@ -12,8 +12,7 @@
   ],
 
   "host_permissions": [
-    "https://api.anthropic.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://api.anthropic.com/*"
   ],
 
   "background": {

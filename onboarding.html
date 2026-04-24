@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Synapse 2.0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+
+  <!-- Left brand panel -->
+  <aside class="brand-panel">
+    <div class="brand-inner">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="white" width="28" height="28">
+          <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+        </svg>
+        <span>Synapse 2.0</span>
+      </div>
+
+      <div class="brand-steps">
+        <div class="step-indicator" data-step="1">
+        <div class="step-dot"></div>
+        <span>Your reading style</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-indicator" data-step="2">
+        <div class="step-dot"></div>
+        <span>Fine-tune</span>
+      </div>
+      </div>
+
+      <p class="brand-tagline">
+        Synapse rebuilds any webpage around the way <em>your</em> brain works.
+      </p>
+    </div>
+  </aside>
+
+  <!-- Right content panel -->
+  <main class="content-panel">
+
+    <!-- Step 0: Welcome -->
+    <section class="step" id="step-0" data-active="true">
+      <div class="step-inner">
+        <div class="welcome-icon">
+          <svg viewBox="0 0 24 24" fill="none" width="48" height="48">
+            <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" fill="#1D9E75"/>
+          </svg>
+        </div>
+        <h1>Welcome to Synapse 2.0</h1>
+        <p class="step-desc">We'll set up your cognitive profile in under 2 minutes. This tells the AI exactly how to restructure pages so they work for <em>your</em> brain.</p>
+        <div class="feature-list">
+          <div class="feature-item">
+            <span class="feature-icon">⚡</span>
+            <div>
+              <strong>Section Cards</strong>
+              <span>AI adds floating cards to each section of any page</span>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🧠</span>
+            <div>
+              <strong>Learns from you</strong>
+              <span>Feedback on each card trains your cognitive profile</span>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🔄</span>
+            <div>
+              <strong>Full page reformat</strong>
+              <span>Rebuild entire pages around how you read</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn primary" id="welcome-next">Get started →</button>
+      </div>
+    </section>
+
+    <!-- Step 1: Reading style -->
+    <section class="step" id="step-1">
+      <div class="step-inner">
+        <div class="step-tag">Step 1 of 2</div>
+        <h2>How do you like to read?</h2>
+        <p class="step-desc">Be honest — there are no wrong answers. The more accurate this is, the better Synapse performs from day one.</p>
+
+        <div class="field">
+          <label>Preferred format</label>
+          <div class="card-options" id="format-opts">
+            <button class="card-opt active" data-val="bullet points">
+              <span class="card-opt-icon">•</span>
+              <strong>Bullet points & lists</strong>
+              <span>Short, scannable items</span>
+            </button>
+            <button class="card-opt" data-val="short paragraphs">
+              <span class="card-opt-icon">¶</span>
+              <strong>Short paragraphs</strong>
+              <span>Brief, focused prose</span>
+            </button>
+            <button class="card-opt" data-val="numbered steps">
+              <span class="card-opt-icon">1.</span>
+              <strong>Numbered steps</strong>
+              <span>Clear sequential order</span>
+            </button>
+            <button class="card-opt" data-val="plain flowing prose">
+              <span class="card-opt-icon">～</span>
+              <strong>Plain prose</strong>
+              <span>Natural, flowing text</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>How long should each chunk be?</label>
+          <div class="seg-control" id="chunk-opts">
+            <button class="seg-opt active" data-val="short">Short</button>
+            <button class="seg-opt" data-val="medium">Medium</button>
+            <button class="seg-opt" data-val="long">Long</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Do you prefer examples before explanations?</label>
+          <div class="seg-control" id="examples-opts">
+            <button class="seg-opt active" data-val="true">Yes — show me examples first</button>
+            <button class="seg-opt" data-val="false">No — explain first, then examples</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Simplify vocabulary?</label>
+          <div class="seg-control" id="vocab-opts">
+            <button class="seg-opt active" data-val="false">Keep original terminology</button>
+            <button class="seg-opt" data-val="true">Simplify where possible</button>
+          </div>
+        </div>
+
+        <button class="btn primary" id="step2-next">Continue →</button>
+        <button class="btn ghost" id="step2-back">← Back</button>
+      </div>
+    </section>
+
+    <!-- Step 3: Fine-tune -->
+    <section class="step" id="step-3">
+      <div class="step-inner">
+        <div class="step-tag">Step 2 of 2</div>
+        <h2>Fine-tune</h2>
+        <p class="step-desc">These help Synapse handle complex content correctly. You can always change these later from the extension popup.</p>
+
+        <div class="field">
+          <label>Maximum nesting depth for lists</label>
+          <div class="seg-control" id="nesting-opts">
+            <button class="seg-opt" data-val="1">1 — flat only</button>
+            <button class="seg-opt active" data-val="2">2 — one level of sub-points</button>
+            <button class="seg-opt" data-val="3">3 — full nesting</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Use section headers?</label>
+          <div class="seg-control" id="headers-opts">
+            <button class="seg-opt active" data-val="true">Yes — add clear headers</button>
+            <button class="seg-opt" data-val="false">No — headerless flow</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Anything else the AI should know about you? <span class="optional">(optional)</span></label>
+          <textarea id="notes" placeholder="e.g. I lose focus after 3 nested points. I need concrete examples before abstract concepts. I have ADHD." rows="3"></textarea>
+        </div>
+
+        <div class="error-msg" id="step3-error"></div>
+        <button class="btn primary" id="step3-finish">Save & start using Synapse</button>
+        <button class="btn ghost" id="step3-back">← Back</button>
+      </div>
+    </section>
+
+    <!-- Step 4: Done -->
+    <section class="step" id="step-done">
+      <div class="step-inner centered">
+        <div class="done-icon">✦</div>
+        <h2>You're all set!</h2>
+        <p class="step-desc">Your cognitive profile has been saved. Go to any webpage and click the <strong>green Synapse button</strong> in the bottom-right corner to get started.</p>
+        <div class="done-tip">
+          <strong>Tip:</strong> After reading a reformatted section, rate it with the feedback buttons. Synapse learns from every interaction and automatically updates your profile.
+        </div>
+        <button class="btn primary" id="done-close">Open a page and try it</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="onboarding.js"></script>
+</body>
+</html>

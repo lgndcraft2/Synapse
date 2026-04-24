@@ -1,6 +1,11 @@
-const providerSelect  = document.getElementById("provider");
-const claudeKeyInput  = document.getElementById("claude-key");
-const geminiKeyInput  = document.getElementById("gemini-key");
+// ── Redirect to onboarding if not yet complete ──
+chrome.storage.local.get("onboardingComplete", (res) => {
+  if (!res.onboardingComplete) {
+    chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+    window.close();
+  }
+});
+
 const formatSelect    = document.getElementById("format");
 const notesArea       = document.getElementById("notes");
 const saveBtn         = document.getElementById("save-btn");
@@ -19,9 +24,8 @@ function setStatus(msg, isError = false) {
 // ── Load saved profile + check for pending update ──
 chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
   if (res?.profile) {
-    providerSelect.value  = res.profile.provider || "claude";
-    formatSelect.value    = res.profile.preferredFormat || "bullet points";
-    notesArea.value       = res.profile.notes || "";
+    formatSelect.value = res.profile.preferredFormat || "bullet points";
+    notesArea.value    = res.profile.notes || "";
   }
 
   // Show update banner if Synapse updated the profile automatically
@@ -36,10 +40,7 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
 });
 
 // ── Load API keys ──
-chrome.storage.local.get("apiKeys", (res) => {
-  claudeKeyInput.value = res.apiKeys?.claude || "";
-  geminiKeyInput.value = res.apiKeys?.gemini || "";
-});
+// (keys are now hardcoded in background.js — nothing to load)
 
 // ── Load feedback stats ──
 chrome.runtime.sendMessage({ type: "GET_FEEDBACK" }, (res) => {
@@ -70,16 +71,11 @@ dismissBtn?.addEventListener("click", () => {
 // ── Save profile ──
 saveBtn.addEventListener("click", () => {
   const profile = {
-    provider:        providerSelect.value,
     preferredFormat: formatSelect.value,
     notes:           notesArea.value.trim()
   };
-  const apiKeys = {
-    claude: claudeKeyInput.value.trim(),
-    gemini: geminiKeyInput.value.trim()
-  };
   chrome.runtime.sendMessage(
-    { type: "SAVE_PROFILE", profile, apiKeys },
+    { type: "SAVE_PROFILE", profile },
     () => setStatus("Profile saved.")
   );
 });

@@ -1,5 +1,9 @@
 const CLAUDE_MODEL = "claude-sonnet-4-6";
-const GEMINI_MODEL = "gemini-2.5-flash";
+
+// ================================================================
+// API KEY — hardcoded for shared use
+// NOTE: visible to anyone who inspects the extension files.
+// ================================================================
 
 const defaultProfile = {
   preferredFormat: "bullet points",
@@ -14,14 +18,43 @@ const defaultProfile = {
 // ================================================================
 // SYSTEM PROMPT — injects profile + feedback history
 // ================================================================
+function buildProfileInstructions(profile) {
+  const chunkDesc = {
+    short:  'Keep each section concise — 2 to 3 sentences maximum per point.',
+    medium: 'Use moderate length — enough detail to be clear, but no padding.',
+    long:   'Be thorough — include full context and nuance for each point.',
+  }[profile.chunkSize] || 'Keep sections concise.';
+
+  const lines = [
+    `Format: Present all content as ${profile.preferredFormat}.`,
+    chunkDesc,
+    profile.needsExamplesFirst
+      ? 'Always lead with a concrete example BEFORE giving the explanation or rule.'
+      : 'Give the explanation or concept first, then follow with examples.',
+    profile.simplifyVocab
+      ? 'Use plain, everyday language. Replace jargon and technical terms with simpler alternatives where possible.'
+      : 'Preserve the original technical vocabulary — do not dumb down terminology.',
+    profile.useHeaders
+      ? 'Add a clear <h2> or <h3> header to each section to aid navigation.'
+      : 'Do not add headers — present content as a continuous flow.',
+    `Maximum nesting depth for lists: ${profile.maxNestingDepth} level${profile.maxNestingDepth > 1 ? 's' : ''}. Do not nest deeper than this.`,
+  ];
+
+  if (profile.notes?.trim()) {
+    lines.push(`\nDirect note from the user: "${profile.notes.trim()}"`);
+  }
+
+  return lines.join('\n');
+}
+
 function buildSystemPrompt(profile, feedbackLog) {
   const feedbackSummary = buildFeedbackSummary(feedbackLog);
 
   return `You are Synapse 2.0, a cognitive accessibility assistant.
 Your job is to reformat page content into HTML that works best for this specific user's brain.
 
-── COGNITIVE PROFILE ──
-${JSON.stringify(profile, null, 2)}
+── HOW THIS USER NEEDS CONTENT PRESENTED ──
+${buildProfileInstructions(profile)}
 
 ── WHAT YOU HAVE LEARNED FROM THIS USER'S FEEDBACK ──
 ${feedbackSummary}
@@ -30,7 +63,7 @@ ${feedbackSummary}
 - Return ONLY a single <div> of valid HTML. No markdown, no explanation, no preamble.
 - Use proper semantic tags: <h2> sections, <h3> subsections, <p> paragraphs,
   <ul>/<li> lists, <strong> key terms, <mark> for important concepts.
-- Use the profile AND the feedback history to decide structure.
+- Follow the user's presentation instructions above precisely.
 - Keep ALL original information — only restructure the presentation.
 - No inline styles. Classes and semantic tags only.
 - Do not add any text, commentary or wrapper outside the single <div>.`;
@@ -94,11 +127,10 @@ function buildFeedbackSummary(feedbackLog) {
 function getFullConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      ["cognitiveProfile", "apiKeys", "feedbackLog"],
+      ["cognitiveProfile", "feedbackLog"],
       (result) => {
         resolve({
           profile: result.cognitiveProfile || defaultProfile,
-          apiKeys: result.apiKeys || {},
           feedbackLog: result.feedbackLog || [],
         });
       }
@@ -106,10 +138,8 @@ function getFullConfig() {
   });
 }
 
-function getApiKey(provider, apiKeys) {
-  return provider === "gemini"
-    ? apiKeys.gemini || ""
-    : apiKeys.claude || "";
+function getApiKey() {
+  return CLAUDE_API_KEY;
 }
 
 // ================================================================
@@ -121,7 +151,8 @@ async function callClaude(pageText, profile, feedbackLog, apiKey) {
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
@@ -142,53 +173,10 @@ async function callClaude(pageText, profile, feedbackLog, apiKey) {
 }
 
 // ================================================================
-// GEMINI API
+// REFORMAT ROUTER
 // ================================================================
-async function callGemini(pageText, profile, feedbackLog, apiKey) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [{
-            text: `Reformat this content for my cognitive profile:\n\n${pageText}`
-          }]
-        }],
-        systemInstruction: {
-          parts: [{ text: buildSystemPrompt(profile, feedbackLog) }]
-        },
-        generationConfig: {
-          maxOutputTokens: 2000,
-          temperature: 0.3
-        }
-      })
-    }
-  );
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error?.message || `Gemini error ${response.status}`);
-  }
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini returned an empty response.");
-  return text;
-}
-
-// ================================================================
-// PROVIDER ROUTER
-// ================================================================
-async function callProvider(pageText, profile, apiKeys, feedbackLog) {
-  const provider = (profile.provider || "claude").toLowerCase();
-  const apiKey = getApiKey(provider, apiKeys);
-
-  if (provider === "gemini") {
-    if (!apiKey) throw new Error("Gemini API key is not configured.");
-    return callGemini(pageText, profile, feedbackLog, apiKey);
-  }
-
+async function callProvider(pageText, profile, feedbackLog) {
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("Claude API key is not configured.");
   return callClaude(pageText, profile, feedbackLog, apiKey);
 }
@@ -206,48 +194,28 @@ Each element must have exactly these keys:
 If the page has fewer than 3 distinguishable sections, return as many as exist.
 Never return fewer than 1 element.`;
 
-async function analyseSections(pageText, profile, apiKeys) {
-  const provider = (profile.provider || "claude").toLowerCase();
-  const apiKey = getApiKey(provider, apiKeys);
+async function analyseSections(pageText) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Claude API key is not configured.");
 
-  let raw;
-  if (provider === "gemini") {
-    if (!apiKey) throw new Error("Gemini API key is not configured.");
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: `Analyse and split into sections:\n\n${pageText}` }] }],
-          systemInstruction: { parts: [{ text: SECTION_SYSTEM_PROMPT }] },
-          generationConfig: { maxOutputTokens: 9000, temperature: 0.2 }
-        })
-      }
-    );
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || `Gemini error ${response.status}`);
-    raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  } else {
-    if (!apiKey) throw new Error("Claude API key is not configured.");
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 9500,
-        system: SECTION_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Analyse and split into sections:\n\n${pageText}` }]
-      })
-    });
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
-    raw = data.content[0].text;
-  }
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 9500,
+      system: SECTION_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: `Analyse and split into sections:\n\n${pageText}` }]
+    })
+  });
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  const raw = data.content[0].text;
 
   if (!raw) throw new Error("Empty response from LLM.");
 
@@ -274,10 +242,10 @@ async function analyseSections(pageText, profile, apiKeys) {
 // PROFILE AUTO-UPDATE
 // — After every 10 feedback entries, propose a profile amendment
 // ================================================================
-async function maybeUpdateProfile(feedbackLog, profile, apiKeys) {
+async function maybeUpdateProfile(feedbackLog) {
   if (feedbackLog.length % 10 !== 0 || feedbackLog.length === 0) return;
 
-  const apiKey = getApiKey(profile.provider || 'claude', apiKeys);
+  const apiKey = getApiKey();
   if (!apiKey) return;
 
   const summary = buildFeedbackSummary(feedbackLog);
@@ -288,7 +256,8 @@ async function maybeUpdateProfile(feedbackLog, profile, apiKeys) {
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
       },
       body: JSON.stringify({
         model: CLAUDE_MODEL,
@@ -333,23 +302,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // ── Section analysis request ──
   if (msg.type === "ANALYSE_SECTIONS") {
-    getFullConfig().then(async ({ profile, apiKeys }) => {
+    (async () => {
       try {
-        const sections = await analyseSections(msg.pageText, profile, apiKeys);
+        const sections = await analyseSections(msg.pageText);
         sendResponse({ sections });
       } catch (err) {
         console.error("Synapse section analysis error:", err);
         sendResponse({ error: err.message });
       }
-    });
+    })();
     return true;
   }
 
   // ── Reformat request ──
   if (msg.type === "CALL_CLAUDE" || msg.type === "CALL_LLM") {
-    getFullConfig().then(async ({ profile, apiKeys, feedbackLog }) => {
+    getFullConfig().then(async ({ profile, feedbackLog }) => {
       try {
-        const html = await callProvider(msg.pageText, profile, apiKeys, feedbackLog);
+        const html = await callProvider(msg.pageText, profile, feedbackLog);
         sendResponse({ html });
       } catch (err) {
         console.error("Synapse error:", err);
@@ -361,30 +330,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // ── Feedback received ──
   if (msg.type === "FEEDBACK") {
-    chrome.storage.local.get(
-      ["feedbackLog", "cognitiveProfile", "apiKeys"],
-      (result) => {
-        const log = result.feedbackLog || [];
-        log.push(msg.entry);
-        const trimmed = log.slice(-50);
-        chrome.storage.local.set({ feedbackLog: trimmed }, () => {
-          // Try a profile update every 10 entries
-          maybeUpdateProfile(
-            trimmed,
-            result.cognitiveProfile || defaultProfile,
-            result.apiKeys || {}
-          );
-        });
-        sendResponse({ ok: true });
-      }
-    );
+    chrome.storage.local.get("feedbackLog", (result) => {
+      const log = result.feedbackLog || [];
+      log.push(msg.entry);
+      const trimmed = log.slice(-50);
+      chrome.storage.local.set({ feedbackLog: trimmed }, () => {
+        maybeUpdateProfile(trimmed);
+      });
+      sendResponse({ ok: true });
+    });
     return true;
   }
 
   // ── Save profile ──
   if (msg.type === "SAVE_PROFILE") {
     chrome.storage.local.set(
-      { cognitiveProfile: msg.profile, apiKeys: msg.apiKeys || {} },
+      { cognitiveProfile: msg.profile },
       () => sendResponse({ success: true })
     );
     return true;
@@ -424,5 +385,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "PING") {
     sendResponse({ alive: true });
     return true;
+  }
+});
+
+// ================================================================
+// FIRST INSTALL — open onboarding tab
+// ================================================================
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
   }
 });
