@@ -1,3 +1,22 @@
+import {
+  ArrowDown,
+  ArrowLeft,
+  BadgeCheck,
+  Beaker,
+  Brain,
+  Check,
+  Compass,
+  Eye,
+  Layers,
+  Menu,
+  Plus,
+  Sparkles,
+  ToggleRight,
+  WandSparkles,
+  Zap,
+  TrendingUp,
+} from 'lucide-react';
+
 const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
 
 const loopSteps = [
@@ -8,19 +27,19 @@ const loopSteps = [
 
 const howItWorks = [
   {
-    icon: 'arrow_back_ios',
+    icon: 'brain',
     title: '1. Onboard',
-    text: 'A 2-minute calibration captures your baseline reading speed and retention patterns.',
+    text: 'Answer 5 questions about how you process information. Not your diagnosis - how you actually think.',
   },
   {
-    icon: 'add',
+    icon: 'compass',
     title: '2. Browse',
     text: 'Read naturally across any site. Synapse learns where your attention breaks in real time.',
   },
   {
-    icon: 'layers',
+    icon: 'trending_up',
     title: '3. It Learns',
-    text: 'Your profile updates weekly, automatically adjusting layouts to your changing needs.',
+    text: 'Every re-read, every feedback tap, every section you engage with trains your profile. It gets more accurate every session.',
   },
 ];
 
@@ -69,7 +88,7 @@ const faqs = [
   ],
   [
     'Can I use it on mobile?',
-    'The extension is currently available for desktop browsers: Chrome, Safari, and Edge. A dedicated mobile reading app is on our roadmap.',
+    'Currently available for Chrome. Firefox, Safari, and Edge support is on our roadmap.',
   ],
   [
     'Does it translate languages?',
@@ -77,7 +96,7 @@ const faqs = [
   ],
   [
     'How often does the model update?',
-    'The engine recalibrates every Sunday based on your weekly browsing habits to ensure the UI stays in sync with your needs.',
+    'Your profile updates continuously based on your reading behaviour and the feedback you give on each section card.',
   ],
   [
     'Can I export my profile?',
@@ -90,18 +109,36 @@ const faqs = [
 ];
 
 const roadmap = [
-  ['Now', 'v2.0 Engine with multi-device sync', true],
-  ['Next', 'Native iOS/Android Safari extension'],
+  ['Now', 'Chrome extension with live AI section reformatting, cognitive profile engine, and adaptive feedback loop.', true],
+  ['Next', 'Firefox and Safari support. PDF and document reformatting beyond web pages.'],
   ['Later', 'OpenAPI for third-party adaptive apps'],
   ['Future', 'Cognitive-first operating system'],
 ];
 
-function Icon({ name }: { name: string }) {
-  return (
-    <span className="material-symbols-outlined" aria-hidden="true">
-      {name}
-    </span>
-  );
+const heroSignals = ['On-device profile', 'Adaptive layouts', 'No data sold'];
+
+const icons = {
+  add: Plus,
+  arrow_back_ios: ArrowLeft,
+  auto_awesome: WandSparkles,
+  bolt: Zap,
+  check: Check,
+  check_circle: BadgeCheck,
+  compass: Compass,
+  keyboard_arrow_down: ArrowDown,
+  layers: Layers,
+  menu: Menu,
+  model_training: Sparkles,
+  psychology: Brain,
+  science: Beaker,
+  toggle_on: ToggleRight,
+  trending_up: TrendingUp,
+  visibility: Eye,
+};
+
+function Icon({ name }: { name: keyof typeof icons | string }) {
+  const LucideIcon = icons[name as keyof typeof icons] ?? Sparkles;
+  return <LucideIcon className="app-icon" aria-hidden="true" strokeWidth={1.8} />;
 }
 
 function App() {
@@ -130,7 +167,7 @@ function App() {
         <section className="hero page-section">
           <div className="hero-grid">
             <div className="hero-copy">
-              <h1>The internet wasn't built for your brain. Synapse is.</h1>
+              <h1>The internet wasn't built for your brain. <br /><span className="synapse_color">Synapse</span> is.</h1>
               <p>
                 Traditional accessibility tools apply fixed presets and forget you. Synapse builds a persistent,
                 evolving model of how you actually process information, reformatting every page you read in real time.
@@ -139,23 +176,62 @@ function App() {
                 <button className="button button-primary">Get the Extension</button>
                 <button className="button button-secondary">See how it works</button>
               </div>
+              <div className="hero-signals" aria-label="Product promises">
+                {heroSignals.map((signal) => (
+                  <span key={signal}>
+                    <Icon name="check" />
+                    {signal}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="hero-visual offset-shadow" aria-label="Digital text being reorganized into clearer reading blocks">
-              <div className="browser-card">
-                <div className="line line-wide" />
-                <div className="line" />
-                <div className="line line-mid" />
-                <div className="divider" />
-                <div className="transform-row">
-                  <div className="focus-block" />
-                  <div className="structured-lines">
-                    <div />
-                    <div />
-                    <div />
+              <div className="extension-shell">
+                <div className="extension-top">
+                  <div>
+                    <strong>Synapse Active</strong>
+                    <span>Article restructured</span>
                   </div>
+                  <Icon name="toggle_on" />
+                </div>
+                <div className="extension-body">
+                  <div className="dense-column">
+                    <span>Before</span>
+                    {Array.from({ length: 8 }).map((_, index) => (
+                      <i key={index} />
+                    ))}
+                  </div>
+                  <div className="clarity-column">
+                    <span>After</span>
+                    <div className="focus-title" />
+                    <div className="reading-card">
+                      <b />
+                      <b />
+                    </div>
+                    <div className="reading-card small">
+                      <b />
+                      <b />
+                    </div>
+                  </div>
+                </div>
+                <div className="control-strip">
+                  <label>
+                    Spacing
+                    <span><i /></span>
+                  </label>
+                  <label>
+                    Focus
+                    <span><i /></span>
+                  </label>
                 </div>
               </div>
             </div>
+          </div>
+          <div className="hero-bottom">
+            <p>Live reformatting for onboarding flows, policy pages, forms, and dense research.</p>
+            <a href="#solutions" aria-label="Scroll to solutions">
+              <Icon name="keyboard_arrow_down" />
+            </a>
           </div>
         </section>
 
@@ -209,13 +285,14 @@ function App() {
             {loopSteps.map((step, index) => (
               <div className="loop-segment" key={step.title}>
                 <article className="loop-step">
+                  <span className="loop-index">{String(index + 1).padStart(2, '0')}</span>
                   <div className={`loop-icon ${step.active ? 'active' : ''}`}>
                     <Icon name={step.icon} />
                   </div>
                   <h3>{step.title}</h3>
                   <p>{step.text}</p>
                 </article>
-                {index < loopSteps.length - 1 && <Icon name="arrow_forward" />}
+                {index < loopSteps.length - 1 && <div className="flow-connector" aria-hidden="true"><span /></div>}
               </div>
             ))}
           </div>
@@ -227,11 +304,19 @@ function App() {
             <div className="steps-grid">
               {howItWorks.map((step) => (
                 <article className="work-step" key={step.title}>
-                  <div className="step-icon">
-                    <Icon name={step.icon} />
+                  <div className="step-head">
+                    <div className="step-icon">
+                      <Icon name={step.icon} />
+                    </div>
+                    <span>{step.title.slice(0, 1).padStart(2, '0')}</span>
                   </div>
-                  <h3>{step.title}</h3>
+                  <h3>{step.title.slice(3)}</h3>
                   <p>{step.text}</p>
+                  <div className="step-preview" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
                 </article>
               ))}
             </div>
@@ -310,6 +395,7 @@ function App() {
               <article className={`price-card ${plan.featured ? 'featured offset-shadow' : ''}`} key={plan.name}>
                 {plan.featured && <div className="badge">Recommended</div>}
                 <h3>{plan.name}</h3>
+                {plan.name === 'Deep Thinker' && <p className="pricing-note">$8/mo primary pricing, with local university pricing available in Nigeria.</p>}
                 <div className="price">
                   {plan.price}
                   {plan.suffix && <span>{plan.suffix}</span>}
@@ -321,6 +407,42 @@ function App() {
                       {feature}
                     </li>
                   ))}
+                  {plan.name === 'Explorer' && (
+                    <>
+                      <li key="explorer-reformats">
+                        <Icon name="check" />
+                        30 section reformats per month
+                      </li>
+                      <li key="explorer-profile">
+                        <Icon name="check" />
+                        Basic cognitive profile
+                      </li>
+                      <li key="explorer-chrome-only">
+                        <Icon name="check" />
+                        Chrome extension only
+                      </li>
+                    </>
+                  )}
+                  {plan.name === 'Deep Thinker' && (
+                    <>
+                      <li key="deep-unlimited">
+                        <Icon name="check" />
+                        Unlimited reformats
+                      </li>
+                      <li key="deep-feedback">
+                        <Icon name="check" />
+                        Full adaptive feedback loop
+                      </li>
+                      <li key="deep-evolution">
+                        <Icon name="check" />
+                        Profile evolution tracking
+                      </li>
+                      <li key="deep-claude">
+                        <Icon name="check" />
+                        Priority Claude processing
+                      </li>
+                    </>
+                  )}
                 </ul>
                 <button className={`button ${plan.featured ? 'button-primary' : 'button-secondary'}`}>{plan.cta}</button>
               </article>
@@ -371,7 +493,7 @@ function App() {
       <footer className="footer">
         <div className="footer-shell">
           <a className="brand" href="#top">Synapse</a>
-          <div className="copyright">2024 Synapse. Built for the cognitive edge.</div>
+          <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
           <nav aria-label="Footer navigation">
             <a href="#top">Privacy Policy</a>
             <a href="#top">Accessibility Statement</a>
