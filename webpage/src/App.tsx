@@ -54,22 +54,40 @@ const pricingPlans = [
   {
     name: 'Explorer',
     price: 'Free',
-    features: ['Web reformatting', 'Single profile'],
+    features: [
+      'Web reformatting',
+      'Single profile',
+      '30 section reformats per month',
+      'Basic cognitive profile',
+      'Chrome extension only',
+    ],
     cta: 'Start Free',
+  },
+  {
+    name: 'Thinker Lite',
+    price: '$4',
+    suffix: '/mo',
+    features: [
+      'Everything in Free',
+      'Up to 300 section reformats per month',
+      'Google Docs support',
+      'Faster processing',
+      'Basic adaptive feedback',
+    ],
+    cta: 'Upgrade',
+    featured: true,
   },
   {
     name: 'Deep Thinker',
     price: '$8',
     suffix: '/mo',
-    features: ['Full Google Docs/PDF support', 'Cognitive pattern insights', 'Multiple reading profiles'],
-    cta: 'Go Pro',
-    featured: true,
-  },
-  {
-    name: 'Campus',
-    price: 'Custom',
-    features: ['Institutional SSO', 'Bulk seat management'],
-    cta: 'Contact Sales',
+    features: [
+      'Unlimited reformats',
+      'Full Google Docs/PDF support',
+      'Cognitive pattern insights',
+      'Full adaptive feedback loop',
+    ],
+    cta: 'Go Deep',
   },
 ];
 
@@ -326,26 +344,6 @@ function App() {
           </div>
         </section>
 
-        <section className="market full-section">
-          <div className="content-grid">
-            <div className="stats-grid">
-              {stats.map(([value, label]) => (
-                <article className="stat-card" key={label}>
-                  <strong>{value}</strong>
-                  <span>{label}</span>
-                </article>
-              ))}
-            </div>
-            <aside className="compliance-card">
-              <h3>Regulatory Compliance</h3>
-              <p>
-                Synapse doesn't just meet WCAG/ADA standards. It exceeds them by providing individualized accommodation
-                that static checklists can't match.
-              </p>
-            </aside>
-          </div>
-        </section>
-
         <section className="features page-section" id="library">
           <div className="feature-grid">
             <article className="feature-main offset-shadow">
@@ -407,42 +405,6 @@ function App() {
                       {feature}
                     </li>
                   ))}
-                  {plan.name === 'Explorer' && (
-                    <>
-                      <li key="explorer-reformats">
-                        <Icon name="check" />
-                        30 section reformats per month
-                      </li>
-                      <li key="explorer-profile">
-                        <Icon name="check" />
-                        Basic cognitive profile
-                      </li>
-                      <li key="explorer-chrome-only">
-                        <Icon name="check" />
-                        Chrome extension only
-                      </li>
-                    </>
-                  )}
-                  {plan.name === 'Deep Thinker' && (
-                    <>
-                      <li key="deep-unlimited">
-                        <Icon name="check" />
-                        Unlimited reformats
-                      </li>
-                      <li key="deep-feedback">
-                        <Icon name="check" />
-                        Full adaptive feedback loop
-                      </li>
-                      <li key="deep-evolution">
-                        <Icon name="check" />
-                        Profile evolution tracking
-                      </li>
-                      <li key="deep-claude">
-                        <Icon name="check" />
-                        Priority Claude processing
-                      </li>
-                    </>
-                  )}
                 </ul>
                 <button className={`button ${plan.featured ? 'button-primary' : 'button-secondary'}`}>{plan.cta}</button>
               </article>
