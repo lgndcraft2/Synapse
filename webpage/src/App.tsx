@@ -174,7 +174,10 @@ function App() {
               </a>
             ))}
           </nav>
-          <button className="button button-primary nav-cta">Get Extension</button>
+          <div className="nav-actions" style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+            <a href="/auth?tab=login" className="nav-login" style={{fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none', padding: '0 12px', color: 'inherit'}}>Login</a>
+            <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
+          </div>
           <button className="icon-button menu-button" aria-label="Open navigation">
             <Icon name="menu" />
           </button>
@@ -185,13 +188,13 @@ function App() {
         <section className="hero page-section">
           <div className="hero-grid">
             <div className="hero-copy">
-              <h1>The internet wasn't built for your brain. <br /><span className="synapse_color">Synapse</span> is.</h1>
+              <h1>The Internet wasn't Built for your Brain. <br /><span className="synapse_color">Synapse</span> is.</h1>
               <p>
                 Traditional accessibility tools apply fixed presets and forget you. Synapse builds a persistent,
                 evolving model of how you actually process information, reformatting every page you read in real time.
               </p>
               <div className="button-row">
-                <button className="button button-primary">Get the Extension</button>
+                <a href="/auth?tab=signup" className="button button-primary" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get the Extension</a>
                 <button className="button button-secondary">See how it works</button>
               </div>
               <div className="hero-signals" aria-label="Product promises">
