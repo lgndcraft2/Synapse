@@ -174,8 +174,8 @@ function App() {
               </a>
             ))}
           </nav>
-          <div className="nav-actions" style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
-            <a href="/auth?tab=login" className="nav-login" style={{fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none', padding: '0 12px', color: 'inherit'}}>Login</a>
+          <div className="nav-actions" style={{display: 'flex', gap: '12px', alignItems: 'center'}}>
+            <a href="/auth?tab=login" className="nav-login" style={{textDecoration: 'none'}}>Login</a>
             <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
           <button className="icon-button menu-button" aria-label="Open navigation">

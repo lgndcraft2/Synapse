@@ -22,14 +22,19 @@
 
       <div class="brand-steps">
         <div class="step-indicator" data-step="1">
-        <div class="step-dot"></div>
-        <span>Your reading style</span>
-      </div>
-      <div class="step-connector"></div>
-      <div class="step-indicator" data-step="2">
-        <div class="step-dot"></div>
-        <span>Fine-tune</span>
-      </div>
+          <div class="step-dot"></div>
+          <span>Your reading type</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-indicator" data-step="2">
+          <div class="step-dot"></div>
+          <span>Your reading style</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-indicator" data-step="3">
+          <div class="step-dot"></div>
+          <span>Fine-tune</span>
+        </div>
       </div>
 
       <p class="brand-tagline">
@@ -78,10 +83,52 @@
       </div>
     </section>
 
-    <!-- Step 1: Reading style -->
+    <!-- Step 1: Profile type (NEW) -->
     <section class="step" id="step-1">
       <div class="step-inner">
-        <div class="step-tag">Step 1 of 2</div>
+        <div class="step-tag">Step 1 of 3</div>
+        <h2>What best describes your reading?</h2>
+        <p class="step-desc">This tells Synapse which cognitive strategy to use — not just how to format text, but <em>how to think about it</em> for you.</p>
+
+        <div class="field">
+          <label>Pick the one that fits most</label>
+          <div class="card-options" id="profile-type-opts" style="grid-template-columns: 1fr;">
+
+            <button class="card-opt active" data-val="load-reducer" style="flex-direction:row;align-items:flex-start;gap:14px;">
+              <span class="card-opt-icon" style="font-size:22px;margin-top:2px;">⚡</span>
+              <div>
+                <strong>I struggle to stay focused while reading</strong>
+                <span>I lose the thread, get distracted, or need to re-read things. Dense pages are exhausting.</span>
+              </div>
+            </button>
+
+            <button class="card-opt" data-val="comprehension-gap" style="flex-direction:row;align-items:flex-start;gap:14px;">
+              <span class="card-opt-icon" style="font-size:22px;margin-top:2px;">🔍</span>
+              <div>
+                <strong>I can read fine, but meaning gets lost</strong>
+                <span>I finish a paragraph and don't know what it was really saying. I miss subtext and implied meaning.</span>
+              </div>
+            </button>
+
+            <button class="card-opt" data-val="hyperfocus" style="flex-direction:row;align-items:flex-start;gap:14px;">
+              <span class="card-opt-icon" style="font-size:22px;margin-top:2px;">📚</span>
+              <div>
+                <strong>I read a lot — I just need better structure</strong>
+                <span>I can hyperfocus on reading, but I need help organizing, retaining, and navigating information.</span>
+              </div>
+            </button>
+
+          </div>
+        </div>
+
+        <button class="btn primary" id="step1-next">Continue →</button>
+      </div>
+    </section>
+
+    <!-- Step 2: Reading style -->
+    <section class="step" id="step-2">
+      <div class="step-inner">
+        <div class="step-tag">Step 2 of 3</div>
         <h2>How do you like to read?</h2>
         <p class="step-desc">Be honest — there are no wrong answers. The more accurate this is, the better Synapse performs from day one.</p>
 
@@ -144,7 +191,7 @@
     <!-- Step 3: Fine-tune -->
     <section class="step" id="step-3">
       <div class="step-inner">
-        <div class="step-tag">Step 2 of 2</div>
+        <div class="step-tag">Step 3 of 3</div>
         <h2>Fine-tune</h2>
         <p class="step-desc">These help Synapse handle complex content correctly. You can always change these later from the extension popup.</p>
 
@@ -176,7 +223,7 @@
       </div>
     </section>
 
-    <!-- Step 4: Done -->
+    <!-- Done -->
     <section class="step" id="step-done">
       <div class="step-inner centered">
         <div class="done-icon">✦</div>

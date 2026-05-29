@@ -6,13 +6,14 @@ const CLAUDE_MODEL = "claude-sonnet-4-6";
 // ================================================================
 
 const defaultProfile = {
-  preferredFormat: "bullet points",
-  chunkSize: "short",
+  preferredFormat:    "bullet points",
+  chunkSize:          "short",
   needsExamplesFirst: true,
-  maxNestingDepth: 2,
-  useHeaders: true,
-  simplifyVocab: false,
-  notes: ""
+  maxNestingDepth:    2,
+  useHeaders:         true,
+  simplifyVocab:      false,
+  profileType:        "load-reducer", // "load-reducer" | "comprehension-gap" | "hyperfocus"
+  notes:              ""
 };
 
 // ================================================================
@@ -25,7 +26,8 @@ function buildProfileInstructions(profile) {
     long:   'Be thorough — include full context and nuance for each point.',
   }[profile.chunkSize] || 'Keep sections concise.';
 
-  const lines = [
+  // ── Base formatting rules (shared across all profiles) ──
+  const base = [
     `Format: Present all content as ${profile.preferredFormat}.`,
     chunkDesc,
     profile.needsExamplesFirst
@@ -39,6 +41,45 @@ function buildProfileInstructions(profile) {
       : 'Do not add headers — present content as a continuous flow.',
     `Maximum nesting depth for lists: ${profile.maxNestingDepth} level${profile.maxNestingDepth > 1 ? 's' : ''}. Do not nest deeper than this.`,
   ];
+
+  // ── Profile-type-specific cognitive strategy ──
+  const strategy = {
+
+    // Profile 1: High cognitive load — dyslexic, working memory issues, ADHD focus struggles
+    "load-reducer": [
+      'COGNITIVE STRATEGY: This user has high reading load. Your primary job is reducing cognitive friction.',
+      'Lead with the single most important point. Everything else is secondary.',
+      'Break any sentence longer than 20 words into two sentences.',
+      'Never introduce more than one new concept per paragraph or bullet.',
+      'Use <mark> on the single most critical term or phrase per section — no more than one.',
+      'Avoid nested structures unless absolutely necessary for meaning.',
+    ],
+
+    // Profile 2: Comprehension gap — autistic, decodes fine but loses meaning/subtext
+    "comprehension-gap": [
+      'COGNITIVE STRATEGY: This user reads fluently but loses meaning. Your job is making implicit things explicit.',
+      'After each key paragraph or point, add a one-sentence plain-language interpretation: what the author actually means.',
+      'Surface subtext: if the author is implying something rather than stating it, state it directly.',
+      'Identify the single core argument of the section and state it clearly at the top.',
+      'If there are multiple valid interpretations of a sentence, flag this explicitly.',
+      'Connect each new point to the previous one with a brief bridging sentence.',
+      'Avoid relying on tone or implication — be literal and direct.',
+    ],
+
+    // Profile 3: Hyperfocus reader — reads a lot, needs organization and retention, not simplification
+    "hyperfocus": [
+      'COGNITIVE STRATEGY: This user is a strong reader who hyperfocuses. Your job is structure and retention, not simplification.',
+      'Do NOT simplify vocabulary or water down nuance — preserve full technical depth.',
+      'Provide a 2-line "takeaway" at the end of each section summarizing the key idea for later recall.',
+      'Use consistent heading hierarchy so the user can navigate non-linearly.',
+      'Bold key terms and novel concepts — this user scans fast and needs anchors.',
+      'If the section contains a list of related items, group them by theme.',
+      'Preserve the original argument structure — this user wants to engage with the author\'s reasoning, not a flattened version.',
+    ],
+
+  }[profile.profileType] || [];
+
+  const lines = [...base, '', ...strategy];
 
   if (profile.notes?.trim()) {
     lines.push(`\nDirect note from the user: "${profile.notes.trim()}"`);
@@ -70,6 +111,52 @@ ${feedbackSummary}
 }
 
 // ================================================================
+// SQ4R — Pre-reading question generator
+// Fires for load-reducer and comprehension-gap profiles.
+// Returns an array of 2-3 question strings, or null if skipped.
+// ================================================================
+async function generateSQ4RQuestions(pageText, profile) {
+  if (profile.profileType === "hyperfocus") return null;
+
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 300,
+        system: `You generate pre-reading focus questions for a neurodivergent reader.
+Given a section of text, return ONLY a JSON array of 2-3 short questions the reader should
+try to answer as they read. Questions should be concrete and specific to this text.
+No preamble, no markdown fences. Return raw JSON array only. Example: ["What problem does this solve?","Who does this affect?"]`,
+        messages: [{
+          role: "user",
+          content: `Generate focus questions for this section:\n\n${pageText.slice(0, 600)}`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    if (data.error) return null;
+
+    const raw = data.content[0].text.trim().replace(/```json|```/gi, "").trim();
+    const questions = JSON.parse(raw);
+    return Array.isArray(questions) ? questions.slice(0, 3) : null;
+  } catch (e) {
+    console.log("Synapse: SQ4R question generation skipped:", e.message);
+    return null;
+  }
+}
+
+// ================================================================
 // FEEDBACK SUMMARY — converts raw log into useful prompt context
 // ================================================================
 function buildFeedbackSummary(feedbackLog) {
@@ -77,33 +164,41 @@ function buildFeedbackSummary(feedbackLog) {
     return "No feedback collected yet. Apply the cognitive profile strictly.";
   }
 
-  const recent = feedbackLog.slice(-20); // last 20 entries
+  const recent = feedbackLog.slice(-20);
 
-  const counts = { clearer: 0, complex: 0, simple: 0 };
+  const counts = { clearer: 0, complex: 0, simple: 0, "off-topic": 0 };
   const notes = [];
   let totalTime = 0;
   let totalRead = 0;
+  let hardSessions = 0;
 
   recent.forEach(entry => {
     if (entry.reaction) counts[entry.reaction] = (counts[entry.reaction] || 0) + 1;
     if (entry.note) notes.push(entry.note);
     if (entry.timeSpentSeconds) totalTime += entry.timeSpentSeconds;
     if (entry.readProgress) totalRead += entry.readProgress;
+    if (entry.sessionDifficulty === "hard") hardSessions++;
   });
 
   const avgTime = Math.round(totalTime / recent.length);
   const avgRead = Math.round(totalRead / recent.length);
 
   let summary = `Based on ${recent.length} interactions:\n`;
-  summary += `- Reactions: ${counts.clearer} "clearer", ${counts.complex} "too complex", ${counts.simple} "too simple"\n`;
+  summary += `- Reactions: ${counts.clearer} "clearer", ${counts.complex} "too complex", ${counts.simple} "too simple", ${counts["off-topic"]} "off-topic"\n`;
   summary += `- Average time reading a card: ${avgTime} seconds\n`;
   summary += `- Average scroll depth: ${avgRead}%\n`;
+  if (hardSessions > 0) {
+    summary += `- ${hardSessions} sessions where user reported a hard reading day. On hard days, use shorter chunks and simpler sentences even if the profile says otherwise.\n`;
+  }
 
   if (counts.complex > counts.clearer) {
     summary += `- IMPORTANT: This user frequently finds reformats too complex. Simplify further — shorter sentences, fewer nested points, more white space.\n`;
   }
   if (counts.simple > counts.clearer) {
     summary += `- IMPORTANT: This user finds reformats too simplified. Add more detail and preserve nuance.\n`;
+  }
+  if (counts["off-topic"] > 2) {
+    summary += `- IMPORTANT: This user frequently finds reformats miss the point. Focus harder on the central argument — don't bury it in supporting detail.\n`;
   }
   if (avgRead < 40) {
     summary += `- This user stops reading cards early. Lead with the most important information first.\n`;
@@ -130,7 +225,7 @@ function getFullConfig() {
       ["cognitiveProfile", "feedbackLog"],
       (result) => {
         resolve({
-          profile: result.cognitiveProfile || defaultProfile,
+          profile: { ...defaultProfile, ...(result.cognitiveProfile || {}) },
           feedbackLog: result.feedbackLog || [],
         });
       }
@@ -233,14 +328,13 @@ async function callClaudeWithDocument(base64Data, mediaType, profile, feedbackLo
 }
 
 // ================================================================
-// SECTION ANALYSIS — identifies logical sections from page text
+// SECTION ANALYSER
 // ================================================================
 const SECTION_SYSTEM_PROMPT = `You are a document structure analyser.
-Read the page text and divide it into 3–8 meaningful logical sections.
-Return ONLY a valid JSON array — no markdown, no explanation, nothing else.
-Each element must have exactly these keys:
-  "title"   — short section heading (max 6 words)
-  "content" — a brief 1-2 sentence excerpt that identifies this section. Do NOT copy large blocks of text.
+Given a block of webpage text, split it into logical reading sections.
+Return ONLY a valid JSON array. Each element must have exactly three keys:
+  "title"   — a short heading for this section (5 words max)
+  "content" — the full text belonging to this section
   "summary" — one sentence describing what this section covers
 If the page has fewer than 3 distinguishable sections, return as many as exist.
 Never return fewer than 1 element.`;
@@ -264,13 +358,12 @@ async function analyseSections(pageText) {
       messages: [{ role: "user", content: `Analyse and split into sections:\n\n${pageText}` }]
     })
   });
+
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
   const raw = data.content[0].text;
-
   if (!raw) throw new Error("Empty response from LLM.");
 
-  // Strip markdown code fences if the model added them
   const clean = raw.replace(/```json|```/gi, "").trim();
 
   let sections;
@@ -285,13 +378,14 @@ async function analyseSections(pageText) {
     throw new Error("LLM returned no sections.");
   }
 
-  // Validate each entry has the required keys
   return sections.filter(s => s.title && s.content);
 }
 
 // ================================================================
 // PROFILE AUTO-UPDATE
-// — After every 10 feedback entries, propose a profile amendment
+// — After every 10 feedback entries, propose a profile amendment.
+// Bug fix: profile was referenced from outer scope without being
+// passed in. Now fetches it properly before updating.
 // ================================================================
 async function maybeUpdateProfile(feedbackLog) {
   if (feedbackLog.length % 10 !== 0 || feedbackLog.length === 0) return;
@@ -299,6 +393,7 @@ async function maybeUpdateProfile(feedbackLog) {
   const apiKey = getApiKey();
   if (!apiKey) return;
 
+  const { profile } = await getFullConfig();
   const summary = buildFeedbackSummary(feedbackLog);
 
   try {
@@ -317,7 +412,8 @@ async function maybeUpdateProfile(feedbackLog) {
 Based on feedback data, suggest minimal updates to a user's cognitive profile.
 Return ONLY a valid JSON object with the same keys as the profile.
 Only change values that the feedback clearly supports changing.
-Do not add new keys. Return the complete profile with updates applied.`,
+Do not add new keys. Do not change profileType unless off-topic reactions dominate.
+Return the complete profile with updates applied.`,
         messages: [{
           role: "user",
           content: `Current profile:\n${JSON.stringify(profile, null, 2)}\n\nFeedback summary:\n${summary}\n\nReturn the updated profile JSON only.`
@@ -332,9 +428,8 @@ Do not add new keys. Return the complete profile with updates applied.`,
     const clean = raw.replace(/```json|```/g, '').trim();
     const updated = JSON.parse(clean);
 
-    // Save updated profile and store a pending suggestion for popup to show
     chrome.storage.local.set({
-      cognitiveProfile: updated,
+      cognitiveProfile: { ...defaultProfile, ...updated },
       pendingProfileUpdate: {
         ts: Date.now(),
         message: "Synapse updated your profile based on your feedback.",
@@ -362,6 +457,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ error: err.message });
       }
     })();
+    return true;
+  }
+
+  // ── SQ4R pre-reading questions ──
+  if (msg.type === "GET_SQ4R_QUESTIONS") {
+    getFullConfig().then(async ({ profile }) => {
+      try {
+        const questions = await generateSQ4RQuestions(msg.pageText, profile);
+        sendResponse({ questions });
+      } catch (err) {
+        sendResponse({ questions: null });
+      }
+    });
     return true;
   }
 
@@ -414,7 +522,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // ── Save profile ──
   if (msg.type === "SAVE_PROFILE") {
     chrome.storage.local.set(
-      { cognitiveProfile: msg.profile },
+      { cognitiveProfile: { ...defaultProfile, ...msg.profile } },
       () => sendResponse({ success: true })
     );
     return true;

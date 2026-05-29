@@ -17,6 +17,9 @@ const S = {
   activeCardIdx: null,
   observer: null,
   analysing: false,
+  sessionDifficulty: 'normal', // 'hard' | 'normal' | 'easy'
+  focusMode: false,
+  bionicReading: false,
 };
 
 const Z = {
@@ -381,6 +384,53 @@ color:#333!important;margin:1.4rem 0 .4rem!important}
 .synapse-reader-content strong{color:${C.g900}!important;font-weight:700!important}
 .synapse-reader-content mark{background:${C.greenLight}!important;color:${C.greenDeep}!important;
 padding:1px 6px!important;border-radius:3px!important;font-weight:500!important}
+
+/* SQ4R PRE-READING QUESTIONS */
+.sc-sq4r{padding:12px 18px!important;border-bottom:1px solid ${C.g100}!important;
+background:${C.greenLight}!important}
+.sc-sq4r-label{font-size:10px!important;font-weight:700!important;letter-spacing:.08em!important;
+text-transform:uppercase!important;color:${C.greenDeep}!important;display:block!important;
+margin-bottom:8px!important;line-height:1!important}
+.sc-sq4r-list{display:flex!important;flex-direction:column!important;gap:5px!important;
+padding-left:0!important;margin:0!important}
+.sc-sq4r-item{font-size:11.5px!important;color:${C.greenDeep}!important;
+line-height:1.5!important;display:flex!important;gap:7px!important;align-items:flex-start!important}
+.sc-sq4r-item::before{content:'?'!important;font-weight:700!important;
+color:${C.green}!important;flex-shrink:0!important;line-height:1.5!important}
+
+/* BIONIC READING */
+.sc-body.s-bionic b,.sc-body.s-bionic strong{font-weight:800!important}
+.synapse-bionic-bold{font-weight:800!important}
+
+/* FOCUS MODE — dims everything except active section */
+body.synapse-focus-mode *:not(.synapse-section-wrap):not(.synapse-section-wrap *):not(#synapse-fab):not(#synapse-panel):not(#synapse-dock):not(#synapse-dock *):not(.synapse-card):not(.synapse-card *) {
+  opacity:.15!important;transition:opacity .3s!important;pointer-events:none!important;
+}
+body.synapse-focus-mode .synapse-section-wrap.s-active,
+body.synapse-focus-mode .synapse-section-wrap.s-active *,
+body.synapse-focus-mode #synapse-fab,
+body.synapse-focus-mode #synapse-panel,
+body.synapse-focus-mode #synapse-panel *,
+body.synapse-focus-mode #synapse-dock,
+body.synapse-focus-mode #synapse-dock *,
+body.synapse-focus-mode .synapse-card,
+body.synapse-focus-mode .synapse-card * {
+  opacity:1!important;pointer-events:auto!important;
+}
+
+/* SESSION DIFFICULTY PILL */
+.sp-difficulty-row{padding:10px 18px!important;border-bottom:1px solid ${C.g100}!important}
+.sp-difficulty-label{font-size:10px!important;font-weight:600!important;
+letter-spacing:.08em!important;text-transform:uppercase!important;
+color:${C.g400}!important;display:block!important;margin-bottom:7px!important}
+.sp-difficulty-opts{display:flex!important;gap:5px!important}
+.sp-diff-btn{flex:1!important;padding:6px 4px!important;border-radius:7px!important;
+border:1.5px solid ${C.g200}!important;background:${C.white}!important;
+font-size:11px!important;font-weight:600!important;cursor:pointer!important;
+color:${C.g600}!important;transition:all .15s!important;text-align:center!important;
+font-family:inherit!important;line-height:1.3!important}
+.sp-diff-btn:hover{border-color:${C.greenMid}!important;background:${C.greenLight}!important;color:${C.greenDeep}!important}
+.sp-diff-btn.s-active{background:${C.green}!important;border-color:${C.green}!important;color:white!important}
   `;
   document.head.appendChild(s);
 }
@@ -567,6 +617,61 @@ function renderAISections(aiSections) {
 }
 
 // ================================================================
+// BIONIC READING
+// Wraps the first ~45% of each word in a <b> tag.
+// Applied to the card body innerHTML when S.bionicReading is true.
+// ================================================================
+function applyBionicReading(html) {
+  // Parse into a temporary element and walk text nodes only
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const walker = document.createTreeWalker(tmp, NodeFilter.SHOW_TEXT, null);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  textNodes.forEach(tn => {
+    const replaced = tn.textContent.replace(/\b([a-zA-Z]{2,})\b/g, (word) => {
+      const boldLen = Math.ceil(word.length * 0.45);
+      return `<b class="synapse-bionic-bold">${word.slice(0, boldLen)}</b>${word.slice(boldLen)}`;
+    });
+    const span = document.createElement('span');
+    span.innerHTML = replaced;
+    tn.parentNode.replaceChild(span, tn);
+  });
+
+  return tmp.innerHTML;
+}
+
+// ================================================================
+// SQ4R — inject pre-reading questions above card body
+// ================================================================
+function injectSQ4RQuestions(card, questions) {
+  if (!questions || questions.length === 0) return;
+  const existing = card.querySelector('.sc-sq4r');
+  if (existing) existing.remove();
+
+  const block = document.createElement('div');
+  block.className = 'sc-sq4r';
+  block.innerHTML = `
+    <span class="sc-sq4r-label">Read to answer</span>
+    <ul class="sc-sq4r-list">
+      ${questions.map(q => `<li class="sc-sq4r-item">${q}</li>`).join('')}
+    </ul>`;
+
+  const body = card.querySelector('.sc-body');
+  if (body) card.insertBefore(block, body);
+}
+
+// ================================================================
+// FOCUS MODE
+// ================================================================
+function toggleFocusMode(on) {
+  S.focusMode = on;
+  document.body.classList.toggle('synapse-focus-mode', on);
+}
+
+// ================================================================
 // FLOATING CARD
 // ================================================================
 function openCard(idx) {
@@ -610,9 +715,25 @@ function openCard(idx) {
   // Use cache
   if (sec.cachedHTML) {
     sec.wrap?.classList.remove('s-loading');
-    showCardContent(card, sec, sec.cachedHTML);
+    const html = S.bionicReading ? applyBionicReading(sec.cachedHTML) : sec.cachedHTML;
+    showCardContent(card, sec, html);
+    // Still fetch SQ4R questions if not cached
+    if (!sec.cachedQuestions) {
+      chrome.runtime.sendMessage({ type: 'GET_SQ4R_QUESTIONS', pageText: sec.text }, (res) => {
+        sec.cachedQuestions = res?.questions || [];
+        injectSQ4RQuestions(card, sec.cachedQuestions);
+      });
+    } else {
+      injectSQ4RQuestions(card, sec.cachedQuestions);
+    }
     return;
   }
+
+  // Fetch SQ4R questions and reformat in parallel
+  chrome.runtime.sendMessage({ type: 'GET_SQ4R_QUESTIONS', pageText: sec.text }, (res) => {
+    sec.cachedQuestions = res?.questions || [];
+    injectSQ4RQuestions(card, sec.cachedQuestions);
+  });
 
   chrome.runtime.sendMessage(
     { type: 'CALL_LLM', pageText: sec.text },
@@ -621,7 +742,8 @@ function openCard(idx) {
       if (res?.html) {
         sec.cachedHTML = res.html;
         sec.wrap?.classList.add('s-done');
-        showCardContent(card, sec, res.html);
+        const html = S.bionicReading ? applyBionicReading(res.html) : res.html;
+        showCardContent(card, sec, html);
         updateDockPill(idx, 's-done');
       } else {
         card.querySelector('.sc-loading').style.display = 'none';
@@ -684,6 +806,7 @@ function injectFeedbackStrip(card, sec) {
       <button class="sc-reaction" data-val="clearer">✓ Clearer</button>
       <button class="sc-reaction" data-val="complex">↑ Too complex</button>
       <button class="sc-reaction" data-val="simple">↓ Too simple</button>
+      <button class="sc-reaction" data-val="off-topic">✗ Missed the point</button>
     </div>
     <div class="sc-feedback-input-row">
       <input class="sc-feedback-input" type="text"
@@ -732,6 +855,7 @@ function submitFeedback(sec, reaction, note, openTime, strip) {
     note: note || '',
     timeSpentSeconds: Math.round((Date.now() - openTime) / 1000),
     readProgress: Math.round(sec.readProgress * 100),
+    sessionDifficulty: S.sessionDifficulty,
   };
 
   chrome.storage.local.get('feedbackLog', (r) => {
@@ -1045,6 +1169,14 @@ function buildFloatingUI() {
       <button class="sp-btn ghost" id="sp-deactivate-btn" style="display:none">
         Deactivate
       </button>
+    </div>
+    <div class="sp-difficulty-row" id="sp-difficulty-row" style="display:none">
+      <span class="sp-difficulty-label">Today's reading feel</span>
+      <div class="sp-difficulty-opts">
+        <button class="sp-diff-btn" data-diff="hard">Hard day</button>
+        <button class="sp-diff-btn s-active" data-diff="normal">Normal</button>
+        <button class="sp-diff-btn" data-diff="easy">Flowing</button>
+      </div>
     </div>`;
 
   document.body.appendChild(fab);
@@ -1089,6 +1221,15 @@ function buildFloatingUI() {
     S.mode === 'cards' ? deactivateSectionMode() : revertFullPage();
   });
 
+  // Difficulty buttons
+  panel.querySelectorAll('.sp-diff-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      panel.querySelectorAll('.sp-diff-btn').forEach(b => b.classList.remove('s-active'));
+      btn.classList.add('s-active');
+      S.sessionDifficulty = btn.dataset.diff;
+    });
+  });
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeCard();
   });
@@ -1126,11 +1267,15 @@ function updatePanelState() {
       mainBtn.style.display = 'none';
       deacBtn.style.display = 'block';
       deacBtn.textContent = 'Remove section cards';
+      const diffRow = document.getElementById('sp-difficulty-row');
+      if (diffRow) diffRow.style.display = 'block';
     } else {
       hint.textContent = 'Claude reads the page and adds cards to each section.';
       mainBtn.style.display = 'block';
       mainBtn.textContent = 'Activate on this page';
       deacBtn.style.display = 'none';
+      const diffRow = document.getElementById('sp-difficulty-row');
+      if (diffRow) diffRow.style.display = 'none';
     }
   } else {
     if (S.fullpageActive) {

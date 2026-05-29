@@ -1,13 +1,14 @@
 // ── State ──────────────────────────────────────────────────────────
 const state = {
   currentStep: 0,
-  preferredFormat: 'bullet points',
-  chunkSize: 'short',
+  profileType:        'load-reducer',  // NEW: cognitive strategy type
+  preferredFormat:    'bullet points',
+  chunkSize:          'short',
   needsExamplesFirst: true,
-  simplifyVocab: false,
-  maxNestingDepth: 2,
-  useHeaders: true,
-  notes: '',
+  simplifyVocab:      false,
+  maxNestingDepth:    2,
+  useHeaders:         true,
+  notes:              '',
 };
 
 // ── Step navigation ────────────────────────────────────────────────
@@ -22,15 +23,13 @@ function showStep(n) {
 }
 
 function updateSidebarIndicators(n) {
-  // Steps 1, 2, 3 map to sidebar indicators data-step="1/2/3"
   document.querySelectorAll('.step-indicator').forEach(el => {
     const s = parseInt(el.dataset.step);
     el.classList.remove('active', 'done');
-    if (s < n)       el.classList.add('done');
+    if (s < n)        el.classList.add('done');
     else if (s === n) el.classList.add('active');
   });
 }
-
 
 // ── Generic segmented / card option pickers ─────────────────────────
 function bindOptions(containerId, stateKey, isNumber = false) {
@@ -41,27 +40,29 @@ function bindOptions(containerId, stateKey, isNumber = false) {
       container.querySelectorAll('[data-val]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       let val = btn.dataset.val;
-      if (val === 'true')  val = true;
+      if (val === 'true')       val = true;
       else if (val === 'false') val = false;
-      else if (isNumber)   val = parseInt(val);
+      else if (isNumber)        val = parseInt(val);
       state[stateKey] = val;
     });
   });
 }
 
-bindOptions('format-opts',   'preferredFormat');
-bindOptions('chunk-opts',    'chunkSize');
-bindOptions('examples-opts', 'needsExamplesFirst');
-bindOptions('vocab-opts',    'simplifyVocab');
-bindOptions('nesting-opts',  'maxNestingDepth', true);
-bindOptions('headers-opts',  'useHeaders');
+bindOptions('profile-type-opts', 'profileType');
+bindOptions('format-opts',       'preferredFormat');
+bindOptions('chunk-opts',        'chunkSize');
+bindOptions('examples-opts',     'needsExamplesFirst');
+bindOptions('vocab-opts',        'simplifyVocab');
+bindOptions('nesting-opts',      'maxNestingDepth', true);
+bindOptions('headers-opts',      'useHeaders');
 
 // ── Step 0: Welcome ────────────────────────────────────────────────
 document.getElementById('welcome-next').addEventListener('click', () => showStep(1));
 
-// ── Step 1: Reading style → Step 3: Fine-tune ─────────────────────
+// ── Step 1: Profile type ──────────────────────────────────────────
+document.getElementById('step1-next').addEventListener('click', () => showStep(2));
 
-// ── Step 2: Reading style ──────────────────────────────────────────
+// ── Step 2: Reading style ─────────────────────────────────────────
 document.getElementById('step2-next').addEventListener('click', () => showStep(3));
 document.getElementById('step2-back').addEventListener('click', () => showStep(1));
 
@@ -70,6 +71,7 @@ document.getElementById('step3-finish').addEventListener('click', () => {
   state.notes = document.getElementById('notes').value.trim();
 
   const profile = {
+    profileType:        state.profileType,
     preferredFormat:    state.preferredFormat,
     chunkSize:          state.chunkSize,
     needsExamplesFirst: state.needsExamplesFirst,
@@ -85,7 +87,7 @@ document.getElementById('step3-finish').addEventListener('click', () => {
   );
 });
 
-document.getElementById('step3-back').addEventListener('click', () => showStep(1));
+document.getElementById('step3-back').addEventListener('click', () => showStep(2));
 
 // ── Done ───────────────────────────────────────────────────────────
 document.getElementById('done-close').addEventListener('click', () => {
