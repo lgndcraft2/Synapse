@@ -1,53 +1,45 @@
-# Synapse 🧠
+# Synapse
 
-**Synapse** is a cognitive accessibility Chrome extension that leverages Anthropic's Claude to dynamically restructure, reformat, and summarize web content to perfectly match *your* unique brain and reading preferences.
+Synapse is a cognitive accessibility Chrome extension that restructures webpages and documents around the user's cognitive profile.
 
-Whether you need high-level bullet points, simplified language without jargon, or deep technical summaries, Synapse reconstructs the web for you in real-time.
+## Current Features
 
-## Features
+- Section Cards: AI-detected page sections with clickable floating reformats.
+- Full Page Reformat: replaces the main page content with a profile-matched version.
+- Document Reader: detects PDF, TXT, CSV, and Markdown files opened in Chrome.
+- Cognitive profiles: Load Reducer, Comprehension Gap, and Hyperfocus Reader.
+- Adaptive feedback: tracks reactions, read time, scroll depth, notes, and hard-day state.
+- SQ4R questions: generated for Load Reducer and Comprehension Gap profiles.
+- Focus mode and bionic reading: session controls in the page panel.
+- Media preservation: full-page media reinjection and section-card media cloning.
+- Provider routing: free Gemini Flash pool and premium Claude Sonnet path.
 
-- **Section Cards:** Subtly highlights readable sections of any webpage. Click a section to instantly generate a summarized, floating "cognitive card" tailored to your profile.
-- **Full Page Reformat:** Restructures the entire webpage into an easy-to-read, clean layout based on your needs.
-- **Document Reader:** Drag and drop or open any PDF, CSV, TXT, or Markdown file in Chrome to launch the Synapse Document Reader, which reformats dense documents for effortless consumption.
-- **Continuous Learning:** Synapse learns from your feedback! Thumbs up or thumbs down the reformatted content, and the extension will automatically adjust your cognitive profile in the background.
+## Model Setup
 
----
+Open the extension popup after onboarding and configure model settings:
 
-## Installation Guide
+- Free tier: add one or more Gemini API keys, one per line. Synapse rotates keys round-robin and skips recently rate-limited keys.
+- Premium tier: add an Anthropic API key and select Premium or Claude routing.
+- Auto provider: uses Gemini first for free routing and can fall back to Claude if a Claude key is configured.
 
-Because Synapse is a developer project taking advantage of direct API access, it is currently side-loaded as an "unpacked extension". Follow these steps to get it running:
+No API keys are committed to the repo. Local testing keys are stored in `chrome.storage.local`.
 
-### 1. Add your Claude API Key
-Before installing, you must provide your own Anthropic Claude API key.
-1. Open the `background.js` file in a code editor.
-2. Find line 4 at the top of the file:
-   ```javascript
-   const CLAUDE_API_KEY = "YOUR_API_KEY_HERE";
-   ```
-3. Replace the string with your active Claude API key and save the file. *(Note: Synapse uses the powerful Claude 3.5 Sonnet model and the new document processing beta).*
+## Installation
 
-### 2. Install in Chrome
-1. Open Google Chrome.
-2. Type `chrome://extensions/` into the URL bar and hit Enter.
-3. In the top right corner of the Extensions page, toggle **Developer mode** to **ON**.
-4. Click the **Load unpacked** button that appears in the top left.
-5. Select the `Synapse OS` folder (the folder containing `manifest.json`, `background.js`, etc.) and click Select Folder.
+1. Open Chrome and go to `chrome://extensions/`.
+2. Enable Developer mode.
+3. Click Load unpacked.
+4. Select this `Synapse OS` folder.
+5. Complete onboarding from the extension popup.
 
-Synapse is now installed! Pin it to your Chrome toolbar for easy access.
+## Tech Stack
 
----
+- Manifest V3 Chrome Extension
+- Vanilla JavaScript, HTML, and CSS
+- `chrome.storage.local` for cognitive profile, feedback, provider config, and usage state
+- Google Gemini API for the free tier
+- Anthropic Claude API for the premium tier
 
-## 📖 How to Use
+## Product Status
 
-1. **Onboarding:** Click the Synapse extension icon in your Chrome toolbar. You will be greeted with a two-step setup to define your Reading Style, Detail Level, Structure, and Tone.
-2. **Activate:** Open any article, webpage, or local document. You'll see the green Synapse action button (FAB) floating in the bottom-right corner. 
-3. **Choose your Mode:**
-   - Click the button to open the control panel.
-   - Choose **Section Cards** and click the green button. Scroll the page—Synapse will draw subtle borders on the left side of paragraphs. Click any bordered paragraph to pull up a summary.
-   - Choose **Full Page** and click the green button to transform the entire page at once.
-4. **Documents:** Opening a local PDF in Chrome? Synapse will automatically detect it and offer a "Read PDF" button in the panel.
-
-## 🛠 Tech Stack
-- Vanilla JavaScript, HTML, CSS
-- Chrome Extensions API Version 3 (`chrome.storage.local`, `chrome.runtime`)
-- Anthropic API (`claude-3-5-sonnet-20241022`, including exact-document parsing beta headers).
+This repo now contains the core architecture described in the product brief. Subscription validation, real hosted key distribution, institutional SSO/admin tools, cross-device sync, and payment enforcement still need backend infrastructure outside the extension.

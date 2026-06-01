@@ -6,22 +6,28 @@
   <title>Synapse</title>
 </head>
 <body>
-
   <div class="header">
     <span class="logo">Synapse</span>
     <span class="tagline">Cognitive settings</span>
   </div>
 
-  <!-- Profile update banner (hidden until triggered) -->
   <div id="update-banner" class="update-banner" style="display:none">
-    <span class="update-icon">✦</span>
+    <span class="update-icon">*</span>
     <span id="update-msg">Synapse updated your profile.</span>
-    <button id="dismiss-update" class="update-dismiss">✕</button>
+    <button id="dismiss-update" class="update-dismiss">x</button>
   </div>
 
-  <!-- Profile -->
   <div class="section">
-    <label>How do you prefer to read?</label>
+    <label>Reading type</label>
+    <select id="profile-type">
+      <option value="load-reducer">Load Reducer</option>
+      <option value="comprehension-gap">Comprehension Gap</option>
+      <option value="hyperfocus">Hyperfocus Reader</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Preferred format</label>
     <select id="format">
       <option value="bullet points">Bullet points &amp; lists</option>
       <option value="short paragraphs">Short paragraphs</option>
@@ -30,10 +36,34 @@
     </select>
   </div>
 
+  <div class="grid-2">
+    <div class="section">
+      <label>Chunk size</label>
+      <select id="chunk-size">
+        <option value="short">Short</option>
+        <option value="medium">Medium</option>
+        <option value="long">Long</option>
+      </select>
+    </div>
+    <div class="section">
+      <label>Nesting</label>
+      <select id="nesting">
+        <option value="1">1 level</option>
+        <option value="2">2 levels</option>
+        <option value="3">3 levels</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="toggle-row">
+    <label><input type="checkbox" id="examples-first"> Examples first</label>
+    <label><input type="checkbox" id="simplify-vocab"> Simplify vocab</label>
+    <label><input type="checkbox" id="use-headers"> Section headers</label>
+  </div>
+
   <div class="section">
-    <label>Anything else the model should know?</label>
-    <textarea id="notes"
-      placeholder="e.g. I lose focus after 3 nested points. I need concrete examples before concepts."></textarea>
+    <label>User notes</label>
+    <textarea id="notes" placeholder="e.g. I lose focus after 3 nested points. I need concrete examples before concepts."></textarea>
   </div>
 
   <button id="save-btn">Save profile</button>
@@ -41,7 +71,38 @@
 
   <div class="divider"></div>
 
-  <!-- Feedback stats -->
+  <div class="section">
+    <label>Model tier</label>
+    <select id="tier">
+      <option value="free">Free - Gemini Flash pool</option>
+      <option value="premium">Premium - Claude Sonnet</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Provider</label>
+    <select id="provider">
+      <option value="auto">Auto</option>
+      <option value="gemini">Gemini</option>
+      <option value="claude">Claude</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Gemini keys</label>
+    <textarea id="gemini-keys" class="key-box" placeholder="One Gemini API key per line"></textarea>
+  </div>
+
+  <div class="section">
+    <label>Claude key</label>
+    <input id="claude-key" type="password" placeholder="Anthropic API key">
+  </div>
+
+  <button id="save-provider-btn" class="secondary">Save model settings</button>
+  <p id="usage-stats" class="feedback-stats">Loading usage...</p>
+
+  <div class="divider"></div>
+
   <div class="feedback-section">
     <div class="feedback-header">
       <span class="feedback-title">Learning history</span>

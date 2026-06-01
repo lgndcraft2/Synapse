@@ -12,12 +12,13 @@ const S = {
   currentSection: 0,
   originalHTML: null,
   fullpageActive: false,
+  fullpageMedia: null,
   panelOpen: false,
   activeCard: null,
   activeCardIdx: null,
   observer: null,
   analysing: false,
-  sessionDifficulty: 'normal', // 'hard' | 'normal' | 'easy'
+  sessionDifficulty: 'normal',
   focusMode: false,
   bionicReading: false,
 };
@@ -124,6 +125,15 @@ display:block!important;line-height:1!important}
 .sp-btn.primary:disabled{background:${C.greenMid}!important;cursor:not-allowed!important}
 .sp-btn.ghost{background:${C.g100}!important;color:${C.g600}!important}
 .sp-btn.ghost:hover{background:${C.g200}!important}
+.sp-tool-row{padding:0 18px 12px!important;border-bottom:1px solid ${C.g100}!important;
+display:flex!important;gap:7px!important}
+.sp-tool-btn{flex:1!important;padding:7px 5px!important;border-radius:8px!important;
+border:1.5px solid ${C.g200}!important;background:${C.white}!important;
+font-size:11px!important;font-weight:600!important;color:${C.g600}!important;
+cursor:pointer!important;font-family:inherit!important;line-height:1.2!important}
+.sp-tool-btn:hover{border-color:${C.greenMid}!important;background:${C.greenLight}!important;
+color:${C.greenDeep}!important}
+.sp-tool-btn.s-on{background:${C.green}!important;border-color:${C.green}!important;color:white!important}
 
 /* SECTION WRAPPERS — left-border highlight system */
 .synapse-section-wrap{display:block!important;
@@ -403,20 +413,29 @@ color:${C.green}!important;flex-shrink:0!important;line-height:1.5!important}
 .synapse-bionic-bold{font-weight:800!important}
 
 /* FOCUS MODE — dims everything except active section */
-body.synapse-focus-mode *:not(.synapse-section-wrap):not(.synapse-section-wrap *):not(#synapse-fab):not(#synapse-panel):not(#synapse-dock):not(#synapse-dock *):not(.synapse-card):not(.synapse-card *) {
+body.synapse-focus-mode.synapse-has-active *:not(.synapse-section-wrap):not(.synapse-section-wrap *):not(#synapse-fab):not(#synapse-panel):not(#synapse-dock):not(#synapse-dock *):not(.synapse-card):not(.synapse-card *) {
   opacity:.15!important;transition:opacity .3s!important;pointer-events:none!important;
 }
-body.synapse-focus-mode .synapse-section-wrap.s-active,
-body.synapse-focus-mode .synapse-section-wrap.s-active *,
-body.synapse-focus-mode #synapse-fab,
-body.synapse-focus-mode #synapse-panel,
-body.synapse-focus-mode #synapse-panel *,
-body.synapse-focus-mode #synapse-dock,
-body.synapse-focus-mode #synapse-dock *,
-body.synapse-focus-mode .synapse-card,
-body.synapse-focus-mode .synapse-card * {
+body.synapse-focus-mode.synapse-has-active .synapse-section-wrap.s-active,
+body.synapse-focus-mode.synapse-has-active .synapse-section-wrap.s-active *,
+body.synapse-focus-mode.synapse-has-active #synapse-fab,
+body.synapse-focus-mode.synapse-has-active #synapse-panel,
+body.synapse-focus-mode.synapse-has-active #synapse-panel *,
+body.synapse-focus-mode.synapse-has-active #synapse-dock,
+body.synapse-focus-mode.synapse-has-active #synapse-dock *,
+body.synapse-focus-mode.synapse-has-active .synapse-card,
+body.synapse-focus-mode.synapse-has-active .synapse-card * {
   opacity:1!important;pointer-events:auto!important;
 }
+
+/* MEDIA PRESERVATION — reinjected images stay in flow */
+.synapse-media-wrap{display:block!important;margin:16px 0!important;
+max-width:100%!important;line-height:0!important}
+.synapse-media-wrap img,.synapse-media-wrap video,
+.synapse-media-wrap figure,.synapse-media-wrap picture{
+max-width:100%!important;height:auto!important;display:block!important;
+border-radius:6px!important}
+.synapse-media-wrap iframe{max-width:100%!important;display:block!important}
 
 /* SESSION DIFFICULTY PILL */
 .sp-difficulty-row{padding:10px 18px!important;border-bottom:1px solid ${C.g100}!important}
@@ -485,7 +504,7 @@ function activateSectionMode() {
 
   const mainBtn = document.getElementById('sp-main-btn');
   if (mainBtn) { mainBtn.disabled = true; mainBtn.textContent = 'Reading page...'; }
-  showPanelHint('Claude is identifying sections...');
+  showPanelHint('Synapse is identifying sections...');
 
   chrome.runtime.sendMessage(
     { type: 'ANALYSE_SECTIONS', pageText },
@@ -577,6 +596,7 @@ function renderAISections(aiSections) {
       title: aiSec.title,
       summary: aiSec.summary || '',
       cachedHTML: null,
+      mediaItems: null,
       readProgress: 0,
     };
   });
@@ -593,6 +613,7 @@ function renderAISections(aiSections) {
       wrap.appendChild(sec.heading);
     }
     sec.wrap = wrap;
+    sec.mediaItems = cloneSectionMedia(sec);
 
     // Hover highlight
     wrap.addEventListener('mouseenter', () => {
@@ -611,7 +632,7 @@ function renderAISections(aiSections) {
   buildDock();
   S.active = true;
   document.getElementById('synapse-fab')?.classList.add('s-active');
-  showPanelHint(`${S.sections.length} sections identified by Claude.`);
+  showPanelHint(`${S.sections.length} sections identified.`);
   updatePanelState();
   setupScrollObserver();
 }
@@ -682,6 +703,7 @@ function openCard(idx) {
   S.activeCardIdx = idx;
   S.sections.forEach(s => s.wrap?.classList.remove('s-active'));
   sec.wrap?.classList.add('s-active', 's-loading');
+  document.body.classList.add('synapse-has-active');
   updateDockActive(idx);
 
   const card = document.createElement('div');
@@ -764,6 +786,12 @@ function showCardContent(card, sec, html) {
   const body = card.querySelector('.sc-body');
   body.classList.add('s-ready');
   body.innerHTML = html;
+  if (sec.mediaItems?.length) {
+    reinjectMedia(body, sec.mediaItems.map(item => ({
+      el: item.el.cloneNode(true),
+      position: item.position
+    })));
+  }
 
   body.addEventListener('scroll', () => {
     const p = body.scrollTop / (body.scrollHeight - body.clientHeight);
@@ -784,6 +812,7 @@ function closeCard() {
     S.sections[S.activeCardIdx]?.wrap?.classList.remove('s-active');
     updateDockActive(null);
   }
+  document.body.classList.remove('synapse-has-active');
   S.activeCardIdx = null;
 }
 
@@ -977,6 +1006,7 @@ function deactivateSectionMode() {
   S.sections = [];
   S.active = false;
   S.activeCardIdx = null;
+  document.body.classList.remove('synapse-has-active');
 
   const dock = document.getElementById('synapse-dock');
   if (dock) { dock.classList.remove('s-visible'); setTimeout(() => dock.remove(), 320); }
@@ -987,6 +1017,126 @@ function deactivateSectionMode() {
 }
 
 // ================================================================
+// IMAGE PRESERVATION UTILITIES
+// Extract media elements before sending text to Claude, then
+// stitch them back into Claude's output at the closest logical
+// position — so images never disappear during reformat.
+// ================================================================
+
+const MEDIA_SELECTOR = 'img, figure, picture, video, iframe[src*="youtube"], iframe[src*="vimeo"]';
+
+function cloneSectionMedia(sec) {
+  const candidates = [];
+  let cursor = sec.heading;
+  let steps = 0;
+
+  while (cursor && steps < 18) {
+    if (cursor.matches?.(MEDIA_SELECTOR)) candidates.push(cursor);
+    cursor.querySelectorAll?.(MEDIA_SELECTOR).forEach(el => candidates.push(el));
+    cursor = cursor.nextElementSibling;
+    if (cursor?.matches?.('h1,h2,h3,h4') && steps > 0) break;
+    steps++;
+  }
+
+  const total = Math.max(candidates.length - 1, 1);
+  return candidates.slice(0, 8).map((el, idx) => ({
+    el: el.cloneNode(true),
+    position: idx / total
+  }));
+}
+
+/**
+ * snapshotMedia(root)
+ * Walks root's DOM, lifts every media element out, and records
+ * where it sat as a fractional position (0–1) through the text
+ * content of root. Returns { placeholders, mediaItems }.
+ * placeholders are invisible <span> sentinels left in the DOM so
+ * revertMedia can put things back exactly.
+ */
+function snapshotMedia(root) {
+  const mediaItems = [];
+  const allText = root.innerText || root.textContent || '';
+  const totalLen = allText.length || 1;
+
+  root.querySelectorAll(MEDIA_SELECTOR).forEach((el, i) => {
+    // figure out how far through the document this element sits
+    const range = document.createRange();
+    range.setStartBefore(root);
+    range.setEndBefore(el);
+    const precedingText = range.toString();
+    const position = precedingText.length / totalLen; // 0.0 → 1.0
+
+    // leave a placeholder so we can revert cleanly
+    const placeholder = document.createElement('span');
+    placeholder.dataset.synapseMediaIdx = i;
+    placeholder.style.display = 'none';
+    el.parentNode.insertBefore(placeholder, el);
+
+    // lift the element
+    el.remove();
+
+    mediaItems.push({ el, position, placeholder });
+  });
+
+  return mediaItems;
+}
+
+/**
+ * reinjectedMedia(outputEl, mediaItems)
+ * Given Claude's reformatted output as a DOM element and the
+ * array from snapshotMedia, inserts each media element at the
+ * paragraph whose fractional position is closest to where the
+ * media was in the original.
+ */
+function reinjectMedia(outputEl, mediaItems) {
+  if (!mediaItems || mediaItems.length === 0) return;
+
+  // collect all block-level insertion points in the output
+  const blocks = Array.from(
+    outputEl.querySelectorAll('p, h1, h2, h3, h4, li, blockquote, div:not(:has(*))')
+  );
+  if (blocks.length === 0) blocks.push(outputEl);
+
+  const totalBlocks = blocks.length;
+
+  mediaItems.forEach(({ el, position }) => {
+    // find the block whose index-ratio is closest to the original position
+    let best = blocks[0];
+    let bestDiff = Infinity;
+    blocks.forEach((block, i) => {
+      const blockPos = i / (totalBlocks - 1 || 1);
+      const diff = Math.abs(blockPos - position);
+      if (diff < bestDiff) { bestDiff = diff; best = block; }
+    });
+
+    // wrap it so it stays visually inline with surrounding content
+    const wrapper = document.createElement('div');
+    wrapper.className = 'synapse-media-wrap';
+    wrapper.appendChild(el);
+    best.parentNode.insertBefore(wrapper, best.nextSibling);
+  });
+}
+
+/**
+ * revertMedia(mediaItems)
+ * Puts each media element back next to its placeholder and
+ * removes the placeholder. Used when reverting a full-page
+ * reformat back to the original HTML.
+ * (Note: for full-page revert we restore originalHTML entirely,
+ * so this is only needed if we ever do in-place revert without
+ * innerHTML swap.)
+ */
+function revertMedia(mediaItems) {
+  if (!mediaItems) return;
+  mediaItems.forEach(({ el, placeholder }) => {
+    if (placeholder.parentNode) {
+      placeholder.parentNode.insertBefore(el, placeholder);
+      placeholder.remove();
+    }
+  });
+}
+
+// ================================================================
 // FULL PAGE MODE
 // ================================================================
 function activateFullPage() {
@@ -994,8 +1144,14 @@ function activateFullPage() {
     'main,article,[role="main"],.content,#content'
   ) || document.body;
 
+  // Save original HTML for revert before touching anything
   if (!S.originalHTML) S.originalHTML = main.innerHTML;
 
+  // ── Lift all media out, record their positions ──────────────────
+  const mediaItems = snapshotMedia(main);
+  S.fullpageMedia = mediaItems; // stash so revertFullPage can restore
+
+  // ── Extract text-only content for Claude ────────────────────────
   const clone = main.cloneNode(true);
   clone.querySelectorAll('script,style,nav,footer,header').forEach(e => e.remove());
   const text = clone.innerText.slice(0, 8000);
@@ -1006,12 +1162,25 @@ function activateFullPage() {
   chrome.runtime.sendMessage({ type: 'CALL_LLM', pageText: text }, (res) => {
     if (btn) { btn.disabled = false; btn.textContent = 'Reformat full page'; }
     if (res?.html) {
-      main.innerHTML = `<div class="synapse-fp">${res.html}</div>`;
+      // ── Build the output container ───────────────────────────────
+      const fp = document.createElement('div');
+      fp.className = 'synapse-fp';
+      fp.innerHTML = res.html;
+
+      // ── Stitch images back in at their original positions ────────
+      reinjectMedia(fp, mediaItems);
+
+      // ── Swap the page content ────────────────────────────────────
+      main.innerHTML = '';
+      main.appendChild(fp);
+
       S.fullpageActive = true;
       showFullPageBar();
       document.getElementById('synapse-fab')?.classList.add('s-active');
       updatePanelState();
     } else {
+      // Reformat failed — put images back before showing the error
+      revertMedia(mediaItems);
       showPanelHint(res?.error || 'Something went wrong.', true);
     }
   });
@@ -1023,6 +1192,7 @@ function revertFullPage() {
   ) || document.body;
   if (S.originalHTML) { main.innerHTML = S.originalHTML; S.originalHTML = null; }
   S.fullpageActive = false;
+  S.fullpageMedia = null;
   hideFullPageBar();
   document.getElementById('synapse-fab')?.classList.remove('s-active');
   updatePanelState();
@@ -1057,7 +1227,7 @@ function activateDocumentMode() {
 
   const btn = document.getElementById('sp-main-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reading document...'; }
-  showPanelHint('Claude is extracting and reformatted the document...');
+  showPanelHint('Synapse is extracting and reformatting the document...');
   
   const fab = document.getElementById('synapse-fab');
   fab?.classList.add('s-analysing', 's-active');
@@ -1163,12 +1333,16 @@ function buildFloatingUI() {
     </div>
     <div class="sp-actions">
       <span class="sp-hint" id="sp-hint">
-        Claude reads the page and adds cards to each section.
+        Synapse reads the page and adds cards to each section.
       </span>
       <button class="sp-btn primary" id="sp-main-btn">Activate on this page</button>
       <button class="sp-btn ghost" id="sp-deactivate-btn" style="display:none">
         Deactivate
       </button>
+    </div>
+    <div class="sp-tool-row">
+      <button class="sp-tool-btn" id="sp-focus-btn" type="button">Focus</button>
+      <button class="sp-tool-btn" id="sp-bionic-btn" type="button">Bionic</button>
     </div>
     <div class="sp-difficulty-row" id="sp-difficulty-row" style="display:none">
       <span class="sp-difficulty-label">Today's reading feel</span>
@@ -1230,6 +1404,24 @@ function buildFloatingUI() {
     });
   });
 
+  document.getElementById('sp-focus-btn')?.addEventListener('click', (e) => {
+    const on = !S.focusMode;
+    toggleFocusMode(on);
+    e.currentTarget.classList.toggle('s-on', on);
+  });
+
+  document.getElementById('sp-bionic-btn')?.addEventListener('click', (e) => {
+    S.bionicReading = !S.bionicReading;
+    e.currentTarget.classList.toggle('s-on', S.bionicReading);
+    if (S.activeCard && S.activeCardIdx !== null) {
+      const sec = S.sections[S.activeCardIdx];
+      if (sec?.cachedHTML) {
+        const html = S.bionicReading ? applyBionicReading(sec.cachedHTML) : sec.cachedHTML;
+        showCardContent(S.activeCard, sec, html);
+      }
+    }
+  });
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeCard();
   });
@@ -1270,7 +1462,7 @@ function updatePanelState() {
       const diffRow = document.getElementById('sp-difficulty-row');
       if (diffRow) diffRow.style.display = 'block';
     } else {
-      hint.textContent = 'Claude reads the page and adds cards to each section.';
+      hint.textContent = 'Synapse reads the page and adds cards to each section.';
       mainBtn.style.display = 'block';
       mainBtn.textContent = 'Activate on this page';
       deacBtn.style.display = 'none';
