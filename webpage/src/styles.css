@@ -1689,8 +1689,54 @@ h2 {
   justify-content: space-between;
 }
 
-.auth-label-row a {
+.auth-label-row a,
+.auth-link-button {
   color: var(--primary);
+}
+
+.auth-link-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  transition: color 160ms ease;
+}
+
+.auth-link-button:hover {
+  color: var(--on-primary-fixed-variant);
+  text-decoration: underline;
+}
+
+.auth-reset-back {
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--outline-variant);
+  text-align: center;
+}
+
+.auth-reset-back button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: color 160ms ease;
+}
+
+.auth-reset-back button:hover {
+  color: var(--primary);
+}
+
+.auth-reset-back .app-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .auth-form input {
@@ -1744,6 +1790,11 @@ h2 {
 .auth-submit {
   width: 100%;
   margin-top: 4px;
+}
+
+.auth-submit .app-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .auth-divider {
