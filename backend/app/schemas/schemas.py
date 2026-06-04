@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Literal
 from datetime import datetime
 import uuid
@@ -54,21 +54,61 @@ class ProfileUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class CognitiveProfileSchema(BaseModel):
+    profile_type: Literal["load-reducer", "comprehension-gap", "hyperfocus"] = "load-reducer"
+    preferred_format: str = "bullet points"
+    chunk_size: Literal["short", "medium", "long"] = "short"
+    needs_examples_first: bool = True
+    simplify_vocab: bool = False
+    max_nesting_depth: int = 2
+    use_headers: bool = True
+    notes: str = ""
+
+
 # ── Reformat ─────────────────────────────────────────────────────
 
 class ReformatRequest(BaseModel):
-    page_text: str
+    page_text: str = Field(..., max_length=500000)
     page_url: Optional[str] = None
     page_title: Optional[str] = None
     session_difficulty: Literal["hard", "normal", "easy"] = "normal"
     mode: Literal["cards", "fullpage", "document"] = "cards"
     fingerprint: Optional[str] = None   # for anonymous/free users
+    profile: Optional[CognitiveProfileSchema] = None
 
 
 class ReformatResponse(BaseModel):
     html: str
     questions: Optional[list[str]] = None   # SQ4R questions
     model_used: str                          # "gemini-flash" or "claude-sonnet"
+
+
+# ── Section Analysis ────────────────────────────────────────────
+
+class AnalyseSectionsRequest(BaseModel):
+    page_text: str = Field(..., max_length=500000)
+    fingerprint: Optional[str] = None
+    profile: Optional[CognitiveProfileSchema] = None
+
+
+class SectionInfo(BaseModel):
+    title: str
+    content: str
+    summary: str
+
+
+class AnalyseSectionsResponse(BaseModel):
+    sections: list[SectionInfo]
+
+
+# ── Document Reformat ───────────────────────────────────────────
+
+class DocumentReformatRequest(BaseModel):
+    base64_data: str
+    media_type: str
+    session_difficulty: Literal["hard", "normal", "easy"] = "normal"
+    fingerprint: Optional[str] = None
+    profile: Optional[CognitiveProfileSchema] = None
 
 
 # ── Feedback ─────────────────────────────────────────────────────

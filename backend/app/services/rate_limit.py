@@ -1,10 +1,11 @@
 import redis.asyncio as aioredis
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.core.config import settings
 from app.models.models import UsageTracking, User
 from datetime import datetime
+import hashlib
 
 # ── Redis client (Upstash) ────────────────────────────────────────
 redis_client = aioredis.from_url(
@@ -19,16 +20,12 @@ async def check_rate_limit(
     db: AsyncSession,
     user: User | None,
     fingerprint: str | None,
+    request: Request,
 ) -> None:
     """
     Enforces rate limits for free tier users.
     Premium/institutional users bypass all limits.
     Raises HTTP 429 if limit is exceeded.
-
-    Strategy:
-    - Daily limit tracked in Redis (TTL = seconds until midnight)
-    - Lifetime limit tracked in PostgreSQL
-    - Fingerprint used for anonymous users, user_id for authenticated
     """
 
     # ── Premium users — no limits ─────────────────────────────────
@@ -36,72 +33,96 @@ async def check_rate_limit(
         return
 
     # ── Build the rate limit key ──────────────────────────────────
-    # Prefer user_id for authenticated free users (harder to abuse),
-    # fall back to device fingerprint for anonymous users
     if user:
         daily_key = f"rl:daily:user:{user.id}"
         lifetime_identifier = str(user.id)
-    elif fingerprint:
-        daily_key = f"rl:daily:fp:{fingerprint}"
-        lifetime_identifier = fingerprint
     else:
-        # No way to identify — block
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit: unable to identify request origin.",
-        )
+        client_ip = request.client.host
+        raw_id = f"{client_ip}:{fingerprint or 'none'}"
+        hashed_id = hashlib.sha256(raw_id.encode()).hexdigest()[:16]
+        daily_key = f"rl:daily:anon:{hashed_id}"
+        lifetime_identifier = f"anon:{hashed_id}"
+        
+        # IP-based guard
+        ip_daily_key = f"rl:daily:ip:{client_ip}"
+        ip_daily_count = await redis_client.get(ip_daily_key)
+        if ip_daily_count and int(ip_daily_count) > settings.FREE_DAILY_LIMIT * 2:
+             raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests from this IP address today.",
+            )
 
     # ── Daily limit (Redis) ───────────────────────────────────────
-    current_daily = await redis_client.get(daily_key)
-    daily_count = int(current_daily) if current_daily else 0
+    # We increment FIRST and check the result for atomicity
+    daily_count = await redis_client.incr(daily_key)
+    
+    from datetime import timedelta
+    now = datetime.utcnow()
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    seconds_until_midnight = int((tomorrow - now).total_seconds())
+    
+    if daily_count == 1:
+        await redis_client.expire(daily_key, seconds_until_midnight)
 
-    if daily_count >= settings.FREE_DAILY_LIMIT:
+    if daily_count > settings.FREE_DAILY_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Daily limit of {settings.FREE_DAILY_LIMIT} requests reached. "
-                   f"Upgrade to Premium for unlimited access.",
-            headers={"Retry-After": "86400"},
+            detail=f"Daily limit of {settings.FREE_DAILY_LIMIT} requests reached.",
+            headers={"Retry-After": str(seconds_until_midnight)},
         )
 
-    # Increment daily count — TTL of 86400 seconds (24 hours)
-    pipe = redis_client.pipeline()
-    pipe.incr(daily_key)
-    pipe.expire(daily_key, 86400)
-    await pipe.execute()
+    # Increment IP-based limit for anonymous users
+    if not user:
+        client_ip = request.client.host
+        ip_daily_key = f"rl:daily:ip:{client_ip}"
+        ip_count = await redis_client.incr(ip_daily_key)
+        if ip_count == 1:
+            await redis_client.expire(ip_daily_key, seconds_until_midnight)
 
     # ── Lifetime limit (PostgreSQL) ───────────────────────────────
+    from sqlalchemy.exc import IntegrityError
+    
     result = await db.execute(
         select(UsageTracking).where(UsageTracking.fingerprint == lifetime_identifier)
     )
     tracking = result.scalar_one_or_none()
 
     if tracking is None:
-        # First time we've seen this identifier
-        tracking = UsageTracking(
-            fingerprint=lifetime_identifier,
-            user_id=user.id if user else None,
-            lifetime_requests=1,
-            first_seen=datetime.utcnow(),
-            last_seen=datetime.utcnow(),
+        # Isolated insertion to handle race conditions without session rollback
+        async with db.begin_nested():
+            try:
+                tracking = UsageTracking(
+                    fingerprint=lifetime_identifier,
+                    user_id=user.id if user else None,
+                    lifetime_requests=1,
+                    first_seen=datetime.utcnow(),
+                    last_seen=datetime.utcnow(),
+                )
+                db.add(tracking)
+                await db.flush()
+                return
+            except IntegrityError:
+                # Another concurrent request inserted it — catch and proceed to update
+                pass
+        
+        # Refetch the now-existing record
+        result = await db.execute(
+            select(UsageTracking).where(UsageTracking.fingerprint == lifetime_identifier)
         )
-        db.add(tracking)
-        await db.flush()
-        return
+        tracking = result.scalar_one_or_none()
+        if not tracking:
+            raise HTTPException(status_code=500, detail="Rate limit tracking error.")
 
     if tracking.flagged_for_abuse:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account has been flagged for abuse.",
-        )
+        raise HTTPException(status_code=403, detail="Account flagged for abuse.")
 
     if tracking.lifetime_requests >= settings.FREE_LIFETIME_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Free tier lifetime limit of {settings.FREE_LIFETIME_LIMIT} requests reached. "
-                   f"Upgrade to Premium for unlimited access.",
+            detail=f"Free tier lifetime limit reached.",
         )
 
-    # Increment lifetime count
+    # Increment lifetime count (atomic update)
     await db.execute(
         update(UsageTracking)
         .where(UsageTracking.fingerprint == lifetime_identifier)

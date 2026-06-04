@@ -72,33 +72,18 @@
   <div class="divider"></div>
 
   <div class="section">
-    <label>Model tier</label>
-    <select id="tier">
-      <option value="free">Free - Gemini Flash pool</option>
-      <option value="premium">Premium - Claude Sonnet</option>
-    </select>
+    <label>Backend API URL</label>
+    <input id="backend-url" type="url" placeholder="http://localhost:8000">
   </div>
 
   <div class="section">
-    <label>Provider</label>
-    <select id="provider">
-      <option value="auto">Auto</option>
-      <option value="gemini">Gemini</option>
-      <option value="claude">Claude</option>
-    </select>
+    <label>Account token</label>
+    <input id="backend-token" type="password" placeholder="Paste Supabase access token for premium billing">
   </div>
 
-  <div class="section">
-    <label>Gemini keys</label>
-    <textarea id="gemini-keys" class="key-box" placeholder="One Gemini API key per line"></textarea>
-  </div>
+  <p id="billing-status" class="feedback-stats">Billing status not checked.</p>
 
-  <div class="section">
-    <label>Claude key</label>
-    <input id="claude-key" type="password" placeholder="Anthropic API key">
-  </div>
-
-  <button id="save-provider-btn" class="secondary">Save model settings</button>
+  <button id="save-provider-btn" class="secondary">Save backend settings</button>
   <p id="usage-stats" class="feedback-stats">Loading usage...</p>
 
   <div class="divider"></div>

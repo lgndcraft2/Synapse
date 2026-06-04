@@ -20,10 +20,9 @@ const updateMsg = document.getElementById("update-msg");
 const dismissBtn = document.getElementById("dismiss-update");
 const feedbackStats = document.getElementById("feedback-stats");
 const clearFeedback = document.getElementById("clear-feedback");
-const tierSelect = document.getElementById("tier");
-const providerSelect = document.getElementById("provider");
-const geminiKeys = document.getElementById("gemini-keys");
-const claudeKey = document.getElementById("claude-key");
+const backendUrl = document.getElementById("backend-url");
+const backendToken = document.getElementById("backend-token");
+const billingStatus = document.getElementById("billing-status");
 const saveProviderBtn = document.getElementById("save-provider-btn");
 const usageStats = document.getElementById("usage-stats");
 
@@ -56,16 +55,26 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
 
 chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
   const config = res?.providerConfig || {};
-  tierSelect.value = config.tier || "free";
-  providerSelect.value = config.preferredProvider || "auto";
-  geminiKeys.value = (config.geminiApiKeys || []).join("\n");
-  claudeKey.value = config.claudeApiKey || "";
+  backendUrl.value = config.backendBaseUrl || "http://localhost:8000";
+  backendToken.value = config.backendAccessToken || "";
 
   const usage = res?.providerUsage || {};
   const today = usage[todayKey()] || { requests: 0, providers: {} };
   const gemini = today.providers?.gemini || 0;
   const claude = today.providers?.claude || 0;
-  usageStats.textContent = `${today.requests || 0} request${today.requests === 1 ? "" : "s"} today - ${gemini} Gemini, ${claude} Claude`;
+  const backend = today.providers?.backend || today.providers?.["gemini-flash"] || today.providers?.["claude-sonnet"] || 0;
+  usageStats.textContent = `${today.requests || 0} request${today.requests === 1 ? "" : "s"} today — ${backend + gemini + claude} requests via backend`;
+
+  chrome.runtime.sendMessage({ type: "GET_BILLING_STATUS" }, (billingRes) => {
+    if (billingRes?.status?.authenticated) {
+      const status = billingRes.status;
+      billingStatus.textContent = `Billing: ${status.plan || "unknown"} (${status.status || "unknown"})`;
+    } else if (billingRes?.error) {
+      billingStatus.textContent = `Billing: ${billingRes.error}`;
+    } else {
+      billingStatus.textContent = "Billing: anonymous free-tier rate limits active.";
+    }
+  });
 });
 
 chrome.runtime.sendMessage({ type: "GET_FEEDBACK" }, (res) => {
@@ -110,14 +119,13 @@ saveBtn.addEventListener("click", () => {
 
 saveProviderBtn.addEventListener("click", () => {
   const providerConfig = {
-    tier: tierSelect.value,
-    preferredProvider: providerSelect.value,
-    geminiApiKeys: geminiKeys.value.split(/\r?\n/).map(key => key.trim()).filter(Boolean),
-    claudeApiKey: claudeKey.value.trim()
+    backendBaseUrl: backendUrl.value.trim().replace(/\/+$/, ""),
+    backendAccessToken: backendToken.value.trim(),
+    useBackendProxy: true
   };
 
   chrome.runtime.sendMessage({ type: "SAVE_PROVIDER_CONFIG", providerConfig }, () => {
-    setStatus("Model settings saved.");
+    setStatus("Backend settings saved.");
   });
 });
 

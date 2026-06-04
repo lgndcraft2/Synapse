@@ -5,6 +5,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
     "@vitejs/plugin-react": "^5.0.0",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",

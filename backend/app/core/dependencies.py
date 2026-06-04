@@ -49,6 +49,34 @@ async def get_current_user(
     return user
 
 
+async def get_token_payload(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> dict:
+    """
+    Validates the Supabase JWT and returns the payload.
+    Does NOT check if the user exists in the local database.
+    """
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+        if payload.get("sub") is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing sub claim",
+            )
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+
 async def get_premium_user(
     current_user: User = Depends(get_current_user),
 ) -> User:

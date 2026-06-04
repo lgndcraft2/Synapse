@@ -1,10 +1,30 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
 from app.api.routes.auth import router as auth_router
-from app.api.routes.reformat import router2 as reformat_router
+from app.api.routes.reformat import router as reformat_router
 from app.api.routes.billing import router as billing_router, webhook_router
 from app.api.routes.profile import profile_router, feedback_router, stats_router
+
+# ── Request Size Limit Middleware ─────────────────────────────────
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Enforces a hard limit on request body size to prevent OOM."""
+    def __init__(self, app, max_size: int = 10 * 1024 * 1024): # 10MB default
+        super().__init__(app)
+        self.max_size = max_size
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST":
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > self.max_size:
+                return Response(
+                    content="Request entity too large",
+                    status_code=413
+                )
+        
+        return await call_next(request)
+
 
 app = FastAPI(
     title="Synapse API",
@@ -14,10 +34,14 @@ app = FastAPI(
     redoc_url=None,
 )
 
+# 15MB limit to allow for larger base64 docs but prevent OOM
+app.add_middleware(RequestSizeLimitMiddleware, max_size=15 * 1024 * 1024)
+
 # ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=settings.ALLOWED_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

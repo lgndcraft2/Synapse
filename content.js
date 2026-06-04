@@ -488,7 +488,7 @@ function extractFullPageText() {
   clone.querySelectorAll(
     'script,style,nav,footer,header,#synapse-fab,#synapse-panel,#synapse-dock'
   ).forEach(e => e.remove());
-  return clone.innerText.trim().slice(0, 10000);
+  return clone.innerText.trim().slice(0, 500000);
 }
 
 // ================================================================
@@ -645,20 +645,50 @@ function renderAISections(aiSections) {
 function applyBionicReading(html) {
   // Parse into a temporary element and walk text nodes only
   const tmp = document.createElement('div');
-  tmp.innerHTML = html;
+  // Sanitize input before parsing
+  tmp.innerHTML = DOMPurify.sanitize(html);
+  
   const walker = document.createTreeWalker(tmp, NodeFilter.SHOW_TEXT, null);
   const textNodes = [];
   let node;
   while ((node = walker.nextNode())) textNodes.push(node);
 
   textNodes.forEach(tn => {
-    const replaced = tn.textContent.replace(/\b([a-zA-Z]{2,})\b/g, (word) => {
+    const text = tn.textContent;
+    const regex = /\b([a-zA-Z]{2,})\b/g;
+    let match;
+    let lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+
+    while ((match = regex.exec(text)) !== null) {
+      // Append text before the match
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+
+      const word = match[0];
       const boldLen = Math.ceil(word.length * 0.45);
-      return `<b class="synapse-bionic-bold">${word.slice(0, boldLen)}</b>${word.slice(boldLen)}`;
-    });
-    const span = document.createElement('span');
-    span.innerHTML = replaced;
-    tn.parentNode.replaceChild(span, tn);
+      const boldPart = word.slice(0, boldLen);
+      const restPart = word.slice(boldLen);
+
+      const b = document.createElement('b');
+      b.className = 'synapse-bionic-bold';
+      b.textContent = boldPart;
+      fragment.appendChild(b);
+
+      if (restPart) {
+        fragment.appendChild(document.createTextNode(restPart));
+      }
+
+      lastIndex = regex.lastIndex;
+    }
+
+    // Append remaining text
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    tn.parentNode.replaceChild(fragment, tn);
   });
 
   return tmp.innerHTML;
@@ -674,11 +704,12 @@ function injectSQ4RQuestions(card, questions) {
 
   const block = document.createElement('div');
   block.className = 'sc-sq4r';
-  block.innerHTML = `
+  // Sanitize the entire list block
+  block.innerHTML = DOMPurify.sanitize(`
     <span class="sc-sq4r-label">Read to answer</span>
     <ul class="sc-sq4r-list">
       ${questions.map(q => `<li class="sc-sq4r-item">${q}</li>`).join('')}
-    </ul>`;
+    </ul>`);
 
   const body = card.querySelector('.sc-body');
   if (body) card.insertBefore(block, body);
@@ -708,7 +739,7 @@ function openCard(idx) {
 
   const card = document.createElement('div');
   card.className = 'synapse-card';
-  card.innerHTML = `
+  card.innerHTML = DOMPurify.sanitize(`
     <div class="sc-topbar">
       <div>
         <div class="sc-title">
@@ -722,7 +753,7 @@ function openCard(idx) {
       <div class="sc-spinner"></div>
       <span class="sc-loading-text">Rebuilding for your brain...</span>
     </div>
-    <div class="sc-body"></div>`;
+    <div class="sc-body"></div>`);
 
   sec.wrap.style.position = 'relative';
   sec.wrap.insertBefore(card, sec.wrap.firstChild);
@@ -758,21 +789,47 @@ function openCard(idx) {
   });
 
   chrome.runtime.sendMessage(
-    { type: 'CALL_LLM', pageText: sec.text },
+    {
+      type: 'CALL_LLM',
+      pageText: sec.text,
+      pageUrl: window.location.href,
+      pageTitle: document.title,
+      sessionDifficulty: S.sessionDifficulty,
+      mode: 'cards'
+    },
     (res) => {
       sec.wrap?.classList.remove('s-loading');
       if (res?.html) {
         sec.cachedHTML = res.html;
+        sec.cachedQuestions = res.questions || sec.cachedQuestions || [];
         sec.wrap?.classList.add('s-done');
         const html = S.bionicReading ? applyBionicReading(res.html) : res.html;
         showCardContent(card, sec, html);
+        if (sec.cachedQuestions?.length) injectSQ4RQuestions(card, sec.cachedQuestions);
         updateDockPill(idx, 's-done');
       } else {
         card.querySelector('.sc-loading').style.display = 'none';
         const body = card.querySelector('.sc-body');
         body.classList.add('s-ready');
-        body.innerHTML = `<p style="color:${C.red};font-size:13px">
-          ${res?.error || 'Something went wrong. Check your API key.'}</p>`;
+
+        if (res?.error?.code === 'LENGTH_EXCEEDED') {
+          body.innerHTML = `
+            <div style="padding:15px;text-align:center">
+              <p style="color:${C.red};font-weight:600;margin-bottom:10px">${res.error.message}</p>
+              <p style="font-size:12px;color:${C.g600};margin-bottom:15px">This section exceeds your current plan's character limit.</p>
+              <button class="sp-btn primary" id="btn-upgrade-${idx}" style="width:100%;margin-bottom:8px">Upgrade for 10x capacity</button>
+              <button class="sp-btn ghost" id="btn-truncate-${idx}" style="width:100%">Truncate to ${res.error.limit} chars</button>
+            </div>`;
+          
+          body.querySelector(`#btn-upgrade-${idx}`).onclick = () => window.open(chrome.runtime.getURL('popup.html?action=upgrade'), '_blank');
+          body.querySelector(`#btn-truncate-${idx}`).onclick = () => {
+            sec.text = sec.text.substring(0, res.error.limit);
+            openCard(idx); // Retry with truncated text
+          };
+        } else {
+          body.innerHTML = `<p style="color:${C.red};font-size:13px">
+            ${res?.error || 'Something went wrong. Check your API key.'}</p>`;
+        }
         updateDockPill(idx, '');
       }
     }
@@ -785,7 +842,8 @@ function showCardContent(card, sec, html) {
   card.querySelector('.sc-loading').style.setProperty('display', 'none', 'important');
   const body = card.querySelector('.sc-body');
   body.classList.add('s-ready');
-  body.innerHTML = html;
+  // Sanitize AI-generated HTML before injection
+  body.innerHTML = DOMPurify.sanitize(html);
   if (sec.mediaItems?.length) {
     reinjectMedia(body, sec.mediaItems.map(item => ({
       el: item.el.cloneNode(true),
@@ -1159,13 +1217,21 @@ function activateFullPage() {
   const btn = document.getElementById('sp-main-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reformatting...'; }
 
-  chrome.runtime.sendMessage({ type: 'CALL_LLM', pageText: text }, (res) => {
+  chrome.runtime.sendMessage({
+    type: 'CALL_LLM',
+    pageText: text,
+    pageUrl: window.location.href,
+    pageTitle: document.title,
+    sessionDifficulty: S.sessionDifficulty,
+    mode: 'fullpage'
+  }, (res) => {
     if (btn) { btn.disabled = false; btn.textContent = 'Reformat full page'; }
     if (res?.html) {
       // ── Build the output container ───────────────────────────────
       const fp = document.createElement('div');
       fp.className = 'synapse-fp';
-      fp.innerHTML = res.html;
+      // Sanitize AI-generated HTML before injection
+      fp.innerHTML = DOMPurify.sanitize(res.html);
 
       // ── Stitch images back in at their original positions ────────
       reinjectMedia(fp, mediaItems);
@@ -1276,10 +1342,12 @@ function activateDocumentMode() {
       content.style.setProperty('display', 'block', 'important');
 
       if (res?.html) {
-        content.innerHTML = res.html;
+        // Sanitize AI-generated HTML before injection
+        content.innerHTML = DOMPurify.sanitize(res.html);
         showPanelHint('Document reformatted. Close the reader to return to the original.');
       } else {
-        content.innerHTML = `<p style="color:${C.red}">${res?.error || 'Failed to read document.'}</p>`;
+        // Sanitize error message just in case it contains malicious content
+        content.innerHTML = DOMPurify.sanitize(`<p style="color:${C.red}">${res?.error || 'Failed to read document.'}</p>`);
         showPanelHint(res?.error || 'Document reading failed.', true);
       }
     }
@@ -1487,7 +1555,7 @@ function updatePanelState() {
 function showPanelHint(msg, isError = false) {
   const hint = document.getElementById('sp-hint');
   if (!hint) return;
-  hint.textContent = msg;
+  hint.textContent = typeof msg === 'object' ? msg.message : msg;
   hint.className = isError ? 'sp-hint s-error' : 'sp-hint';
 }
 

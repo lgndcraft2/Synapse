@@ -37,10 +37,16 @@ class Settings(BaseSettings):
     APP_SECRET_KEY: str
     FRONTEND_URL: str = "http://localhost:3000"
     ALLOWED_ORIGINS: str = "http://localhost:3000"
+    ALLOWED_ORIGIN_REGEX: str = r"chrome-extension://.*"
 
     # Rate limits
     FREE_DAILY_LIMIT: int = 100
     FREE_LIFETIME_LIMIT: int = 500
+
+    # Input length limits (characters)
+    FREE_TEXT_LIMIT: int = 50000
+    TRIAL_TEXT_LIMIT: int = 100000
+    PREMIUM_TEXT_LIMIT: int = 500000
 
     @property
     def gemini_keys(self) -> List[str]:

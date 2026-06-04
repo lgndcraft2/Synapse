@@ -8,6 +8,7 @@ from app.models.models import User, Billing
 from app.schemas.schemas import CheckoutRequest, CheckoutResponse, BillingOut
 from datetime import datetime
 import stripe
+import asyncio
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -26,6 +27,16 @@ async def billing_status(
     billing = result.scalar_one_or_none()
     if not billing:
         raise HTTPException(status_code=404, detail="Billing record not found.")
+    
+    # Proactively check for expiration
+    now = datetime.utcnow()
+    if billing.plan == "premium" and billing.renews_at and billing.renews_at < now:
+        # User has expired but webhook was missed - update local state
+        billing.status = "expired"
+        # We don't downgrade the plan string here to keep DB in sync with Stripe's 
+        # last known state, but the UI/routing will see it's inactive.
+        await db.flush()
+
     return billing
 
 
@@ -39,7 +50,18 @@ async def create_checkout(
     Creates a Stripe Checkout session for upgrading to Premium.
     Returns a checkout_url the frontend redirects to.
     """
-    # Get or create Stripe customer
+    # ── 1. Validate price_id ──────────────────────────────────────
+    allowed_prices = [
+        settings.STRIPE_PREMIUM_PRICE_ID,
+        settings.STRIPE_PREMIUM_ANNUAL_PRICE_ID
+    ]
+    if body.price_id not in allowed_prices:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or unauthorized price ID."
+        )
+
+    # ── 2. Get or create Stripe customer ──────────────────────────
     result = await db.execute(
         select(Billing).where(Billing.user_id == current_user.id)
     )
@@ -48,7 +70,8 @@ async def create_checkout(
     if billing and billing.stripe_customer_id:
         customer_id = billing.stripe_customer_id
     else:
-        customer = stripe.Customer.create(
+        customer = await asyncio.to_thread(
+            stripe.Customer.create,
             email=current_user.email,
             name=current_user.name,
             metadata={"user_id": str(current_user.id)},
@@ -58,16 +81,34 @@ async def create_checkout(
         if billing:
             billing.stripe_customer_id = customer_id
         else:
-            billing = Billing(
-                user_id=current_user.id,
-                stripe_customer_id=customer_id,
-                plan="free",
-            )
-            db.add(billing)
+            from sqlalchemy.exc import IntegrityError
+            async with db.begin_nested():
+                try:
+                    billing = Billing(
+                        user_id=current_user.id,
+                        stripe_customer_id=customer_id,
+                        plan="free",
+                    )
+                    db.add(billing)
+                    await db.flush()
+                except IntegrityError:
+                    # Concurrent creation - refetch
+                    pass
+            
+            if not billing or not billing.id:
+                result = await db.execute(
+                    select(Billing).where(Billing.user_id == current_user.id)
+                )
+                billing = result.scalar_one_or_none()
+                if not billing:
+                    raise HTTPException(status_code=500, detail="Billing sync error.")
+                billing.stripe_customer_id = customer_id
+        
         await db.flush()
 
     # Create checkout session with 7-day trial
-    session = stripe.checkout.Session.create(
+    session = await asyncio.to_thread(
+        stripe.checkout.Session.create,
         customer=customer_id,
         payment_method_types=["card"],
         line_items=[{"price": body.price_id, "quantity": 1}],
@@ -97,7 +138,8 @@ async def billing_portal(
     if not billing or not billing.stripe_customer_id:
         raise HTTPException(status_code=400, detail="No billing record found.")
 
-    session = stripe.billing_portal.Session.create(
+    session = await asyncio.to_thread(
+        stripe.billing_portal.Session.create,
         customer=billing.stripe_customer_id,
         return_url=f"{settings.FRONTEND_URL}/dashboard",
     )
@@ -124,14 +166,17 @@ async def stripe_webhook(
     - customer.subscription.deleted  → cancellation
     - invoice.payment_failed         → mark as past_due
     """
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header.")
+
     payload = await request.body()
 
     try:
         event = stripe.Webhook.construct_event(
             payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
         )
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+    except (stripe.error.SignatureVerificationError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid webhook signature or payload.")
 
     data = event["data"]["object"]
 
@@ -142,7 +187,7 @@ async def stripe_webhook(
         customer_id = data.get("customer")
 
         if user_id and subscription_id:
-            sub = stripe.Subscription.retrieve(subscription_id)
+            sub = await asyncio.to_thread(stripe.Subscription.retrieve, subscription_id)
             await _activate_premium(db, user_id, customer_id, subscription_id, sub)
 
     # ── Subscription updated (renewal, plan change) ───────────────
@@ -162,6 +207,7 @@ async def stripe_webhook(
                 .where(Billing.stripe_customer_id == customer_id)
                 .values(status="past_due", updated_at=datetime.utcnow())
             )
+            await db.commit()
 
     return {"received": True}
 
@@ -194,6 +240,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
         .where(User.id == user_id)
         .values(plan="premium", updated_at=datetime.utcnow())
     )
+    await db.commit()
 
 
 async def _update_subscription(db, sub_data):
@@ -210,6 +257,7 @@ async def _update_subscription(db, sub_data):
             updated_at=datetime.utcnow(),
         )
     )
+    await db.commit()
 
 
 async def _cancel_subscription(db, sub_data):
@@ -236,3 +284,4 @@ async def _cancel_subscription(db, sub_data):
             .where(User.id == billing.user_id)
             .values(plan="free", updated_at=datetime.utcnow())
         )
+        await db.commit()

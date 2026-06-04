@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "./lib/supabase";
+import { getBillingStatus, openCustomerPortal } from "./lib/api";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
 
@@ -12,6 +14,13 @@ interface FeedbackItem {
   label: string;
   pct: number;
   barColor: string;
+}
+
+interface BillingInfo {
+  plan: string;
+  status: string;
+  renews_at?: string;
+  trial_ends_at?: string;
 }
 
 const sessions: Session[] = [
@@ -45,6 +54,44 @@ function DifficultyPill({ difficulty }: { difficulty: SessionDifficulty }) {
 
 export default function Dashboard() {
   const [readingDay, setReadingDay] = useState<SessionDifficulty>("normal");
+  const [user, setUser] = useState<any>(null);
+  const [billing, setBilling] = useState<BillingInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = "/auth?tab=login";
+        return;
+      }
+      setUser(user);
+
+      try {
+        const status = await getBillingStatus();
+        setBilling(status);
+      } catch (err) {
+        console.error("Failed to load billing status", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  async function handleManageBilling() {
+    try {
+      const url = await openCustomerPortal();
+      window.location.href = url;
+    } catch (err) {
+      alert("Failed to open billing portal. Please try again.");
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    window.location.href = "/auth?tab=login";
+  }
 
   return (
     <>
@@ -183,12 +230,12 @@ export default function Dashboard() {
               <span className="material-symbols-outlined">psychology</span>
               Synapse
             </div>
-            <div className="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-colors hover:opacity-80">
+            <div className="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-colors hover:opacity-80" onClick={handleLogout}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
                 style={{ backgroundColor: "#1b5e4b", color: "#94d5bd" }}>
-                AA
+                {user?.user_metadata?.full_name?.split(' ').map((n: string) => n[0]).join('') || user?.email?.[0].toUpperCase() || 'AA'}
               </div>
-              <span className="material-symbols-outlined text-lg" style={{ color: "#5e5f5b", fontVariationSettings: "'FILL' 0" }}>expand_more</span>
+              <span className="material-symbols-outlined text-lg" style={{ color: "#5e5f5b", fontVariationSettings: "'FILL' 0" }}>logout</span>
             </div>
           </div>
         </header>
@@ -227,7 +274,7 @@ export default function Dashboard() {
             {/* Welcome */}
             <section>
               <h1 className="font-serif font-bold mb-4" style={{ fontSize: 48, lineHeight: 1.1, letterSpacing: "-0.02em", color: "#1b1c1c" }}>
-                Welcome back, Alex.
+                Welcome back, {user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Alex'}.
               </h1>
               <p className="text-lg" style={{ lineHeight: 1.6, color: "#5e5f5b", maxWidth: 600 }}>
                 Here is your cognitive activity summary for this week. We've made a few adjustments to your profile to optimize reading flow.
@@ -353,16 +400,30 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold uppercase" style={{ color: "#5e5f5b", letterSpacing: "0.05em" }}>
                   Plan Status
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded font-semibold" style={{ backgroundColor: "#004635", color: "#ffffff" }}>
-                  Pro
+                <span className="text-xs px-2 py-0.5 rounded font-semibold" 
+                  style={{ backgroundColor: (billing?.plan || 'free') === 'free' ? '#5e5f5b' : '#004635', color: "#ffffff" }}>
+                  {billing?.plan?.toUpperCase() || (isLoading ? '...' : 'FREE')}
                 </span>
               </div>
               <div className="flex justify-between items-end">
                 <div>
-                  <p className="font-medium" style={{ color: "#1b1c1c" }}>Monthly Access</p>
-                  <p className="text-sm mt-1" style={{ color: "#5e5f5b" }}>Renews in 14 days</p>
+                  <p className="font-medium" style={{ color: "#1b1c1c" }}>
+                    {billing?.status === 'trialing' ? 'Free Trial' : 'Monthly Access'}
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: "#5e5f5b" }}>
+                    {billing?.renews_at 
+                      ? `Renews on ${new Date(billing.renews_at).toLocaleDateString()}` 
+                      : billing?.trial_ends_at 
+                        ? `Trial ends ${new Date(billing.trial_ends_at).toLocaleDateString()}`
+                        : 'Free tier limits apply'}
+                  </p>
                 </div>
-                <button className="text-sm font-semibold hover:underline" style={{ color: "#004635" }}>Manage</button>
+                {billing && billing.plan !== 'free' && (
+                  <button className="text-sm font-semibold hover:underline" style={{ color: "#004635" }} onClick={handleManageBilling}>Manage</button>
+                )}
+                {(!billing || billing.plan === 'free') && !isLoading && (
+                   <a href="/#pricing" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Upgrade</a>
+                )}
               </div>
             </section>
 

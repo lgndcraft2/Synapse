@@ -1,5 +1,7 @@
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LogIn } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState, useEffect } from 'react';
+import { supabase } from './lib/supabase';
+import { syncUser } from './lib/api';
 
 type AuthTab = 'signup' | 'login' | 'reset';
 type VisiblePasswords = Record<'signup' | 'confirm' | 'login', boolean>;
@@ -34,6 +36,26 @@ function AuthPage() {
     confirm: false,
     login: false,
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if we just returned from a Google login
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setIsLoading(true);
+        try {
+          await syncUser();
+          window.location.href = '/dashboard';
+        } catch (err: any) {
+          setError(err.message || 'Failed to sync user data');
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const copy = useMemo(() => {
     if (activeTab === 'signup') {
@@ -63,8 +85,24 @@ function AuthPage() {
     setVisiblePasswords((current) => ({ ...current, [key]: !current[key] }));
   }
 
+  async function handleGoogleLogin() {
+    setIsLoading(true);
+    setError(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin + '/auth',
+      },
+    });
+    if (error) {
+      setError(error.message);
+      setIsLoading(false);
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError('Email/Password login is not implemented. Please use Google Login.');
   }
 
   return (
@@ -91,9 +129,15 @@ function AuthPage() {
 
         <div className="auth-content">
           <div className="auth-heading">
-            <h1 id="auth-title">{copy.title}</h1>
+            <h1 id="auth-title">{isLoading ? 'Authenticating...' : copy.title}</h1>
             <p>{copy.body}</p>
           </div>
+
+          {error && (
+            <div style={{ color: '#ba1a1a', marginBottom: '1rem', fontSize: '0.875rem' }}>
+              {error}
+            </div>
+          )}
 
           {activeTab === 'reset' ? (
             <form className="auth-form" onSubmit={handleSubmit}>
@@ -104,6 +148,7 @@ function AuthPage() {
               <button
                 className="button button-primary auth-submit"
                 type="submit"
+                disabled={isLoading}
                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               >
                 Send Reset Link
@@ -152,7 +197,7 @@ function AuthPage() {
                   </div>
                 </label>
               </div>
-              <button className="button button-primary auth-submit" type="submit">
+              <button className="button button-primary auth-submit" type="submit" disabled={isLoading}>
                 Create Account
               </button>
             </form>
@@ -179,7 +224,7 @@ function AuthPage() {
                   <PasswordToggle isVisible={visiblePasswords.login} onClick={() => togglePassword('login')} />
                 </div>
               </label>
-              <button className="button button-primary auth-submit" type="submit">
+              <button className="button button-primary auth-submit" type="submit" disabled={isLoading}>
                 Login
               </button>
             </form>
@@ -193,7 +238,12 @@ function AuthPage() {
                 <span />
               </div>
 
-              <button className="auth-google" type="button">
+              <button 
+                className="auth-google" 
+                type="button" 
+                onClick={handleGoogleLogin}
+                disabled={isLoading}
+              >
                 <LogIn className="app-icon" aria-hidden="true" />
                 {activeTab === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
               </button>
