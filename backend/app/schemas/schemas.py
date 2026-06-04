@@ -49,9 +49,9 @@ class ProfileUpdate(BaseModel):
     chunk_size: Optional[Literal["short", "medium", "long"]] = None
     needs_examples_first: Optional[bool] = None
     simplify_vocab: Optional[bool] = None
-    max_nesting_depth: Optional[int] = None
+    max_nesting_depth: Optional[int] = Field(None, ge=1, le=3)
     use_headers: Optional[bool] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=1000)
 
 
 class CognitiveProfileSchema(BaseModel):
@@ -60,20 +60,20 @@ class CognitiveProfileSchema(BaseModel):
     chunk_size: Literal["short", "medium", "long"] = "short"
     needs_examples_first: bool = True
     simplify_vocab: bool = False
-    max_nesting_depth: int = 2
+    max_nesting_depth: int = Field(2, ge=1, le=3)
     use_headers: bool = True
-    notes: str = ""
+    notes: str = Field("", max_length=1000)
 
 
 # ── Reformat ─────────────────────────────────────────────────────
 
 class ReformatRequest(BaseModel):
     page_text: str = Field(..., max_length=500000)
-    page_url: Optional[str] = None
-    page_title: Optional[str] = None
+    page_url: Optional[str] = Field(None, max_length=2000)
+    page_title: Optional[str] = Field(None, max_length=500)
     session_difficulty: Literal["hard", "normal", "easy"] = "normal"
     mode: Literal["cards", "fullpage", "document"] = "cards"
-    fingerprint: Optional[str] = None   # for anonymous/free users
+    fingerprint: Optional[str] = Field(None, max_length=100)   # for anonymous/free users
     profile: Optional[CognitiveProfileSchema] = None
 
 
@@ -87,7 +87,7 @@ class ReformatResponse(BaseModel):
 
 class AnalyseSectionsRequest(BaseModel):
     page_text: str = Field(..., max_length=500000)
-    fingerprint: Optional[str] = None
+    fingerprint: Optional[str] = Field(None, max_length=100)
     profile: Optional[CognitiveProfileSchema] = None
 
 
@@ -104,10 +104,10 @@ class AnalyseSectionsResponse(BaseModel):
 # ── Document Reformat ───────────────────────────────────────────
 
 class DocumentReformatRequest(BaseModel):
-    base64_data: str
-    media_type: str
+    base64_data: str = Field(..., max_length=15000000) # ~11MB binary
+    media_type: Literal["application/pdf", "text/plain", "text/csv", "text/markdown"]
     session_difficulty: Literal["hard", "normal", "easy"] = "normal"
-    fingerprint: Optional[str] = None
+    fingerprint: Optional[str] = Field(None, max_length=100)
     profile: Optional[CognitiveProfileSchema] = None
 
 
@@ -116,17 +116,17 @@ class DocumentReformatRequest(BaseModel):
 class FeedbackEntry(BaseModel):
     session_id: Optional[uuid.UUID] = None
     reaction: Optional[Literal["clearer", "complex", "simple", "off-topic"]] = None
-    note: Optional[str] = ""
-    time_spent_seconds: Optional[int] = None
-    read_progress: Optional[int] = None
+    note: Optional[str] = Field("", max_length=500)
+    time_spent_seconds: Optional[int] = Field(None, ge=0, le=86400)
+    read_progress: Optional[int] = Field(None, ge=0, le=100)
     session_difficulty: str = "normal"
-    section_title: Optional[str] = None
+    section_title: Optional[str] = Field(None, max_length=200)
 
 
 class FeedbackBatch(BaseModel):
     """Extension sends the last N interactions in one batch."""
-    entries: list[FeedbackEntry]
-    fingerprint: Optional[str] = None
+    entries: list[FeedbackEntry] = Field(..., max_items=50)
+    fingerprint: Optional[str] = Field(None, max_length=100)
 
 
 # ── Sessions ─────────────────────────────────────────────────────

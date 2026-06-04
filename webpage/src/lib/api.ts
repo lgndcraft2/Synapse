@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.synapseos.app';
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -59,8 +59,6 @@ export async function createCheckoutSession(priceId: string) {
     },
     body: JSON.stringify({
       price_id: priceId,
-      success_url: `${window.location.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${window.location.origin}/`,
     }),
   });
 

@@ -3,7 +3,7 @@ from fastapi import HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.core.config import settings
-from app.models.models import UsageTracking, User
+from app.models.models import Billing, UsageTracking, User
 from datetime import datetime
 import hashlib
 
@@ -29,7 +29,7 @@ async def check_rate_limit(
     """
 
     # ── Premium users — no limits ─────────────────────────────────
-    if user and user.plan in ("premium", "institutional"):
+    if user and await _has_active_entitlement(db, user):
         return
 
     # ── Build the rate limit key ──────────────────────────────────
@@ -159,3 +159,18 @@ async def get_cache(key: str) -> str | None:
 async def set_cache(key: str, value: str, ttl: int = 300) -> None:
     """Set a value in Redis cache with TTL in seconds."""
     await redis_client.set(key, value, ex=ttl)
+
+
+async def _has_active_entitlement(db: AsyncSession, user: User) -> bool:
+    if user.plan == "institutional":
+        return True
+    if user.plan != "premium":
+        return False
+
+    result = await db.execute(select(Billing).where(Billing.user_id == user.id))
+    billing = result.scalar_one_or_none()
+    if not billing or billing.plan != "premium":
+        return False
+    if billing.status not in ("active", "trialing"):
+        return False
+    return billing.renews_at is None or billing.renews_at > datetime.utcnow()

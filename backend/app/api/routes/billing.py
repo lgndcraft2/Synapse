@@ -15,6 +15,24 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
+def _frontend_url(path: str = "") -> str:
+    return f"{settings.FRONTEND_URL.rstrip('/')}{path}"
+
+
+def _normalize_subscription_status(status: str | None) -> str:
+    if status in ("active", "trialing", "past_due"):
+        return status
+    if status in ("canceled", "cancelled"):
+        return "cancelled"
+    return "past_due"
+
+
+def _plan_for_subscription(status: str, renews_at: datetime | None) -> str:
+    if status in ("active", "trialing") and (renews_at is None or renews_at > datetime.utcnow()):
+        return "premium"
+    return "free"
+
+
 @router.get("/status", response_model=BillingOut)
 async def billing_status(
     db: AsyncSession = Depends(get_db),
@@ -28,13 +46,14 @@ async def billing_status(
     if not billing:
         raise HTTPException(status_code=404, detail="Billing record not found.")
     
-    # Proactively check for expiration
+    # Proactively check for expiration if a webhook was missed.
     now = datetime.utcnow()
     if billing.plan == "premium" and billing.renews_at and billing.renews_at < now:
-        # User has expired but webhook was missed - update local state
-        billing.status = "expired"
-        # We don't downgrade the plan string here to keep DB in sync with Stripe's 
-        # last known state, but the UI/routing will see it's inactive.
+        billing.plan = "free"
+        billing.status = "cancelled"
+        billing.cancelled_at = now
+        current_user.plan = "free"
+        current_user.updated_at = now
         await db.flush()
 
     return billing
@@ -106,7 +125,8 @@ async def create_checkout(
         
         await db.flush()
 
-    # Create checkout session with 7-day trial
+    # Create checkout session with 7-day trial. Redirects are server-owned to
+    # avoid open redirects and duplicated query strings.
     session = await asyncio.to_thread(
         stripe.checkout.Session.create,
         customer=customer_id,
@@ -114,8 +134,8 @@ async def create_checkout(
         line_items=[{"price": body.price_id, "quantity": 1}],
         mode="subscription",
         subscription_data={"trial_period_days": 7},
-        success_url=body.success_url + "?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url=body.cancel_url,
+        success_url=_frontend_url("/dashboard?session_id={CHECKOUT_SESSION_ID}"),
+        cancel_url=_frontend_url("/"),
         metadata={"user_id": str(current_user.id)},
     )
 
@@ -141,7 +161,7 @@ async def billing_portal(
     session = await asyncio.to_thread(
         stripe.billing_portal.Session.create,
         customer=billing.stripe_customer_id,
-        return_url=f"{settings.FRONTEND_URL}/dashboard",
+        return_url=_frontend_url("/dashboard"),
     )
 
     return {"portal_url": session.url}
@@ -202,11 +222,21 @@ async def stripe_webhook(
     elif event["type"] == "invoice.payment_failed":
         customer_id = data.get("customer")
         if customer_id:
+            result = await db.execute(
+                select(Billing).where(Billing.stripe_customer_id == customer_id)
+            )
+            billing = result.scalar_one_or_none()
             await db.execute(
                 update(Billing)
                 .where(Billing.stripe_customer_id == customer_id)
-                .values(status="past_due", updated_at=datetime.utcnow())
+                .values(plan="free", status="past_due", updated_at=datetime.utcnow())
             )
+            if billing:
+                await db.execute(
+                    update(User)
+                    .where(User.id == billing.user_id)
+                    .values(plan="free", updated_at=datetime.utcnow())
+                )
             await db.commit()
 
     return {"received": True}
@@ -218,7 +248,8 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
         datetime.utcfromtimestamp(sub["trial_end"])
         if sub.get("trial_end") else None
     )
-    status = "trialing" if sub.get("status") == "trialing" else "active"
+    status = _normalize_subscription_status(sub.get("status"))
+    plan = _plan_for_subscription(status, period_end)
 
     # Update billing table
     await db.execute(
@@ -227,7 +258,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
         .values(
             stripe_customer_id=customer_id,
             stripe_subscription_id=subscription_id,
-            plan="premium",
+            plan=plan,
             status=status,
             renews_at=period_end,
             trial_ends_at=trial_end,
@@ -238,7 +269,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
     await db.execute(
         update(User)
         .where(User.id == user_id)
-        .values(plan="premium", updated_at=datetime.utcnow())
+        .values(plan=plan, updated_at=datetime.utcnow())
     )
     await db.commit()
 
@@ -246,17 +277,30 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
 async def _update_subscription(db, sub_data):
     subscription_id = sub_data["id"]
     period_end = datetime.utcfromtimestamp(sub_data["current_period_end"])
-    status = sub_data.get("status", "active")
+    status = _normalize_subscription_status(sub_data.get("status", "active"))
+    plan = _plan_for_subscription(status, period_end)
+
+    result = await db.execute(
+        select(Billing).where(Billing.stripe_subscription_id == subscription_id)
+    )
+    billing = result.scalar_one_or_none()
 
     await db.execute(
         update(Billing)
         .where(Billing.stripe_subscription_id == subscription_id)
         .values(
+            plan=plan,
             status=status,
             renews_at=period_end,
             updated_at=datetime.utcnow(),
         )
     )
+    if billing:
+        await db.execute(
+            update(User)
+            .where(User.id == billing.user_id)
+            .values(plan=plan, updated_at=datetime.utcnow())
+        )
     await db.commit()
 
 

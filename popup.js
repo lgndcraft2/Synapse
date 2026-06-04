@@ -55,7 +55,7 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
 
 chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
   const config = res?.providerConfig || {};
-  backendUrl.value = config.backendBaseUrl || "http://localhost:8000";
+  backendUrl.value = config.backendBaseUrl || "https://api.synapseos.app";
   backendToken.value = config.backendAccessToken || "";
 
   const usage = res?.providerUsage || {};

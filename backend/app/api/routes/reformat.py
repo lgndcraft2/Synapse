@@ -48,18 +48,27 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
     limit = settings.FREE_TEXT_LIMIT
     plan_name = "Free"
 
-    if user:
-        if user.plan in ("premium", "institutional"):
-            result = await db.execute(
-                select(Billing).where(Billing.user_id == user.id)
-            )
-            billing = result.scalar_one_or_none()
-            if billing and billing.status == "trialing":
-                limit = settings.TRIAL_TEXT_LIMIT
-                plan_name = "Premium Trial"
-            else:
-                limit = settings.PREMIUM_TEXT_LIMIT
-                plan_name = "Premium"
+    if user and user.plan == "institutional":
+        limit = settings.PREMIUM_TEXT_LIMIT
+        plan_name = "Institutional"
+    elif user and user.plan == "premium":
+        result = await db.execute(
+            select(Billing).where(Billing.user_id == user.id)
+        )
+        billing = result.scalar_one_or_none()
+        now = datetime.utcnow()
+        is_active = (
+            billing
+            and billing.plan == "premium"
+            and billing.status in ("active", "trialing")
+            and (billing.renews_at is None or billing.renews_at > now)
+        )
+        if is_active and billing.status == "trialing":
+            limit = settings.TRIAL_TEXT_LIMIT
+            plan_name = "Premium Trial"
+        elif is_active:
+            limit = settings.PREMIUM_TEXT_LIMIT
+            plan_name = "Premium"
 
     if length > limit:
         raise HTTPException(
@@ -87,7 +96,7 @@ async def _is_premium_active(user: User | None, db: AsyncSession) -> bool:
             select(Billing).where(Billing.user_id == user.id)
         )
         billing = result.scalar_one_or_none()
-        if not billing:
+        if not billing or billing.plan != "premium":
             return False
         
         # Verify both status and expiration date

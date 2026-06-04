@@ -11,7 +11,7 @@ const defaultProfile = {
 
 const defaultProviderConfig = {
   tier: "free",
-  backendBaseUrl: "http://localhost:8000",
+  backendBaseUrl: "https://api.synapseos.app",
   backendAccessToken: "",
   useBackendProxy: true,
   preferredProvider: "auto",
@@ -40,6 +40,17 @@ async function getClientFingerprint() {
   const fingerprint = `ext-${generated}`;
   await storageSet({ synapseFingerprint: fingerprint });
   return fingerprint;
+}
+
+function toBackendFeedbackEntry(entry) {
+  return {
+    reaction: entry.reaction || null,
+    note: entry.note || "",
+    time_spent_seconds: entry.timeSpentSeconds ?? entry.time_spent_seconds ?? null,
+    read_progress: entry.readProgress ?? entry.read_progress ?? null,
+    session_difficulty: entry.sessionDifficulty || entry.session_difficulty || "normal",
+    section_title: entry.sectionTitle || entry.section_title || null
+  };
 }
 
 async function getFullConfig() {
@@ -188,6 +199,30 @@ async function getBackendBillingStatus(providerConfig) {
   return { configured: true, authenticated: true, ...data };
 }
 
+async function submitBackendFeedback(entry, providerConfig) {
+  const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
+  if (!baseUrl || !providerConfig.backendAccessToken) return { synced: false };
+
+  const response = await fetch(`${baseUrl}/api/v1/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${providerConfig.backendAccessToken}`
+    },
+    body: JSON.stringify({
+      entries: [toBackendFeedbackEntry(entry)],
+      fingerprint: await getClientFingerprint()
+    })
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.detail || `Feedback sync failed with HTTP ${response.status}`);
+  }
+
+  return { synced: true };
+}
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -249,7 +284,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.get("feedbackLog", result => {
       const log = result.feedbackLog || [];
       log.push(msg.entry);
-      chrome.storage.local.set({ feedbackLog: log.slice(-50) }, () => sendResponse({ ok: true }));
+      chrome.storage.local.set({ feedbackLog: log.slice(-50) }, async () => {
+        try {
+          const { providerConfig } = await getFullConfig();
+          const sync = await submitBackendFeedback(msg.entry, providerConfig);
+          sendResponse({ ok: true, ...sync });
+        } catch (err) {
+          sendResponse({ ok: true, synced: false, syncError: err.message });
+        }
+      });
     });
     return true;
   }

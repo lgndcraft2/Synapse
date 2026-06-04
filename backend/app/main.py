@@ -38,10 +38,17 @@ app = FastAPI(
 app.add_middleware(RequestSizeLimitMiddleware, max_size=15 * 1024 * 1024)
 
 # ── CORS ──────────────────────────────────────────────────────────
+# In production, we restrict to the specific extension ID or a regex of allowed origins.
+# If neither is provided, we fall back to development-friendly broad origins ONLY if APP_ENV is development.
+_allowed_origins = settings.allowed_origins_list
+if settings.APP_ENV != "development" and not settings.ALLOWED_ORIGIN_REGEX and "*" in _allowed_origins:
+    # Safety: do not allow wildcard in production without explicit regex/ID guard
+    _allowed_origins = [o for o in _allowed_origins if o != "*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_origin_regex=settings.ALLOWED_ORIGIN_REGEX or None,
+    allow_origins=_allowed_origins,
+    allow_origin_regex=settings.allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

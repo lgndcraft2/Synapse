@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     APP_SECRET_KEY: str
     FRONTEND_URL: str = "http://localhost:3000"
     ALLOWED_ORIGINS: str = "http://localhost:3000"
-    ALLOWED_ORIGIN_REGEX: str = r"chrome-extension://.*"
+    CHROME_EXTENSION_ID: str = ""
+    ALLOWED_ORIGIN_REGEX: str = ""
 
     # Rate limits
     FREE_DAILY_LIMIT: int = 100
@@ -63,6 +64,16 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+
+    @property
+    def allowed_origin_regex(self) -> str | None:
+        if self.ALLOWED_ORIGIN_REGEX:
+            return self.ALLOWED_ORIGIN_REGEX
+        if self.CHROME_EXTENSION_ID:
+            return rf"^chrome-extension://{self.CHROME_EXTENSION_ID}$"
+        if self.APP_ENV == "development":
+            return r"chrome-extension://.*"
+        return None
 
     class Config:
         env_file = ".env"

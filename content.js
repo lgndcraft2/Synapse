@@ -945,12 +945,6 @@ function submitFeedback(sec, reaction, note, openTime, strip) {
     sessionDifficulty: S.sessionDifficulty,
   };
 
-  chrome.storage.local.get('feedbackLog', (r) => {
-    const log = (r.feedbackLog || []);
-    log.push(entry);
-    chrome.storage.local.set({ feedbackLog: log.slice(-50) });
-  });
-
   chrome.runtime.sendMessage({ type: 'FEEDBACK', entry });
 
   // Show thanks in strip
