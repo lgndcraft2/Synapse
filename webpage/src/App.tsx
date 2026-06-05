@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { createCheckoutSession } from './lib/api';
+import ConfigBanner from './component/ConfigBanner';
 
 const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
 
@@ -184,6 +185,7 @@ function App() {
 
   return (
     <>
+      <ConfigBanner />
       <header className="topbar">
         <div className="nav-shell">
           <a className="brand" href="#top" aria-label="Synapse home">

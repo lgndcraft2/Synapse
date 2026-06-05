@@ -2,8 +2,10 @@ import { ArrowLeft, ArrowRight, Eye, EyeOff, LogIn } from 'lucide-react';
 import { FormEvent, useMemo, useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { syncUser } from './lib/api';
+import ConfigBanner from './component/ConfigBanner';
 
-type AuthTab = 'signup' | 'login' | 'reset';
+type AuthTab = 'login' | 'signup';
+
 type VisiblePasswords = Record<'signup' | 'confirm' | 'login', boolean>;
 
 function getInitialTab(): AuthTab {
@@ -106,7 +108,9 @@ function AuthPage() {
   }
 
   return (
-    <main className="auth-page">
+    <>
+      <ConfigBanner />
+      <main className="auth-page">
       <a className="auth-brand brand" href="/" aria-label="Back to Synapse home">
         Synapse
       </a>
@@ -252,6 +256,7 @@ function AuthPage() {
         </div>
       </section>
     </main>
+    </>
   );
 }
 

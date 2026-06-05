@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import { getBillingStatus, openCustomerPortal } from "./lib/api";
+import ConfigBanner from "./component/ConfigBanner";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
 
@@ -95,6 +96,7 @@ export default function Dashboard() {
 
   return (
     <>
+      <ConfigBanner />
       {/* Google Fonts + Material Symbols + scoped utility styles */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
