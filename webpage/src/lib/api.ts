@@ -13,26 +13,33 @@ export async function syncUser() {
   if (!user) return null;
 
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/auth/sync`, {
-    method: 'POST',
-    headers: {
-      ...authHeaders,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      supabase_uid: user.id,
-      email: user.email,
-      name: user.user_metadata?.full_name || user.email?.split('@')[0],
-      avatar_url: user.user_metadata?.avatar_url,
-    }),
-  });
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/v1/auth/sync`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        supabase_uid: user.id,
+        email: user.email,
+        name: user.user_metadata?.full_name || user.email?.split('@')[0],
+        avatar_url: user.user_metadata?.avatar_url,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Sync failed' }));
-    throw new Error(error.detail || 'Sync failed');
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Sync failed' }));
+      throw new Error(error.detail || 'Sync failed');
+    }
+
+    return response.json();
+  } catch (err: any) {
+    if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+      throw new Error('Backend server unreachable. Please ensure the backend is running at ' + BACKEND_URL);
+    }
+    throw err;
   }
-
-  return response.json();
 }
 
 export async function getBillingStatus() {
@@ -84,4 +91,30 @@ export async function openCustomerPortal() {
 
   const { portal_url } = await response.json();
   return portal_url;
+}
+
+export async function getDashboardStats() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/dashboard/stats`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch dashboard stats');
+  }
+
+  return response.json();
+}
+
+export async function getProfile() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/profile`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch profile');
+  }
+
+  return response.json();
 }

@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
-import { getBillingStatus, openCustomerPortal } from "./lib/api";
+import { getBillingStatus, openCustomerPortal, getDashboardStats, getProfile } from "./lib/api";
 import ConfigBanner from "./component/ConfigBanner";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
 
 interface Session {
-  title: string;
-  time: string;
-  difficulty: SessionDifficulty;
+  id: string;
+  page_title: string;
+  created_at: string;
+  session_difficulty: SessionDifficulty;
 }
 
 interface FeedbackItem {
@@ -24,18 +25,19 @@ interface BillingInfo {
   trial_ends_at?: string;
 }
 
-const sessions: Session[] = [
-  { title: "Wikipedia: Cognitive Load Theory", time: "2 hours ago", difficulty: "flowing" },
-  { title: "Arxiv: Attention Is All You Need", time: "Yesterday", difficulty: "normal" },
-  { title: "Medium: Understanding React Hooks", time: "2 days ago", difficulty: "hard" },
-];
+interface ProfileInfo {
+  profile_type: string;
+}
 
-const feedbackItems: FeedbackItem[] = [
-  { label: "Clearer",      pct: 65, barColor: "#004635" },
-  { label: "Too Complex",  pct: 20, barColor: "#707974" },
-  { label: "Too Simple",   pct: 10, barColor: "#707974" },
-  { label: "Missed Point", pct:  5, barColor: "#ba1a1a" },
-];
+interface StatsInfo {
+  cards_this_week: number;
+  cards_this_month: number;
+  pages_visited: number;
+  words_processed: number;
+  time_saved_minutes: number;
+  recent_sessions: Session[];
+  feedback_breakdown: Record<string, number>;
+}
 
 const difficultyMap: Record<SessionDifficulty, { bg: string; color: string; icon: string; label: string }> = {
   flowing: { bg: "#e4e2e1", color: "#004635", icon: "water",   label: "Flowing" },
@@ -44,7 +46,7 @@ const difficultyMap: Record<SessionDifficulty, { bg: string; color: string; icon
 };
 
 function DifficultyPill({ difficulty }: { difficulty: SessionDifficulty }) {
-  const d = difficultyMap[difficulty];
+  const d = difficultyMap[difficulty] || difficultyMap["normal"];
   return (
     <div className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold shrink-0"
       style={{ backgroundColor: d.bg, color: d.color }}>
@@ -53,10 +55,29 @@ function DifficultyPill({ difficulty }: { difficulty: SessionDifficulty }) {
   );
 }
 
+function timeSince(dateString: string) {
+  const date = new Date(dateString);
+  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+  let interval = seconds / 31536000;
+
+  if (interval > 1) return Math.floor(interval) + " years ago";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + " months ago";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + " days ago";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + " hours ago";
+  interval = seconds / 60;
+  if (interval > 1) return Math.floor(interval) + " minutes ago";
+  return Math.floor(seconds) + " seconds ago";
+}
+
 export default function Dashboard() {
   const [readingDay, setReadingDay] = useState<SessionDifficulty>("normal");
   const [user, setUser] = useState<any>(null);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
+  const [profile, setProfile] = useState<ProfileInfo | null>(null);
+  const [stats, setStats] = useState<StatsInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -69,10 +90,16 @@ export default function Dashboard() {
       setUser(user);
 
       try {
-        const status = await getBillingStatus();
+        const [status, profileData, statsData] = await Promise.all([
+          getBillingStatus(),
+          getProfile(),
+          getDashboardStats()
+        ]);
         setBilling(status);
+        setProfile(profileData);
+        setStats(statsData);
       } catch (err) {
-        console.error("Failed to load billing status", err);
+        console.error("Failed to load dashboard data", err);
       } finally {
         setIsLoading(false);
       }
@@ -93,6 +120,27 @@ export default function Dashboard() {
     await supabase.auth.signOut();
     window.location.href = "/auth?tab=login";
   }
+
+  const feedbackItems: FeedbackItem[] = stats ? [
+    { label: "Clearer",      pct: stats.feedback_breakdown["clearer"] || 0, barColor: "#004635" },
+    { label: "Too Complex",  pct: stats.feedback_breakdown["complex"] || 0, barColor: "#707974" },
+    { label: "Too Simple",   pct: stats.feedback_breakdown["simple"] || 0, barColor: "#707974" },
+    { label: "Missed Point", pct: stats.feedback_breakdown["off-topic"] || 0, barColor: "#ba1a1a" },
+  ] : [];
+
+  // Calculate percentages
+  const totalFeedback = feedbackItems.reduce((acc, item) => acc + item.pct, 0);
+  const normalizedFeedback = feedbackItems.map(item => ({
+    ...item,
+    pct: totalFeedback > 0 ? Math.round((item.pct / totalFeedback) * 100) : 0
+  }));
+
+  const displayStats = [
+    { label: "Cards Generated", value: stats?.cards_this_month.toString() || "0" },
+    { label: "Pages Visited",   value: stats?.pages_visited.toString() || "0" },
+    { label: "Words Processed", value: stats ? (stats.words_processed > 1000 ? (stats.words_processed / 1000).toFixed(1) + "k" : stats.words_processed.toString()) : "0" },
+    { label: "Time Saved",      value: stats ? (stats.time_saved_minutes > 60 ? Math.floor(stats.time_saved_minutes / 60) + "h " + (stats.time_saved_minutes % 60) + "m" : stats.time_saved_minutes + "m") : "0m" },
+  ];
 
   return (
     <>
@@ -294,7 +342,7 @@ export default function Dashboard() {
                     Current Active Profile
                   </span>
                   <h2 className="font-serif font-semibold" style={{ fontSize: 32, lineHeight: 1.2, color: "#004635" }}>
-                    Load Reducer
+                    {profile?.profile_type?.replace('-', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || "Load Reducer"}
                   </h2>
                 </div>
                 <button className="rounded px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
@@ -310,15 +358,8 @@ export default function Dashboard() {
                   <li className="flex items-start gap-3">
                     <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
                     <div>
-                      <p style={{ color: "#1b1c1c" }}>Synapse shortened your chunks because your read depth dropped below 40% yesterday.</p>
-                      <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>2 hours ago</span>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3 pb-3" style={{ borderBottom: "1px solid #e4e2e1" }}>
-                    <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>contrast</span>
-                    <div>
-                      <p style={{ color: "#1b1c1c" }}>Increased contrast on background elements on medium-complexity pages.</p>
-                      <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>1 day ago</span>
+                      <p style={{ color: "#1b1c1c" }}>Synapse initialised your profile model. Start reading to see adjustments here.</p>
+                      <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>Just now</span>
                     </div>
                   </li>
                 </ul>
@@ -332,19 +373,14 @@ export default function Dashboard() {
                 Activity Overview
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: "Cards Generated", value: "342" },
-                  { label: "Pages Visited",   value: "89" },
-                  { label: "Words Processed", value: "45k" },
-                  { label: "Time Saved",      value: "4h 12m" },
-                ].map((stat) => (
+                {displayStats.map((stat) => (
                   <div key={stat.label} className="p-4 rounded shadow-tactile flex flex-col justify-between h-32"
                     style={{ backgroundColor: "#fcf9f8", border: "1px solid #3d3d38" }}>
                     <span className="text-xs font-semibold" style={{ color: "#5e5f5b", letterSpacing: "0.05em" }}>
                       {stat.label}
                     </span>
                     <div className="font-serif font-semibold" style={{ fontSize: 32, lineHeight: 1.2, color: "#004635" }}>
-                      {stat.value}
+                      {isLoading ? "..." : stat.value}
                     </div>
                   </div>
                 ))}
@@ -361,7 +397,7 @@ export default function Dashboard() {
               <h3 className="font-serif font-semibold text-2xl mb-2" style={{ color: "#1b1c1c" }}>Feedback Insights</h3>
               <p className="text-sm mb-6" style={{ color: "#5e5f5b" }}>Based on your interactions with reformatted cards.</p>
               <div className="space-y-3">
-                {feedbackItems.map((item) => (
+                {normalizedFeedback.length > 0 ? normalizedFeedback.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-2">
                     <span className="text-sm w-24 shrink-0" style={{ color: "#1b1c1c" }}>{item.label}</span>
                     <div className="flex-grow h-2 rounded-full overflow-hidden" style={{ backgroundColor: "#e4e2e1" }}>
@@ -369,7 +405,9 @@ export default function Dashboard() {
                     </div>
                     <span className="text-xs font-semibold w-8 text-right" style={{ color: "#5e5f5b" }}>{item.pct}%</span>
                   </div>
-                ))}
+                )) : (
+                  <p className="text-sm" style={{ color: "#5e5f5b", fontStyle: "italic" }}>No feedback collected yet.</p>
+                )}
               </div>
             </section>
 
@@ -379,20 +417,24 @@ export default function Dashboard() {
                 Recent Sessions
               </h3>
               <ul>
-                {sessions.map((s, i) => (
+                {stats?.recent_sessions && stats.recent_sessions.length > 0 ? stats.recent_sessions.map((s, i) => (
                   <li key={i} className="py-3 flex justify-between items-center cursor-pointer px-2 -mx-2 rounded transition-colors hover:opacity-80"
                     style={{ borderBottom: "1px solid #e4e2e1" }}>
                     <div className="truncate pr-4">
-                      <span className="block truncate" style={{ color: "#1b1c1c" }}>{s.title}</span>
-                      <span className="text-sm" style={{ color: "#5e5f5b" }}>{s.time}</span>
+                      <span className="block truncate" style={{ color: "#1b1c1c" }}>{s.page_title || "Untitled Session"}</span>
+                      <span className="text-sm" style={{ color: "#5e5f5b" }}>{timeSince(s.created_at)}</span>
                     </div>
-                    <DifficultyPill difficulty={s.difficulty} />
+                    <DifficultyPill difficulty={s.session_difficulty} />
                   </li>
-                ))}
+                )) : (
+                  <li className="py-3 text-sm" style={{ color: "#5e5f5b", fontStyle: "italic" }}>No reading sessions recorded.</li>
+                )}
               </ul>
-              <button className="mt-4 text-sm font-semibold hover:underline" style={{ color: "#004635" }}>
-                View Full History
-              </button>
+              {stats?.recent_sessions && stats.recent_sessions.length > 0 && (
+                <button className="mt-4 text-sm font-semibold hover:underline" style={{ color: "#004635" }}>
+                  View Full History
+                </button>
+              )}
             </section>
 
             {/* Billing */}
