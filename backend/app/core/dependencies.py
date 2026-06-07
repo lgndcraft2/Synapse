@@ -3,7 +3,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from datetime import datetime
 from app.core.config import settings
+from app.core.plans import normalize_plan, ACTIVE_PAID_PLANS, INSTITUTIONAL_PLAN
 from app.db.database import get_db
 from app.models.models import User
 
@@ -46,6 +48,11 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
 
+    normalized_plan = normalize_plan(user.plan)
+    if normalized_plan != user.plan:
+        user.plan = normalized_plan
+        user.updated_at = datetime.utcnow()
+
     return user
 
 
@@ -80,10 +87,11 @@ async def get_token_payload(
 async def get_premium_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Dependency that requires the user to be on a premium or institutional plan."""
-    if current_user.plan not in ("premium", "institutional"):
+    """Dependency that requires the user to be on a paid or institutional plan."""
+    normalized_plan = normalize_plan(current_user.plan)
+    if normalized_plan not in ACTIVE_PAID_PLANS and normalized_plan != INSTITUTIONAL_PLAN:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="This feature requires a premium plan.",
+            detail="This feature requires a paid plan.",
         )
     return current_user

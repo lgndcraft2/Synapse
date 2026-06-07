@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
-from app.core.dependencies import get_current_user
-from app.models.models import User, CognitiveProfile, FeedbackLog, ReadingSession, Billing
+from app.models.models import User, CognitiveProfile, FeedbackLog, ReadingSession
 from app.schemas.schemas import (
     ReformatRequest, ReformatResponse,
     AnalyseSectionsRequest, AnalyseSectionsResponse,
     DocumentReformatRequest, CognitiveProfileSchema
 )
+from app.core.entitlements import get_effective_plan, has_high_tier_entitlement
+from app.core.plans import DEEP_THINKER_PLAN, INSTITUTIONAL_PLAN, THINKER_LITE_PLAN
 from app.services.rate_limit import check_rate_limit
 from app.services.ai import (
     call_gemini, call_claude,
@@ -17,7 +18,6 @@ from app.services.ai import (
 )
 from app.core.config import settings
 from jose import jwt, JWTError
-from datetime import datetime
 import asyncio
 
 router = APIRouter(prefix="/reformat", tags=["reformat"])
@@ -48,27 +48,16 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
     limit = settings.FREE_TEXT_LIMIT
     plan_name = "Free"
 
-    if user and user.plan == "institutional":
-        limit = settings.PREMIUM_TEXT_LIMIT
+    effective_plan = await get_effective_plan(db, user)
+    if effective_plan == INSTITUTIONAL_PLAN:
+        limit = settings.DEEP_THINKER_TEXT_LIMIT
         plan_name = "Institutional"
-    elif user and user.plan == "premium":
-        result = await db.execute(
-            select(Billing).where(Billing.user_id == user.id)
-        )
-        billing = result.scalar_one_or_none()
-        now = datetime.utcnow()
-        is_active = (
-            billing
-            and billing.plan == "premium"
-            and billing.status in ("active", "trialing")
-            and (billing.renews_at is None or billing.renews_at > now)
-        )
-        if is_active and billing.status == "trialing":
-            limit = settings.TRIAL_TEXT_LIMIT
-            plan_name = "Premium Trial"
-        elif is_active:
-            limit = settings.PREMIUM_TEXT_LIMIT
-            plan_name = "Premium"
+    elif effective_plan == DEEP_THINKER_PLAN:
+        limit = settings.DEEP_THINKER_TEXT_LIMIT
+        plan_name = "Deep Thinker"
+    elif effective_plan == THINKER_LITE_PLAN:
+        limit = settings.THINKER_LITE_TEXT_LIMIT
+        plan_name = "Thinker Lite"
 
     if length > limit:
         raise HTTPException(
@@ -83,30 +72,9 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
         )
 
 
-async def _is_premium_active(user: User | None, db: AsyncSession) -> bool:
-    """Verifies if a user has an active premium/institutional subscription."""
-    if not user:
-        return False
-    
-    if user.plan == "institutional":
-        return True
-    
-    if user.plan == "premium":
-        result = await db.execute(
-            select(Billing).where(Billing.user_id == user.id)
-        )
-        billing = result.scalar_one_or_none()
-        if not billing or billing.plan != "premium":
-            return False
-        
-        # Verify both status and expiration date
-        now = datetime.utcnow()
-        is_active = billing.status in ("active", "trialing")
-        has_not_expired = billing.renews_at is None or billing.renews_at > now
-        
-        return is_active and has_not_expired
-
-    return False
+async def _uses_claude(user: User | None, db: AsyncSession) -> bool:
+    """Returns True for plans that should use Claude-backed rendering."""
+    return await has_high_tier_entitlement(db, user)
 
 
 @router.post("", response_model=ReformatResponse)
@@ -177,9 +145,9 @@ async def reformat_page(
         feedback_summary += "\nUser reported a hard reading day. Simplify aggressively."
 
     # ── 6. Call AI + SQ4R in parallel ────────────────────────────
-    is_premium = await _is_premium_active(user, db)
+    use_claude = await _uses_claude(user, db)
 
-    if is_premium:
+    if use_claude:
         html_task = call_claude(body.page_text, profile, feedback_summary)
     else:
         html_task = call_gemini(body.page_text, profile, feedback_summary)
@@ -209,7 +177,7 @@ async def reformat_page(
     return ReformatResponse(
         html=html,
         questions=questions,
-        model_used="claude-sonnet" if is_premium else "gemini-flash",
+        model_used="claude-sonnet" if use_claude else "gemini-flash",
     )
 
 
@@ -280,7 +248,7 @@ async def reformat_document_route(
         profile["simplify_vocab"] = True
         feedback_summary += "\nUser reported a hard reading day. Simplify aggressively."
 
-    is_premium = await _is_premium_active(user, db)
+    use_claude = await _uses_claude(user, db)
     
     from app.services.ai import call_document
     html = await call_document(
@@ -288,11 +256,11 @@ async def reformat_document_route(
         body.media_type,
         profile,
         feedback_summary,
-        use_claude=is_premium
+        use_claude=use_claude
     )
     
     return ReformatResponse(
         html=html,
         questions=None,
-        model_used="claude-sonnet" if is_premium else "gemini-flash"
+        model_used="claude-sonnet" if use_claude else "gemini-flash"
     )

@@ -13,13 +13,19 @@ Synapse is a cognitive accessibility Chrome extension that restructures webpages
 - **Bionic Reading & Focus Mode:** Session-level UI controls for deep reading.
 - **Secure AI Proxy:** All AI logic and credentials are centralized on the backend.
 
+## Plans
+
+- **Free:** section cards, full-page reformatting, single profile, basic adaptive feedback, 30 reformats/month.
+- **Thinker Lite:** everything in Free, Document Reader support, SQ4R questions, Bionic Reading, Google Docs support, 300 reformats/month.
+- **Deep Thinker:** everything in Thinker Lite, full Google Docs/PDF support, cognitive pattern insights, full adaptive feedback loop, highest usage limits.
+
 ## Architecture & Security
 
 Synapse uses a **Backend-First** architecture. The extension itself never handles raw API keys. Instead, it communicates with a FastAPI proxy that manages provider routing, rate limiting, and prompt isolation.
 
 - **Credential Protection:** API keys for Gemini and Claude are stored only in the backend environment.
 - **Prompt Isolation:** User content is wrapped in `<source_content>` tags and escaped to prevent prompt injection.
-- **Tiered Limits:** Input size validation is enforced based on user plan (50K free / 500K premium).
+- **Tiered Limits:** Input size validation is enforced based on user plan (50K free / 100K Thinker Lite / 500K Deep Thinker).
 - **Atomic Rate Limiting:** Request quotas are tracked via Redis and PostgreSQL with race-condition protection.
 
 ## Setup & Installation
@@ -42,7 +48,7 @@ Synapse uses a **Backend-First** architecture. The extension itself never handle
 
 - **Extension:** Manifest V3, Vanilla JS/HTML/CSS, DOMPurify.
 - **Backend:** Python 3.11+, FastAPI, SQLAlchemy, Redis (Upstash).
-- **Models:** Google Gemini 1.5 Flash (Free), Anthropic Claude 3.5 Sonnet (Premium).
+- **Models:** Google Gemini 1.5 Flash (Free), Anthropic Claude 3.5 Sonnet (Deep Thinker).
 
 ## Product Status
 

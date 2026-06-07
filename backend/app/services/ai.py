@@ -8,7 +8,7 @@ from app.core.config import settings
 _key_index = 0
 _rate_limited_keys: set[str] = set()
 _key_lock = asyncio.Lock()
-_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _CLAUDE_BASE  = "https://api.anthropic.com/v1/messages"
 _CLAUDE_MODEL = "claude-sonnet-4-6"
 
@@ -187,7 +187,7 @@ async def call_gemini(page_text: str, profile: dict, feedback_summary: str) -> s
             "contents": [{
                 "parts": [{"text": f"Reformat the content inside these tags:\n\n<source_content>\n{safe_text}\n</source_content>"}]
             }],
-            "generationConfig": {"maxOutputTokens": 2000},
+            "generationConfig": {"maxOutputTokens": 50000},
         }
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -211,7 +211,7 @@ async def call_gemini(page_text: str, profile: dict, feedback_summary: str) -> s
 
 
 async def call_claude(page_text: str, profile: dict, feedback_summary: str) -> str:
-    """Call Claude Sonnet via Anthropic API — premium users only."""
+    """Call Claude Sonnet via Anthropic API — deep thinker and institutional users only."""
     system_prompt = _build_system_prompt(profile, feedback_summary)
     safe_text = _escape_tags(page_text)
 

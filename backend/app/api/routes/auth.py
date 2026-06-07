@@ -6,6 +6,7 @@ from app.models.models import User, CognitiveProfile, Billing
 from app.schemas.schemas import UserOut
 from app.core.dependencies import get_current_user, get_token_payload
 from app.core.config import settings
+from app.core.plans import normalize_plan
 from supabase import create_client
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
@@ -113,6 +114,35 @@ async def sync_user_from_supabase(
         # Also sync email if changed
         if user.email != email:
             user.email = email
+        current_plan = normalize_plan(user.plan)
+        if current_plan == "institutional":
+            user.plan = "institutional"
+        else:
+            result = await db.execute(
+                select(Billing).where(Billing.user_id == user.id)
+            )
+            billing = result.scalar_one_or_none()
+            if billing:
+                billing_plan = normalize_plan(billing.plan)
+                is_active_paid = (
+                    billing_plan in ("thinker_lite", "deep_thinker")
+                    and billing.status in ("active", "trialing")
+                    and (billing.renews_at is None or billing.renews_at > datetime.utcnow())
+                )
+                if is_active_paid:
+                    user.plan = billing_plan
+                    if billing_plan != billing.plan:
+                        billing.plan = billing_plan
+                        billing.updated_at = datetime.utcnow()
+                else:
+                    user.plan = "free"
+                    if billing.plan != "free":
+                        billing.plan = "free"
+                        billing.updated_at = datetime.utcnow()
+            else:
+                normalized_plan = normalize_plan(user.plan)
+                if normalized_plan != user.plan:
+                    user.plan = normalized_plan
         user.updated_at = datetime.utcnow()
 
     return user

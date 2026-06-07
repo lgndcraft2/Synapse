@@ -5,7 +5,7 @@
 - **PostgreSQL** (Supabase) — primary database
 - **Upstash Redis** — rate limiting + caching
 - **Supabase Auth** — Google OAuth
-- **Stripe** — subscriptions + billing
+- **Stripe** — subscriptions + billing for Thinker Lite and Deep Thinker
 - **Railway** — hosting
 
 ## Project Structure
@@ -52,3 +52,5 @@ cp .env.example .env
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+
+Stripe billing expects `STRIPE_THINKER_LITE_PRICE_ID`, `STRIPE_DEEP_THINKER_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` in the environment.

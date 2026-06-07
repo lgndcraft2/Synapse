@@ -72,6 +72,21 @@ function timeSince(dateString: string) {
   return Math.floor(seconds) + " seconds ago";
 }
 
+function formatPlanLabel(plan?: string | null) {
+  if (!plan) return "Free";
+
+  const normalized = plan.toLowerCase().replaceAll("-", "_");
+  const labels: Record<string, string> = {
+    free: "Free",
+    thinker_lite: "Thinker Lite",
+    deep_thinker: "Deep Thinker",
+    institutional: "Institutional",
+    premium: "Deep Thinker",
+  };
+
+  return labels[normalized] || normalized.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
 export default function Dashboard() {
   const [readingDay, setReadingDay] = useState<SessionDifficulty>("normal");
   const [user, setUser] = useState<any>(null);
@@ -141,6 +156,16 @@ export default function Dashboard() {
     { label: "Words Processed", value: stats ? (stats.words_processed > 1000 ? (stats.words_processed / 1000).toFixed(1) + "k" : stats.words_processed.toString()) : "0" },
     { label: "Time Saved",      value: stats ? (stats.time_saved_minutes > 60 ? Math.floor(stats.time_saved_minutes / 60) + "h " + (stats.time_saved_minutes % 60) + "m" : stats.time_saved_minutes + "m") : "0m" },
   ];
+
+  const activePlan = billing?.plan || "free";
+  const isPaidPlan = activePlan !== "free";
+  const accessLabel = activePlan === "free"
+    ? "Free Tier"
+    : activePlan === "institutional"
+      ? "Institutional Access"
+    : billing?.status === "trialing"
+      ? "Trial Access"
+      : "Monthly Access";
 
   return (
     <>
@@ -445,14 +470,14 @@ export default function Dashboard() {
                   Plan Status
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded font-semibold" 
-                  style={{ backgroundColor: (billing?.plan || 'free') === 'free' ? '#5e5f5b' : '#004635', color: "#ffffff" }}>
-                  {billing?.plan?.toUpperCase() || (isLoading ? '...' : 'FREE')}
+                  style={{ backgroundColor: isPaidPlan ? '#004635' : '#5e5f5b', color: "#ffffff" }}>
+                  {billing?.plan ? formatPlanLabel(billing.plan) : (isLoading ? '...' : 'Free')}
                 </span>
               </div>
               <div className="flex justify-between items-end">
                 <div>
                   <p className="font-medium" style={{ color: "#1b1c1c" }}>
-                    {billing?.status === 'trialing' ? 'Free Trial' : 'Monthly Access'}
+                    {accessLabel}
                   </p>
                   <p className="text-sm mt-1" style={{ color: "#5e5f5b" }}>
                     {billing?.renews_at 

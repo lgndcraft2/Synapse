@@ -11,7 +11,7 @@ const defaultProfile = {
 
 const defaultProviderConfig = {
   tier: "free",
-  backendBaseUrl: "https://api.synapseos.app",
+  backendBaseUrl: "http://localhost:8000",
   backendAccessToken: "",
   useBackendProxy: true,
   preferredProvider: "auto",

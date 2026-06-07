@@ -1,18 +1,20 @@
-import redis.asyncio as aioredis
-from fastapi import HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
-from app.core.config import settings
-from app.models.models import Billing, UsageTracking, User
-from datetime import datetime
 import hashlib
+from datetime import datetime, timedelta
 
-# ── Redis client (Upstash) ────────────────────────────────────────
+import redis.asyncio as aioredis
+from fastapi import HTTPException, Request, status
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.entitlements import get_effective_plan
+from app.core.plans import DEEP_THINKER_PLAN, FREE_PLAN, INSTITUTIONAL_PLAN, THINKER_LITE_PLAN
+from app.models.models import UsageTracking, User
+
+# Redis client (Upstash)
 redis_client = aioredis.from_url(
     settings.UPSTASH_REDIS_URL,
-    password=settings.UPSTASH_REDIS_TOKEN,
     decode_responses=True,
-    ssl=True,
 )
 
 
@@ -23,16 +25,42 @@ async def check_rate_limit(
     request: Request,
 ) -> None:
     """
-    Enforces rate limits for free tier users.
-    Premium/institutional users bypass all limits.
-    Raises HTTP 429 if limit is exceeded.
+    Enforces plan-aware rate limits.
+
+    Free users keep the current daily and lifetime protection.
+    Thinker Lite gets a monthly quota and the same abuse detection.
+    Deep Thinker and institutional users bypass hard limits.
     """
 
-    # ── Premium users — no limits ─────────────────────────────────
-    if user and await _has_active_entitlement(db, user):
+    plan = FREE_PLAN
+    if user:
+        plan = await get_effective_plan(db, user)
+
+    if plan in (DEEP_THINKER_PLAN, INSTITUTIONAL_PLAN):
         return
 
-    # ── Build the rate limit key ──────────────────────────────────
+    if user and plan == THINKER_LITE_PLAN:
+        monthly_key = f"rl:monthly:user:{user.id}"
+        monthly_count = await redis_client.incr(monthly_key)
+
+        now = datetime.utcnow()
+        next_month_year = now.year + (1 if now.month == 12 else 0)
+        next_month = datetime(next_month_year, 1 if now.month == 12 else now.month + 1, 1)
+        seconds_until_reset = int((next_month - now).total_seconds())
+
+        if monthly_count == 1:
+            await redis_client.expire(monthly_key, seconds_until_reset)
+
+        if monthly_count > settings.THINKER_LITE_MONTHLY_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Monthly limit of {settings.THINKER_LITE_MONTHLY_LIMIT} requests reached.",
+                headers={"Retry-After": str(seconds_until_reset)},
+            )
+
+        await _record_usage_tracking(db, str(user.id), user, enforce_lifetime_limit=False)
+        return
+
     if user:
         daily_key = f"rl:daily:user:{user.id}"
         lifetime_identifier = str(user.id)
@@ -42,25 +70,21 @@ async def check_rate_limit(
         hashed_id = hashlib.sha256(raw_id.encode()).hexdigest()[:16]
         daily_key = f"rl:daily:anon:{hashed_id}"
         lifetime_identifier = f"anon:{hashed_id}"
-        
-        # IP-based guard
+
         ip_daily_key = f"rl:daily:ip:{client_ip}"
         ip_daily_count = await redis_client.get(ip_daily_key)
         if ip_daily_count and int(ip_daily_count) > settings.FREE_DAILY_LIMIT * 2:
-             raise HTTPException(
+            raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many requests from this IP address today.",
             )
 
-    # ── Daily limit (Redis) ───────────────────────────────────────
-    # We increment FIRST and check the result for atomicity
     daily_count = await redis_client.incr(daily_key)
-    
-    from datetime import timedelta
+
     now = datetime.utcnow()
     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     seconds_until_midnight = int((tomorrow - now).total_seconds())
-    
+
     if daily_count == 1:
         await redis_client.expire(daily_key, seconds_until_midnight)
 
@@ -71,7 +95,6 @@ async def check_rate_limit(
             headers={"Retry-After": str(seconds_until_midnight)},
         )
 
-    # Increment IP-based limit for anonymous users
     if not user:
         client_ip = request.client.host
         ip_daily_key = f"rl:daily:ip:{client_ip}"
@@ -79,16 +102,23 @@ async def check_rate_limit(
         if ip_count == 1:
             await redis_client.expire(ip_daily_key, seconds_until_midnight)
 
-    # ── Lifetime limit (PostgreSQL) ───────────────────────────────
+    await _record_usage_tracking(db, lifetime_identifier, user, enforce_lifetime_limit=True)
+
+
+async def _record_usage_tracking(
+    db: AsyncSession,
+    lifetime_identifier: str,
+    user: User | None,
+    enforce_lifetime_limit: bool,
+) -> None:
     from sqlalchemy.exc import IntegrityError
-    
+
     result = await db.execute(
         select(UsageTracking).where(UsageTracking.fingerprint == lifetime_identifier)
     )
     tracking = result.scalar_one_or_none()
 
     if tracking is None:
-        # Isolated insertion to handle race conditions without session rollback
         async with db.begin_nested():
             try:
                 tracking = UsageTracking(
@@ -102,10 +132,8 @@ async def check_rate_limit(
                 await db.flush()
                 return
             except IntegrityError:
-                # Another concurrent request inserted it — catch and proceed to update
                 pass
-        
-        # Refetch the now-existing record
+
         result = await db.execute(
             select(UsageTracking).where(UsageTracking.fingerprint == lifetime_identifier)
         )
@@ -116,13 +144,12 @@ async def check_rate_limit(
     if tracking.flagged_for_abuse:
         raise HTTPException(status_code=403, detail="Account flagged for abuse.")
 
-    if tracking.lifetime_requests >= settings.FREE_LIFETIME_LIMIT:
+    if enforce_lifetime_limit and tracking.lifetime_requests >= settings.FREE_LIFETIME_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Free tier lifetime limit reached.",
+            detail="Free tier lifetime limit reached.",
         )
 
-    # Increment lifetime count (atomic update)
     await db.execute(
         update(UsageTracking)
         .where(UsageTracking.fingerprint == lifetime_identifier)
@@ -132,12 +159,10 @@ async def check_rate_limit(
         )
     )
 
-    # ── Abuse detection ───────────────────────────────────────────
-    # Flag if this fingerprint made >500 requests in the last hour
     abuse_key = f"rl:abuse:{lifetime_identifier}"
     abuse_count = await redis_client.incr(abuse_key)
     if abuse_count == 1:
-        await redis_client.expire(abuse_key, 3600)  # 1 hour window
+        await redis_client.expire(abuse_key, 3600)
 
     if abuse_count > 500:
         await db.execute(
@@ -159,18 +184,3 @@ async def get_cache(key: str) -> str | None:
 async def set_cache(key: str, value: str, ttl: int = 300) -> None:
     """Set a value in Redis cache with TTL in seconds."""
     await redis_client.set(key, value, ex=ttl)
-
-
-async def _has_active_entitlement(db: AsyncSession, user: User) -> bool:
-    if user.plan == "institutional":
-        return True
-    if user.plan != "premium":
-        return False
-
-    result = await db.execute(select(Billing).where(Billing.user_id == user.id))
-    billing = result.scalar_one_or_none()
-    if not billing or billing.plan != "premium":
-        return False
-    if billing.status not in ("active", "trialing"):
-        return False
-    return billing.renews_at is None or billing.renews_at > datetime.utcnow()

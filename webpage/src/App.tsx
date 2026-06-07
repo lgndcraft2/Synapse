@@ -58,11 +58,13 @@ const pricingPlans = [
     name: 'Explorer',
     price: 'Free',
     priceId: '',
+    description: 'For quick cleanup, light reading, and a single structured profile.',
     features: [
-      'Web reformatting',
-      'Single profile',
+      'Section cards for dense pages',
+      'Full page reformatting',
+      'Single cognitive profile',
+      'Basic adaptive feedback',
       '30 section reformats per month',
-      'Basic cognitive profile',
       'Chrome extension only',
     ],
     cta: 'Start Free',
@@ -72,12 +74,14 @@ const pricingPlans = [
     price: '$4',
     suffix: '/mo',
     priceId: import.meta.env.VITE_STRIPE_THINKER_LITE_PRICE_ID,
+    description: 'For structured reading across web pages and documents.',
     features: [
       'Everything in Free',
-      'Up to 300 section reformats per month',
+      'Document Reader for PDF, TXT, CSV, and Markdown',
+      'SQ4R focus questions',
+      'Bionic reading and focus mode',
       'Google Docs support',
-      'Faster processing',
-      'Basic adaptive feedback',
+      'Up to 300 section reformats per month',
     ],
     cta: 'Upgrade',
     featured: true,
@@ -87,11 +91,14 @@ const pricingPlans = [
     price: '$8',
     suffix: '/mo',
     priceId: import.meta.env.VITE_STRIPE_DEEP_THINKER_PRICE_ID,
+    description: 'For heavy reading sessions, research, and deeper adaptation.',
     features: [
-      'Unlimited reformats',
-      'Full Google Docs/PDF support',
-      'Cognitive pattern insights',
+      'Everything in Thinker Lite',
+      'Full Google Docs and PDF support',
+      'All cognitive profile modes',
+      'Deeper cognitive pattern insights',
       'Full adaptive feedback loop',
+      'Highest usage limits',
     ],
     cta: 'Go Deep',
   },
@@ -412,7 +419,7 @@ function App() {
 
         <section className="pricing full-section" id="pricing">
           <div className="section-heading">
-            <h2>Choose Your Flow</h2>
+            <h2>Choose Your Plan</h2>
             <p>No diagnosis required. No data sold. Ever.</p>
           </div>
           <div className="pricing-grid">
@@ -420,7 +427,7 @@ function App() {
               <article className={`price-card ${plan.featured ? 'featured offset-shadow' : ''}`} key={plan.name}>
                 {plan.featured && <div className="badge">Recommended</div>}
                 <h3>{plan.name}</h3>
-                {plan.name === 'Deep Thinker' && <p className="pricing-note">$8/mo primary pricing, with local university pricing available in Nigeria.</p>}
+                {plan.description && <p className="pricing-note">{plan.description}</p>}
                 <div className="price">
                   {plan.price}
                   {plan.suffix && <span>{plan.suffix}</span>}

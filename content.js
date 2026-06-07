@@ -1206,7 +1206,7 @@ function activateFullPage() {
   // ── Extract text-only content for Claude ────────────────────────
   const clone = main.cloneNode(true);
   clone.querySelectorAll('script,style,nav,footer,header').forEach(e => e.remove());
-  const text = clone.innerText.slice(0, 8000);
+  const text = extractFullPageText();
 
   const btn = document.getElementById('sp-main-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reformatting...'; }
