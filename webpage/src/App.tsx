@@ -16,6 +16,9 @@ import {
   Zap,
   TrendingUp,
 } from 'lucide-react';
+import { supabase } from './lib/supabase';
+import { createCheckoutSession } from './lib/api';
+import ConfigBanner from './component/ConfigBanner';
 
 const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
 
@@ -54,6 +57,7 @@ const pricingPlans = [
   {
     name: 'Explorer',
     price: 'Free',
+    priceId: '',
     features: [
       'Web reformatting',
       'Single profile',
@@ -67,6 +71,7 @@ const pricingPlans = [
     name: 'Thinker Lite',
     price: '$4',
     suffix: '/mo',
+    priceId: import.meta.env.VITE_STRIPE_THINKER_LITE_PRICE_ID,
     features: [
       'Everything in Free',
       'Up to 300 section reformats per month',
@@ -81,6 +86,7 @@ const pricingPlans = [
     name: 'Deep Thinker',
     price: '$8',
     suffix: '/mo',
+    priceId: import.meta.env.VITE_STRIPE_DEEP_THINKER_PRICE_ID,
     features: [
       'Unlimited reformats',
       'Full Google Docs/PDF support',
@@ -160,8 +166,26 @@ function Icon({ name }: { name: keyof typeof icons | string }) {
 }
 
 function App() {
+  async function handleUpgrade(priceId: string) {
+    if (!priceId) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      window.location.href = '/auth?tab=signup';
+      return;
+    }
+
+    try {
+      const checkoutUrl = await createCheckoutSession(priceId);
+      window.location.href = checkoutUrl;
+    } catch (err) {
+      alert('Failed to start checkout session. Please try again.');
+    }
+  }
+
   return (
     <>
+      <ConfigBanner />
       <header className="topbar">
         <div className="nav-shell">
           <a className="brand" href="#top" aria-label="Synapse home">
@@ -386,7 +410,7 @@ function App() {
           </div>
         </section>
 
-        <section className="pricing full-section">
+        <section className="pricing full-section" id="pricing">
           <div className="section-heading">
             <h2>Choose Your Flow</h2>
             <p>No diagnosis required. No data sold. Ever.</p>
@@ -409,7 +433,12 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                <button className={`button ${plan.featured ? 'button-primary' : 'button-secondary'}`}>{plan.cta}</button>
+                <button 
+                  className={`button ${plan.featured ? 'button-primary' : 'button-secondary'}`}
+                  onClick={() => plan.priceId ? handleUpgrade(plan.priceId) : (window.location.href = '/auth?tab=signup')}
+                >
+                  {plan.cta}
+                </button>
               </article>
             ))}
           </div>
