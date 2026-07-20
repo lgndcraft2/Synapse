@@ -113,7 +113,40 @@ export async function getProfile() {
   });
 
   if (!response.ok) {
+    if (response.status === 404) return null;
     throw new Error('Failed to fetch profile');
+  }
+
+  return response.json();
+}
+
+export async function updateProfile(update: Record<string, unknown>) {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/profile`, {
+    method: 'PATCH',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(update),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to update profile' }));
+    throw new Error(error.detail || 'Failed to update profile');
+  }
+
+  return response.json();
+}
+
+export async function getProfileHistory() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/profile/history`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch profile history');
   }
 
   return response.json();

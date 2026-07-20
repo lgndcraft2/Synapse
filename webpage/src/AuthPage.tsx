@@ -5,7 +5,7 @@ import { syncUser } from './lib/api';
 import ConfigBanner from './component/ConfigBanner';
 import useToast from './lib/useToast';
 
-type AuthTab = 'login' | 'signup';
+type AuthTab = 'login' | 'signup' | 'reset';
 
 type VisiblePasswords = Record<'signup' | 'confirm' | 'login', boolean>;
 

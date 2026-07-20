@@ -1,6 +1,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
-import { getBillingStatus, openCustomerPortal, getDashboardStats, getProfile } from "./lib/api";
+import {
+  getBillingStatus,
+  openCustomerPortal,
+  getDashboardStats,
+  getProfile,
+  updateProfile,
+  getProfileHistory,
+} from "./lib/api";
+import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import ConfigBanner from "./component/ConfigBanner";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
@@ -27,6 +35,29 @@ interface BillingInfo {
 
 interface ProfileInfo {
   profile_type: string;
+}
+
+interface HistoryEntry {
+  changed_at: string;
+  change_summary: string;
+  previous_state: Record<string, unknown>;
+  new_state: Record<string, unknown>;
+}
+
+// Order the "Switch Profile" button cycles through. Mirrors the backend's
+// ProfileUpdate Literal for profile_type.
+const PROFILE_TYPES = ["load-reducer", "comprehension-gap", "hyperfocus"];
+
+// Human-readable labels for internal plan tiers.
+const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
+  lite: "Thinker Lite",
+  premium: "Deep Thinker",
+  institutional: "Institutional",
+};
+
+function titleCase(value: string) {
+  return value.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
 interface StatsInfo {
@@ -73,12 +104,26 @@ function timeSince(dateString: string) {
 }
 
 export default function Dashboard() {
-  const [readingDay, setReadingDay] = useState<SessionDifficulty>("normal");
+  const [readingDay, setReadingDay] = useState<SessionDifficulty>(() => {
+    if (typeof localStorage === "undefined") return "normal";
+    const saved = localStorage.getItem("synapse_reading_day");
+    return saved === "hard" || saved === "flowing" || saved === "normal" ? saved : "normal";
+  });
   const [user, setUser] = useState<any>(null);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [stats, setStats] = useState<StatsInfo | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Persist the "How are you reading today?" selection across visits.
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("synapse_reading_day", readingDay);
+    }
+  }, [readingDay]);
 
   useEffect(() => {
     async function loadData() {
@@ -89,23 +134,65 @@ export default function Dashboard() {
       }
       setUser(user);
 
-      try {
-        const [status, profileData, statsData] = await Promise.all([
-          getBillingStatus(),
-          getProfile(),
-          getDashboardStats()
-        ]);
-        setBilling(status);
-        setProfile(profileData);
-        setStats(statsData);
-      } catch (err) {
-        console.error("Failed to load dashboard data", err);
-      } finally {
-        setIsLoading(false);
+      // Hand the current session to the extension so it stays signed in.
+      const { data: { session } } = await supabase.auth.getSession();
+      pushSessionToExtension(session);
+
+      // Load each panel independently so one failing endpoint doesn't blank the rest.
+      const [status, profileData, statsData, historyData] = await Promise.allSettled([
+        getBillingStatus(),
+        getProfile(),
+        getDashboardStats(),
+        getProfileHistory(),
+      ]);
+
+      if (status.status === "fulfilled") setBilling(status.value);
+      if (profileData.status === "fulfilled") setProfile(profileData.value);
+      if (statsData.status === "fulfilled") setStats(statsData.value);
+      if (historyData.status === "fulfilled") setHistory(historyData.value);
+
+      for (const r of [status, profileData, statsData, historyData]) {
+        if (r.status === "rejected") console.error("Dashboard load error", r.reason);
       }
+
+      setIsLoading(false);
     }
     loadData();
   }, []);
+
+  // Keep the extension's session fresh, and tell it to sign out when we do.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        pushLogoutToExtension();
+      } else if (session) {
+        pushSessionToExtension(session);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function handleSwitchProfile() {
+    if (!profile || isSwitching) return;
+    const currentIndex = PROFILE_TYPES.indexOf(profile.profile_type);
+    const nextType = PROFILE_TYPES[(currentIndex + 1) % PROFILE_TYPES.length];
+
+    setIsSwitching(true);
+    try {
+      const updated = await updateProfile({ profile_type: nextType });
+      setProfile(updated);
+      // The backend logs a history entry for the change — refresh the log.
+      try {
+        setHistory(await getProfileHistory());
+      } catch {
+        /* non-fatal: the profile still switched */
+      }
+    } catch (err) {
+      alert("Failed to switch profile. Please try again.");
+    } finally {
+      setIsSwitching(false);
+    }
+  }
 
   async function handleManageBilling() {
     try {
@@ -117,6 +204,7 @@ export default function Dashboard() {
   }
 
   async function handleLogout() {
+    pushLogoutToExtension();
     await supabase.auth.signOut();
     window.location.href = "/auth?tab=login";
   }
@@ -342,12 +430,14 @@ export default function Dashboard() {
                     Current Active Profile
                   </span>
                   <h2 className="font-serif font-semibold" style={{ fontSize: 32, lineHeight: 1.2, color: "#004635" }}>
-                    {profile?.profile_type?.replace('-', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || "Load Reducer"}
+                    {profile?.profile_type ? titleCase(profile.profile_type) : "Load Reducer"}
                   </h2>
                 </div>
                 <button className="rounded px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-                  style={{ border: "1px solid #004635", color: "#004635" }}>
-                  Switch Profile
+                  style={{ border: "1px solid #004635", color: "#004635", opacity: (!profile || isSwitching) ? 0.5 : 1, cursor: (!profile || isSwitching) ? "default" : "pointer" }}
+                  onClick={handleSwitchProfile}
+                  disabled={!profile || isSwitching}>
+                  {isSwitching ? "Switching…" : "Switch Profile"}
                 </button>
               </div>
               <div className="relative" style={{ borderTop: "1px solid #3d3d38", paddingTop: 24 }}>
@@ -355,14 +445,32 @@ export default function Dashboard() {
                   Recent Adjustments Log
                 </h3>
                 <ul className="space-y-4">
-                  <li className="flex items-start gap-3">
-                    <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
-                    <div>
-                      <p style={{ color: "#1b1c1c" }}>Synapse initialised your profile model. Start reading to see adjustments here.</p>
-                      <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>Just now</span>
-                    </div>
-                  </li>
+                  {history.length > 0 ? (
+                    (showAllHistory ? history : history.slice(0, 4)).map((h, i) => (
+                      <li key={i} className="flex items-start gap-3">
+                        <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
+                        <div>
+                          <p style={{ color: "#1b1c1c" }}>{h.change_summary}</p>
+                          <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>{timeSince(h.changed_at)}</span>
+                        </div>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="flex items-start gap-3">
+                      <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
+                      <div>
+                        <p style={{ color: "#1b1c1c" }}>Synapse initialised your profile model. Start reading to see adjustments here.</p>
+                        <span className="block mt-1 text-sm" style={{ color: "#5e5f5b" }}>Just now</span>
+                      </div>
+                    </li>
+                  )}
                 </ul>
+                {history.length > 4 && (
+                  <button className="mt-4 text-sm font-semibold hover:underline" style={{ color: "#004635" }}
+                    onClick={() => setShowAllHistory((v) => !v)}>
+                    {showAllHistory ? "Show less" : "View full history"}
+                  </button>
+                )}
               </div>
             </section>
 
@@ -430,11 +538,6 @@ export default function Dashboard() {
                   <li className="py-3 text-sm" style={{ color: "#5e5f5b", fontStyle: "italic" }}>No reading sessions recorded.</li>
                 )}
               </ul>
-              {stats?.recent_sessions && stats.recent_sessions.length > 0 && (
-                <button className="mt-4 text-sm font-semibold hover:underline" style={{ color: "#004635" }}>
-                  View Full History
-                </button>
-              )}
             </section>
 
             {/* Billing */}
@@ -444,9 +547,11 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold uppercase" style={{ color: "#5e5f5b", letterSpacing: "0.05em" }}>
                   Plan Status
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded font-semibold" 
+                <span className="text-xs px-2 py-0.5 rounded font-semibold"
                   style={{ backgroundColor: (billing?.plan || 'free') === 'free' ? '#5e5f5b' : '#004635', color: "#ffffff" }}>
-                  {billing?.plan?.toUpperCase() || (isLoading ? '...' : 'FREE')}
+                  {billing?.plan
+                    ? (PLAN_LABELS[billing.plan] || billing.plan).toUpperCase()
+                    : (isLoading ? '...' : 'FREE')}
                 </span>
               </div>
               <div className="flex justify-between items-end">

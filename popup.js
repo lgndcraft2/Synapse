@@ -21,7 +21,8 @@ const dismissBtn = document.getElementById("dismiss-update");
 const feedbackStats = document.getElementById("feedback-stats");
 const clearFeedback = document.getElementById("clear-feedback");
 const backendUrl = document.getElementById("backend-url");
-const backendToken = document.getElementById("backend-token");
+const accountStatus = document.getElementById("account-status");
+const dashboardLink = document.getElementById("dashboard-link");
 const billingStatus = document.getElementById("billing-status");
 const saveProviderBtn = document.getElementById("save-provider-btn");
 const usageStats = document.getElementById("usage-stats");
@@ -35,8 +36,8 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
-  const profile = res?.profile || {};
+function applyProfileToForm(profile) {
+  if (!profile) return;
   profileType.value = profile.profileType || "load-reducer";
   formatSelect.value = profile.preferredFormat || "bullet points";
   chunkSize.value = profile.chunkSize || "short";
@@ -45,6 +46,10 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
   simplifyVocab.checked = !!profile.simplifyVocab;
   useHeaders.checked = profile.useHeaders !== false;
   notesArea.value = profile.notes || "";
+}
+
+chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
+  applyProfileToForm(res?.profile || {});
 
   if (res?.pendingUpdate) {
     updateMsg.textContent = res.pendingUpdate.message || "Synapse updated your profile based on your feedback.";
@@ -53,10 +58,24 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
   }
 });
 
+// Reflect sign-in state and, when signed in, pull the latest dashboard profile.
+chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" }, (res) => {
+  if (res?.authenticated) {
+    accountStatus.textContent = "Signed in — synced with your dashboard.";
+    if (dashboardLink) dashboardLink.style.display = "none";
+    chrome.runtime.sendMessage({ type: "REFRESH_PROFILE" }, (refresh) => {
+      if (refresh?.profile) applyProfileToForm(refresh.profile);
+    });
+  } else {
+    accountStatus.textContent = "Not signed in — using anonymous free-tier limits.";
+    if (dashboardLink) dashboardLink.style.display = "inline";
+  }
+});
+
 chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
   const config = res?.providerConfig || {};
   backendUrl.value = config.backendBaseUrl || "https://api.synapseos.app";
-  backendToken.value = config.backendAccessToken || "";
+  if (dashboardLink) dashboardLink.href = (backendUrl.value || "").replace(/\/+$/, "") + "/auth?tab=login";
 
   const usage = res?.providerUsage || {};
   const today = usage[todayKey()] || { requests: 0, providers: {} };
@@ -120,11 +139,11 @@ saveBtn.addEventListener("click", () => {
 saveProviderBtn.addEventListener("click", () => {
   const providerConfig = {
     backendBaseUrl: backendUrl.value.trim().replace(/\/+$/, ""),
-    backendAccessToken: backendToken.value.trim(),
     useBackendProxy: true
   };
 
   chrome.runtime.sendMessage({ type: "SAVE_PROVIDER_CONFIG", providerConfig }, () => {
+    if (dashboardLink) dashboardLink.href = providerConfig.backendBaseUrl + "/auth?tab=login";
     setStatus("Backend settings saved.");
   });
 });

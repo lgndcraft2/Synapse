@@ -51,7 +51,7 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
     if user and user.plan == "institutional":
         limit = settings.PREMIUM_TEXT_LIMIT
         plan_name = "Institutional"
-    elif user and user.plan == "premium":
+    elif user and user.plan in ("premium", "lite"):
         result = await db.execute(
             select(Billing).where(Billing.user_id == user.id)
         )
@@ -59,11 +59,14 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
         now = datetime.utcnow()
         is_active = (
             billing
-            and billing.plan == "premium"
+            and billing.plan in ("premium", "lite")
             and billing.status in ("active", "trialing")
             and (billing.renews_at is None or billing.renews_at > now)
         )
-        if is_active and billing.status == "trialing":
+        if is_active and billing.plan == "lite":
+            limit = settings.TRIAL_TEXT_LIMIT
+            plan_name = "Thinker Lite"
+        elif is_active and billing.status == "trialing":
             limit = settings.TRIAL_TEXT_LIMIT
             plan_name = "Premium Trial"
         elif is_active:
@@ -125,25 +128,30 @@ async def reformat_page(
     await check_rate_limit(db, user, body.fingerprint, request)
 
     # ── 3. Load cognitive profile ─────────────────────────────────
-    if body.profile:
-        # User (anonymous or auth) provided a profile in the request
-        profile = body.profile.model_dump()
-    elif user:
-        # Authenticated user - load from DB
+    # For authenticated users the server-side profile is the source of truth
+    # (edited from the dashboard), so it takes precedence over any inline profile
+    # the client sends. Anonymous callers fall back to the inline profile.
+    if user:
         result = await db.execute(
             select(CognitiveProfile).where(CognitiveProfile.user_id == user.id)
         )
         profile_row = result.scalar_one_or_none()
-        profile = {
-            "profile_type":         profile_row.profile_type if profile_row else "load-reducer",
-            "preferred_format":     profile_row.preferred_format if profile_row else "bullet points",
-            "chunk_size":           profile_row.chunk_size if profile_row else "short",
-            "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
-            "simplify_vocab":       profile_row.simplify_vocab if profile_row else False,
-            "max_nesting_depth":    profile_row.max_nesting_depth if profile_row else 2,
-            "use_headers":          profile_row.use_headers if profile_row else True,
-            "notes":                profile_row.notes if profile_row else "",
-        }
+        if profile_row is None and body.profile:
+            profile = body.profile.model_dump()
+        else:
+            profile = {
+                "profile_type":         profile_row.profile_type if profile_row else "load-reducer",
+                "preferred_format":     profile_row.preferred_format if profile_row else "bullet points",
+                "chunk_size":           profile_row.chunk_size if profile_row else "short",
+                "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
+                "simplify_vocab":       profile_row.simplify_vocab if profile_row else False,
+                "max_nesting_depth":    profile_row.max_nesting_depth if profile_row else 2,
+                "use_headers":          profile_row.use_headers if profile_row else True,
+                "notes":                profile_row.notes if profile_row else "",
+            }
+    elif body.profile:
+        # Anonymous user provided a profile in the request
+        profile = body.profile.model_dump()
     else:
         # Fallback default
         profile = CognitiveProfileSchema().model_dump()
@@ -241,21 +249,25 @@ async def reformat_document_route(
     await check_rate_limit(db, user, body.fingerprint, request)
     
     # ── Load profile ─────────────────────────────────────────────
-    if body.profile:
-        profile = body.profile.model_dump()
-    elif user:
+    # Authenticated users always use their server-side (dashboard) profile.
+    if user:
         result = await db.execute(select(CognitiveProfile).where(CognitiveProfile.user_id == user.id))
         profile_row = result.scalar_one_or_none()
-        profile = {
-            "profile_type": profile_row.profile_type if profile_row else "load-reducer",
-            "preferred_format": profile_row.preferred_format if profile_row else "bullet points",
-            "chunk_size": profile_row.chunk_size if profile_row else "short",
-            "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
-            "simplify_vocab": profile_row.simplify_vocab if profile_row else False,
-            "max_nesting_depth": profile_row.max_nesting_depth if profile_row else 2,
-            "use_headers": profile_row.use_headers if profile_row else True,
-            "notes": profile_row.notes if profile_row else "",
-        }
+        if profile_row is None and body.profile:
+            profile = body.profile.model_dump()
+        else:
+            profile = {
+                "profile_type": profile_row.profile_type if profile_row else "load-reducer",
+                "preferred_format": profile_row.preferred_format if profile_row else "bullet points",
+                "chunk_size": profile_row.chunk_size if profile_row else "short",
+                "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
+                "simplify_vocab": profile_row.simplify_vocab if profile_row else False,
+                "max_nesting_depth": profile_row.max_nesting_depth if profile_row else 2,
+                "use_headers": profile_row.use_headers if profile_row else True,
+                "notes": profile_row.notes if profile_row else "",
+            }
+    elif body.profile:
+        profile = body.profile.model_dump()
     else:
         profile = CognitiveProfileSchema().model_dump()
 

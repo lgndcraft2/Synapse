@@ -28,9 +28,15 @@ async def check_rate_limit(
     Raises HTTP 429 if limit is exceeded.
     """
 
-    # ── Premium users — no limits ─────────────────────────────────
-    if user and await _has_active_entitlement(db, user):
-        return
+    # ── Paid users — reduced or no limits ─────────────────────────
+    if user:
+        entitlement = await _active_paid_plan(db, user)
+        if entitlement in ("premium", "institutional"):
+            return  # unlimited
+        if entitlement == "lite":
+            # Thinker Lite: capped monthly reformats, but no daily/lifetime free limits.
+            await _enforce_monthly_cap(user)
+            return
 
     # ── Build the rate limit key ──────────────────────────────────
     if user:
@@ -161,16 +167,38 @@ async def set_cache(key: str, value: str, ttl: int = 300) -> None:
     await redis_client.set(key, value, ex=ttl)
 
 
-async def _has_active_entitlement(db: AsyncSession, user: User) -> bool:
+async def _active_paid_plan(db: AsyncSession, user: User) -> str | None:
+    """Returns the user's active paid plan tier ("lite"/"premium"/"institutional"),
+    or None if the user is free or their subscription has lapsed."""
     if user.plan == "institutional":
-        return True
-    if user.plan != "premium":
-        return False
+        return "institutional"
+    if user.plan not in ("lite", "premium"):
+        return None
 
     result = await db.execute(select(Billing).where(Billing.user_id == user.id))
     billing = result.scalar_one_or_none()
-    if not billing or billing.plan != "premium":
-        return False
+    if not billing or billing.plan not in ("lite", "premium"):
+        return None
     if billing.status not in ("active", "trialing"):
-        return False
-    return billing.renews_at is None or billing.renews_at > datetime.utcnow()
+        return None
+    if billing.renews_at is not None and billing.renews_at <= datetime.utcnow():
+        return None
+    return billing.plan
+
+
+async def _enforce_monthly_cap(user: User) -> None:
+    """Enforce the Thinker Lite monthly reformat cap via a per-month Redis counter."""
+    now = datetime.utcnow()
+    month_key = f"rl:month:user:{user.id}:{now.strftime('%Y%m')}"
+    count = await redis_client.incr(month_key)
+    if count == 1:
+        # Expire ~1 month later; the key rolls over naturally with the %Y%m suffix.
+        await redis_client.expire(month_key, 60 * 60 * 24 * 32)
+    if count > settings.LITE_MONTHLY_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Monthly limit of {settings.LITE_MONTHLY_LIMIT} reformats reached. "
+                "Upgrade to Deep Thinker for unlimited reformats."
+            ),
+        )

@@ -160,8 +160,10 @@ class BillingOut(BaseModel):
 
 class CheckoutRequest(BaseModel):
     price_id: str
-    success_url: str
-    cancel_url: str
+    # Redirect URLs are server-owned (see billing.create_checkout) to prevent
+    # open redirects; accepted here only for backward compatibility and ignored.
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
 
 
 class CheckoutResponse(BaseModel):

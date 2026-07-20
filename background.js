@@ -42,6 +42,141 @@ async function getClientFingerprint() {
   return fingerprint;
 }
 
+// ── Supabase session (handed off from the dashboard) ─────────────
+// The dashboard pushes the logged-in session here via onMessageExternal, so the
+// user never has to paste a token. The extension refreshes the token itself.
+
+async function getStoredSession() {
+  const { supabaseSession } = await storageGet("supabaseSession");
+  return supabaseSession || null;
+}
+
+async function refreshSupabaseSession(session) {
+  const url = normalizeBackendBaseUrl(session.supabase_url);
+  if (!url || !session.refresh_token || !session.supabase_anon_key) return null;
+
+  let response;
+  try {
+    response = await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: session.supabase_anon_key
+      },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+  } catch {
+    return null;
+  }
+
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null);
+  if (!data?.access_token) return null;
+
+  const expiresAt = data.expires_at
+    ? data.expires_at
+    : Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
+
+  const updated = {
+    ...session,
+    access_token: data.access_token,
+    refresh_token: data.refresh_token || session.refresh_token,
+    expires_at: expiresAt
+  };
+  await storageSet({ supabaseSession: updated });
+  return updated;
+}
+
+async function getValidAccessToken() {
+  const session = await getStoredSession();
+  if (session?.access_token) {
+    const now = Math.floor(Date.now() / 1000);
+    // Refresh a minute before expiry to avoid using a just-expired token.
+    if (!session.expires_at || session.expires_at - 60 > now) {
+      return session.access_token;
+    }
+    const refreshed = await refreshSupabaseSession(session);
+    if (refreshed?.access_token) return refreshed.access_token;
+    return null; // refresh failed — fall back to anonymous behaviour
+  }
+
+  // Legacy fallback: a manually pasted token (deprecated by the dashboard handoff).
+  const { providerConfig } = await storageGet("providerConfig");
+  return providerConfig?.backendAccessToken || null;
+}
+
+async function resolvedBackendBaseUrl() {
+  const { providerConfig } = await storageGet("providerConfig");
+  return normalizeBackendBaseUrl(
+    (providerConfig && providerConfig.backendBaseUrl) || defaultProviderConfig.backendBaseUrl
+  );
+}
+
+// ── Profile <-> backend mapping ──────────────────────────────────
+function profileFromBackend(p) {
+  return {
+    profileType: p.profile_type,
+    preferredFormat: p.preferred_format,
+    chunkSize: p.chunk_size,
+    needsExamplesFirst: p.needs_examples_first,
+    simplifyVocab: p.simplify_vocab,
+    maxNestingDepth: p.max_nesting_depth,
+    useHeaders: p.use_headers,
+    notes: p.notes || ""
+  };
+}
+
+function profileToBackend(profile) {
+  return {
+    profile_type: profile.profileType,
+    preferred_format: profile.preferredFormat,
+    chunk_size: profile.chunkSize,
+    needs_examples_first: profile.needsExamplesFirst,
+    simplify_vocab: profile.simplifyVocab,
+    max_nesting_depth: profile.maxNestingDepth,
+    use_headers: profile.useHeaders,
+    notes: profile.notes
+  };
+}
+
+async function fetchAndStoreProfile() {
+  const token = await getValidAccessToken();
+  if (!token) return null;
+  const baseUrl = await resolvedBackendBaseUrl();
+  if (!baseUrl) return null;
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/api/v1/profile`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null);
+  if (!data) return null;
+
+  const local = profileFromBackend(data);
+  await storageSet({ cognitiveProfile: { ...defaultProfile, ...local } });
+  return local;
+}
+
+async function patchBackendProfile(profile, token) {
+  const baseUrl = await resolvedBackendBaseUrl();
+  if (!baseUrl) throw new Error("Backend API URL is not configured.");
+  const response = await fetch(`${baseUrl}/api/v1/profile`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(profileToBackend(profile))
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.detail || `Profile sync failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 function toBackendFeedbackEntry(entry) {
   return {
     reaction: entry.reaction || null,
@@ -97,10 +232,9 @@ async function callBackendReformat(pageText, profile, providerConfig, options = 
   if (!baseUrl) throw new Error("Backend API URL is not configured.");
 
   const fingerprint = await getClientFingerprint();
+  const token = await getValidAccessToken();
   const headers = { "Content-Type": "application/json" };
-  if (providerConfig.backendAccessToken) {
-    headers.Authorization = `Bearer ${providerConfig.backendAccessToken}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(`${baseUrl}/api/v1/reformat`, {
     method: "POST",
@@ -112,7 +246,9 @@ async function callBackendReformat(pageText, profile, providerConfig, options = 
       session_difficulty: options.sessionDifficulty || "normal",
       mode: options.mode || "cards",
       fingerprint,
-      profile: profile // Send local profile
+      // Authenticated users use their server-side (dashboard) profile; only send
+      // the local profile for anonymous callers.
+      ...(token ? {} : { profile })
     })
   });
 
@@ -134,15 +270,14 @@ async function callBackendAnalyseSections(pageText, profile, providerConfig) {
   if (!baseUrl) throw new Error("Backend API URL is not configured.");
 
   const fingerprint = await getClientFingerprint();
+  const token = await getValidAccessToken();
   const headers = { "Content-Type": "application/json" };
-  if (providerConfig.backendAccessToken) {
-    headers.Authorization = `Bearer ${providerConfig.backendAccessToken}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(`${baseUrl}/api/v1/reformat/analyse-sections`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ page_text: pageText, fingerprint, profile })
+    body: JSON.stringify({ page_text: pageText, fingerprint, ...(token ? {} : { profile }) })
   });
 
   const data = await response.json();
@@ -157,20 +292,19 @@ async function callBackendDocument(base64Data, mediaType, profile, providerConfi
   if (!baseUrl) throw new Error("Backend API URL is not configured.");
 
   const fingerprint = await getClientFingerprint();
+  const token = await getValidAccessToken();
   const headers = { "Content-Type": "application/json" };
-  if (providerConfig.backendAccessToken) {
-    headers.Authorization = `Bearer ${providerConfig.backendAccessToken}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(`${baseUrl}/api/v1/reformat/reformat-document`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ 
-      base64_data: base64Data, 
-      media_type: mediaType, 
-      session_difficulty: sessionDifficulty, 
+    body: JSON.stringify({
+      base64_data: base64Data,
+      media_type: mediaType,
+      session_difficulty: sessionDifficulty,
       fingerprint,
-      profile
+      ...(token ? {} : { profile })
     })
   });
 
@@ -183,12 +317,13 @@ async function callBackendDocument(base64Data, mediaType, profile, providerConfi
 
 async function getBackendBillingStatus(providerConfig) {
   const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
-  if (!baseUrl || !providerConfig.backendAccessToken) {
+  const token = await getValidAccessToken();
+  if (!baseUrl || !token) {
     return { configured: Boolean(baseUrl), authenticated: false };
   }
 
   const response = await fetch(`${baseUrl}/api/v1/billing/status`, {
-    headers: { Authorization: `Bearer ${providerConfig.backendAccessToken}` }
+    headers: { Authorization: `Bearer ${token}` }
   });
   const data = await response.json().catch(() => null);
 
@@ -201,13 +336,14 @@ async function getBackendBillingStatus(providerConfig) {
 
 async function submitBackendFeedback(entry, providerConfig) {
   const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
-  if (!baseUrl || !providerConfig.backendAccessToken) return { synced: false };
+  const token = await getValidAccessToken();
+  if (!baseUrl || !token) return { synced: false };
 
   const response = await fetch(`${baseUrl}/api/v1/feedback`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${providerConfig.backendAccessToken}`
+      Authorization: `Bearer ${token}`
     },
     body: JSON.stringify({
       entries: [toBackendFeedbackEntry(entry)],
@@ -298,7 +434,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "SAVE_PROFILE") {
-    chrome.storage.local.set({ cognitiveProfile: { ...defaultProfile, ...msg.profile } }, () => sendResponse({ success: true }));
+    const merged = { ...defaultProfile, ...msg.profile };
+    chrome.storage.local.set({ cognitiveProfile: merged }, async () => {
+      // When signed in, persist to the backend so it shows on the dashboard too.
+      try {
+        const token = await getValidAccessToken();
+        if (token) {
+          await patchBackendProfile(merged, token);
+          sendResponse({ success: true, synced: true });
+        } else {
+          sendResponse({ success: true, synced: false });
+        }
+      } catch (err) {
+        sendResponse({ success: true, synced: false, syncError: err.message });
+      }
+    });
     return true;
   }
 
@@ -317,6 +467,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const existing = { ...defaultProviderConfig, ...(result.providerConfig || {}) };
       chrome.storage.local.set({ providerConfig: { ...existing, ...msg.providerConfig } }, () => sendResponse({ ok: true }));
     });
+    return true;
+  }
+
+  if (msg.type === "GET_AUTH_STATUS") {
+    getValidAccessToken()
+      .then(token => sendResponse({ authenticated: Boolean(token) }))
+      .catch(() => sendResponse({ authenticated: false }));
+    return true;
+  }
+
+  if (msg.type === "REFRESH_PROFILE") {
+    fetchAndStoreProfile()
+      .then(local => sendResponse({ profile: local }))
+      .catch(err => sendResponse({ error: err.message }));
     return true;
   }
 
@@ -352,6 +516,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ alive: true });
     return true;
   }
+});
+
+// ── External messages from the dashboard (session handoff) ───────
+// Origins allowed to hand off a session are pinned by manifest
+// "externally_connectable". We accept the session, then pull the DB profile.
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg.type !== "string") {
+    sendResponse({ ok: false, error: "Invalid message." });
+    return true;
+  }
+
+  if (msg.type === "SYNAPSE_PING") {
+    sendResponse({ ok: true, installed: true });
+    return true;
+  }
+
+  if (msg.type === "SYNAPSE_SESSION") {
+    if (!msg.access_token || !msg.refresh_token || !msg.supabase_url || !msg.supabase_anon_key) {
+      sendResponse({ ok: false, error: "Incomplete session payload." });
+      return true;
+    }
+    const session = {
+      access_token: msg.access_token,
+      refresh_token: msg.refresh_token,
+      expires_at: msg.expires_at || null,
+      supabase_url: msg.supabase_url,
+      supabase_anon_key: msg.supabase_anon_key
+    };
+    storageSet({ supabaseSession: session })
+      .then(() => fetchAndStoreProfile())
+      .then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (msg.type === "SYNAPSE_LOGOUT") {
+    chrome.storage.local.remove("supabaseSession", () => sendResponse({ ok: true }));
+    return true;
+  }
+
+  sendResponse({ ok: false, error: "Unknown message type." });
+  return true;
 });
 
 chrome.runtime.onInstalled.addListener(details => {

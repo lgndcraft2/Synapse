@@ -22,6 +22,14 @@
     "service_worker": "background.js"
   },
 
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:5173/*",
+      "http://localhost:3000/*",
+      "https://*.synapseos.app/*"
+    ]
+  },
+
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

@@ -70,7 +70,15 @@ import os
 # ... after router inclusions
 app.include_router(stats_router,     prefix="/api/v1")
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "env": settings.APP_ENV}
+
+
 # ── Static Files (Frontend) ───────────────────────────────────────
+# NOTE: the SPA catch-all below matches "/{full_path:path}", so it must be
+# registered AFTER every real route (like /health) or it will shadow them.
 static_path = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.exists(static_path):
     # Mount assets folder for static files (css, js)
@@ -95,10 +103,6 @@ if os.path.exists(static_path):
             return FileResponse(index_path)
         
         return Response(status_code=404)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "env": settings.APP_ENV}
 
 
 # ── API Route Summary ─────────────────────────────────────────────

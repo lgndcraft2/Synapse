@@ -27,10 +27,22 @@ def _normalize_subscription_status(status: str | None) -> str:
     return "past_due"
 
 
-def _plan_for_subscription(status: str, renews_at: datetime | None) -> str:
-    if status in ("active", "trialing") and (renews_at is None or renews_at > datetime.utcnow()):
+def _plan_for_subscription(sub, status: str, renews_at: datetime | None) -> str:
+    """Resolve the plan tier a subscription grants, honoring status and expiry.
+
+    The tier ("lite" or "premium") is derived from the subscription's price ID so
+    that Thinker Lite and Deep Thinker map to distinct entitlements.
+    """
+    if status not in ("active", "trialing"):
+        return "free"
+    if renews_at is not None and renews_at <= datetime.utcnow():
+        return "free"
+    try:
+        price_id = sub["items"]["data"][0]["price"]["id"]
+    except (KeyError, IndexError, TypeError):
+        # Fall back to premium if the shape is unexpected — never silently downgrade a payer.
         return "premium"
-    return "free"
+    return settings.price_plan_map.get(price_id, "premium")
 
 
 @router.get("/status", response_model=BillingOut)
@@ -48,7 +60,7 @@ async def billing_status(
     
     # Proactively check for expiration if a webhook was missed.
     now = datetime.utcnow()
-    if billing.plan == "premium" and billing.renews_at and billing.renews_at < now:
+    if billing.plan in ("premium", "lite") and billing.renews_at and billing.renews_at < now:
         billing.plan = "free"
         billing.status = "cancelled"
         billing.cancelled_at = now
@@ -70,11 +82,7 @@ async def create_checkout(
     Returns a checkout_url the frontend redirects to.
     """
     # ── 1. Validate price_id ──────────────────────────────────────
-    allowed_prices = [
-        settings.STRIPE_PREMIUM_PRICE_ID,
-        settings.STRIPE_PREMIUM_ANNUAL_PRICE_ID
-    ]
-    if body.price_id not in allowed_prices:
+    if body.price_id not in settings.allowed_price_ids:
         raise HTTPException(
             status_code=400,
             detail="Invalid or unauthorized price ID."
@@ -249,7 +257,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
         if sub.get("trial_end") else None
     )
     status = _normalize_subscription_status(sub.get("status"))
-    plan = _plan_for_subscription(status, period_end)
+    plan = _plan_for_subscription(sub, status, period_end)
 
     # Update billing table
     await db.execute(
@@ -278,7 +286,7 @@ async def _update_subscription(db, sub_data):
     subscription_id = sub_data["id"]
     period_end = datetime.utcfromtimestamp(sub_data["current_period_end"])
     status = _normalize_subscription_status(sub_data.get("status", "active"))
-    plan = _plan_for_subscription(status, period_end)
+    plan = _plan_for_subscription(sub_data, status, period_end)
 
     result = await db.execute(
         select(Billing).where(Billing.stripe_subscription_id == subscription_id)
