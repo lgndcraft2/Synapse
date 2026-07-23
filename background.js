@@ -11,7 +11,7 @@ const defaultProfile = {
 
 const defaultProviderConfig = {
   tier: "free",
-  backendBaseUrl: "https://api.synapseos.app",
+  backendBaseUrl: "https://api.usesynapse.cv",
   backendAccessToken: "",
   useBackendProxy: true,
   preferredProvider: "auto",

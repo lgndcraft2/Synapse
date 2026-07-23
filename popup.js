@@ -74,7 +74,7 @@ chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" }, (res) => {
 
 chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
   const config = res?.providerConfig || {};
-  backendUrl.value = config.backendBaseUrl || "https://api.synapseos.app";
+  backendUrl.value = config.backendBaseUrl || "https://api.usesynapse.cv";
   if (dashboardLink) dashboardLink.href = (backendUrl.value || "").replace(/\/+$/, "") + "/auth?tab=login";
 
   const usage = res?.providerUsage || {};

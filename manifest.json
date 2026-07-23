@@ -12,7 +12,7 @@
   ],
 
   "host_permissions": [
-    "https://api.synapseos.app/*",
+    "https://api.usesynapse.cv/*",
     "http://localhost:8000/*",
     "http://*/*",
     "https://*/*"
@@ -26,7 +26,8 @@
     "matches": [
       "http://localhost:5173/*",
       "http://localhost:3000/*",
-      "https://*.synapseos.app/*"
+      "https://usesynapse.cv/*",
+      "https://*.usesynapse.cv/*"
     ]
   },
 

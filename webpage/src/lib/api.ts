@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.synapseos.app';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.usesynapse.cv';
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
