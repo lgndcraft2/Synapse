@@ -16,6 +16,7 @@ import {
   Zap,
   TrendingUp,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { createCheckoutSession } from './lib/api';
 import ConfigBanner from './component/ConfigBanner';
@@ -166,6 +167,18 @@ function Icon({ name }: { name: keyof typeof icons | string }) {
 }
 
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(Boolean(session));
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(Boolean(session));
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   async function handleUpgrade(priceId: string) {
     if (!priceId) return;
 
@@ -199,7 +212,11 @@ function App() {
             ))}
           </nav>
           <div className="nav-actions" style={{display: 'flex', gap: '12px', alignItems: 'center'}}>
-            <a href="/auth?tab=login" className="nav-login" style={{textDecoration: 'none'}}>Login</a>
+            {isLoggedIn ? (
+              <a href="/dashboard" className="nav-login" style={{textDecoration: 'none'}}>Dashboard</a>
+            ) : (
+              <a href="/auth?tab=login" className="nav-login" style={{textDecoration: 'none'}}>Login</a>
+            )}
             <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
           <button className="icon-button menu-button" aria-label="Open navigation">

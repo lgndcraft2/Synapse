@@ -6,7 +6,7 @@ from app.core.dependencies import get_current_user
 from app.core.config import settings
 from app.models.models import User, Billing
 from app.schemas.schemas import CheckoutRequest, CheckoutResponse, BillingOut
-from datetime import datetime
+from datetime import datetime, timezone
 import stripe
 import asyncio
 
@@ -17,6 +17,23 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 
 def _frontend_url(path: str = "") -> str:
     return f"{settings.FRONTEND_URL.rstrip('/')}{path}"
+
+
+def _subscription_period_end(sub) -> datetime | None:
+    """Return the subscription's current period end as a datetime.
+
+    Newer Stripe API versions (2025+, e.g. 2026-05-27.dahlia) expose
+    current_period_end on each subscription *item* rather than on the
+    subscription root, so we check the root first and fall back to the item
+    for backward compatibility.
+    """
+    ts = sub.get("current_period_end")
+    if ts is None:
+        try:
+            ts = sub["items"]["data"][0]["current_period_end"]
+        except (KeyError, IndexError, TypeError):
+            ts = None
+    return datetime.utcfromtimestamp(ts) if ts is not None else None
 
 
 def _normalize_subscription_status(status: str | None) -> str:
@@ -58,9 +75,14 @@ async def billing_status(
     if not billing:
         raise HTTPException(status_code=404, detail="Billing record not found.")
     
-    # Proactively check for expiration if a webhook was missed.
-    now = datetime.utcnow()
-    if billing.plan in ("premium", "lite") and billing.renews_at and billing.renews_at < now:
+    # Proactively check for expiration if a webhook was missed. Postgres returns
+    # timezone-aware datetimes, so compare against an aware "now" (and defensively
+    # coerce a naive renews_at) to avoid naive/aware comparison TypeErrors.
+    now = datetime.now(timezone.utc)
+    renews_at = billing.renews_at
+    if renews_at is not None and renews_at.tzinfo is None:
+        renews_at = renews_at.replace(tzinfo=timezone.utc)
+    if billing.plan in ("premium", "lite") and renews_at and renews_at < now:
         billing.plan = "free"
         billing.status = "cancelled"
         billing.cancelled_at = now
@@ -251,7 +273,7 @@ async def stripe_webhook(
 
 
 async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
-    period_end = datetime.utcfromtimestamp(sub["current_period_end"])
+    period_end = _subscription_period_end(sub)
     trial_end = (
         datetime.utcfromtimestamp(sub["trial_end"])
         if sub.get("trial_end") else None
@@ -284,7 +306,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
 
 async def _update_subscription(db, sub_data):
     subscription_id = sub_data["id"]
-    period_end = datetime.utcfromtimestamp(sub_data["current_period_end"])
+    period_end = _subscription_period_end(sub_data)
     status = _normalize_subscription_status(sub_data.get("status", "active"))
     plan = _plan_for_subscription(sub_data, status, period_end)
 

@@ -1,9 +1,9 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.core.config import settings
+from app.core.jwt_verify import verify_supabase_jwt
 from app.db.database import get_db
 from app.models.models import User
 
@@ -26,12 +26,7 @@ async def get_current_user(
     )
 
     try:
-        payload = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        payload = await verify_supabase_jwt(token)
         supabase_uid: str = payload.get("sub")
         if supabase_uid is None:
             raise credentials_exception
@@ -58,12 +53,7 @@ async def get_token_payload(
     """
     token = credentials.credentials
     try:
-        payload = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        payload = await verify_supabase_jwt(token)
         if payload.get("sub") is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
