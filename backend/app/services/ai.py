@@ -8,7 +8,7 @@ from app.core.config import settings
 _key_index = 0
 _rate_limited_keys: set[str] = set()
 _key_lock = asyncio.Lock()
-_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _CLAUDE_BASE  = "https://api.anthropic.com/v1/messages"
 _CLAUDE_MODEL = "claude-sonnet-4-6"
 

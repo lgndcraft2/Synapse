@@ -8,11 +8,14 @@ from datetime import datetime
 import hashlib
 
 # ── Redis client (Upstash) ────────────────────────────────────────
+# The Upstash URL uses the rediss:// scheme, which already negotiates TLS.
+# Do NOT pass ssl=True here: on redis-py 5.x it is forwarded to the connection
+# constructor and raises "AbstractConnection.__init__() got an unexpected
+# keyword argument 'ssl'" on the first command.
 redis_client = aioredis.from_url(
     settings.UPSTASH_REDIS_URL,
     password=settings.UPSTASH_REDIS_TOKEN,
     decode_responses=True,
-    ssl=True,
 )
 
 

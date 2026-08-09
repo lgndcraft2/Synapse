@@ -19,6 +19,9 @@ from app.core.config import settings
 from jose import jwt, JWTError
 from datetime import datetime
 import asyncio
+import logging
+
+logger = logging.getLogger("synapse.reformat")
 
 router = APIRouter(prefix="/reformat", tags=["reformat"])
 
@@ -233,7 +236,18 @@ async def analyse_sections_route(
     await check_rate_limit(db, user, body.fingerprint, request)
     
     from app.services.ai import analyse_sections
-    sections = await analyse_sections(body.page_text)
+    try:
+        sections = await analyse_sections(body.page_text)
+    except HTTPException:
+        raise
+    except Exception:
+        # Log the real cause server-side (may include the AI provider URL/key), but
+        # never leak it to the client — return a clean, safe error instead of a 500.
+        logger.exception("analyse-sections failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Section analysis is temporarily unavailable. Please try again.",
+        )
     return AnalyseSectionsResponse(sections=sections)
 
 
@@ -295,14 +309,23 @@ async def reformat_document_route(
     is_premium = await _is_premium_active(user, db)
     
     from app.services.ai import call_document
-    html = await call_document(
-        body.base64_data,
-        body.media_type,
-        profile,
-        feedback_summary,
-        use_claude=is_premium
-    )
-    
+    try:
+        html = await call_document(
+            body.base64_data,
+            body.media_type,
+            profile,
+            feedback_summary,
+            use_claude=is_premium
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("reformat-document failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Document reformatting is temporarily unavailable. Please try again.",
+        )
+
     return ReformatResponse(
         html=html,
         questions=None,
