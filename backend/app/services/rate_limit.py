@@ -1,4 +1,5 @@
 import redis.asyncio as aioredis
+from redis.exceptions import RedisError
 from fastapi import HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -6,6 +7,9 @@ from app.core.config import settings
 from app.models.models import Billing, UsageTracking, User
 from datetime import datetime
 import hashlib
+import logging
+
+logger = logging.getLogger("synapse.rate_limit")
 
 # ── Redis client (Upstash) ────────────────────────────────────────
 # The Upstash URL uses the rediss:// scheme, which already negotiates TLS.
@@ -20,6 +24,25 @@ redis_client = aioredis.from_url(
 
 
 async def check_rate_limit(
+    db: AsyncSession,
+    user: User | None,
+    fingerprint: str | None,
+    request: Request,
+) -> None:
+    """
+    Enforces rate limits, failing OPEN if Redis is unavailable.
+
+    Rate limiting is a protective feature — if its backing store (Redis) is
+    unreachable, we must not take the whole API down. On a Redis error we log a
+    warning and allow the request. Genuine 429s (HTTPException) still propagate.
+    """
+    try:
+        await _enforce_rate_limit(db, user, fingerprint, request)
+    except RedisError as e:
+        logger.warning("Rate limiter degraded — Redis unavailable (%s). Allowing request.", e)
+
+
+async def _enforce_rate_limit(
     db: AsyncSession,
     user: User | None,
     fingerprint: str | None,
