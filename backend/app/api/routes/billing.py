@@ -5,7 +5,7 @@ from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.config import settings
 from app.models.models import User, Billing
-from app.schemas.schemas import CheckoutRequest, CheckoutResponse, BillingOut
+from app.schemas.schemas import CheckoutRequest, CheckoutResponse, CheckoutConfirmRequest, BillingOut
 from datetime import datetime, timezone
 import stripe
 import asyncio
@@ -170,6 +170,41 @@ async def create_checkout(
     )
 
     return CheckoutResponse(checkout_url=session.url)
+
+
+@router.post("/confirm", response_model=BillingOut)
+async def confirm_checkout(
+    body: CheckoutConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fallback activation used by the post-payment redirect. Verifies a completed
+    Checkout Session and syncs the plan immediately, so the dashboard reflects the
+    upgrade even if the Stripe webhook is delayed or (in local dev) can't reach us.
+    """
+    try:
+        session = await asyncio.to_thread(stripe.checkout.Session.retrieve, body.session_id)
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=400, detail="Could not retrieve checkout session.")
+
+    # Ownership guard: the session must have been created for this user.
+    if str(session.get("metadata", {}).get("user_id")) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="This checkout session does not belong to you.")
+
+    subscription_id = session.get("subscription")
+    customer_id = session.get("customer")
+    if not subscription_id:
+        raise HTTPException(status_code=400, detail="No subscription found on this session.")
+
+    sub = await asyncio.to_thread(stripe.Subscription.retrieve, subscription_id)
+    await _activate_premium(db, current_user.id, customer_id, subscription_id, sub)
+
+    result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
+    billing = result.scalar_one_or_none()
+    if not billing:
+        raise HTTPException(status_code=404, detail="Billing record not found.")
+    return billing
 
 
 @router.post("/portal")

@@ -105,6 +105,28 @@ async function getValidAccessToken() {
   return providerConfig?.backendAccessToken || null;
 }
 
+// Decode a JWT payload (no verification — used only to read display claims).
+function decodeJwtPayload(token) {
+  try {
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+// Returns { authenticated, name, email } derived from the current access token.
+async function getAuthStatus() {
+  const token = await getValidAccessToken();
+  if (!token) return { authenticated: false };
+  const payload = decodeJwtPayload(token) || {};
+  const meta = payload.user_metadata || {};
+  const email = payload.email || meta.email || null;
+  const name = meta.full_name || meta.name || (email ? email.split("@")[0] : null);
+  return { authenticated: true, name, email };
+}
+
 async function resolvedBackendBaseUrl() {
   const { providerConfig } = await storageGet("providerConfig");
   return normalizeBackendBaseUrl(
@@ -471,8 +493,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "GET_AUTH_STATUS") {
-    getValidAccessToken()
-      .then(token => sendResponse({ authenticated: Boolean(token) }))
+    getAuthStatus()
+      .then(status => sendResponse(status))
       .catch(() => sendResponse({ authenticated: false }));
     return true;
   }

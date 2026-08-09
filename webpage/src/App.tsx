@@ -191,8 +191,9 @@ function App() {
     try {
       const checkoutUrl = await createCheckoutSession(priceId);
       window.location.href = checkoutUrl;
-    } catch (err) {
-      alert('Failed to start checkout session. Please try again.');
+    } catch (err: any) {
+      console.error('Checkout failed:', err);
+      alert(`Failed to start checkout: ${err?.message || 'Unknown error'}`);
     }
   }
 

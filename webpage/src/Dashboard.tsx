@@ -7,6 +7,7 @@ import {
   getProfile,
   updateProfile,
   getProfileHistory,
+  confirmCheckout,
 } from "./lib/api";
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import ConfigBanner from "./component/ConfigBanner";
@@ -137,6 +138,18 @@ export default function Dashboard() {
       // Hand the current session to the extension so it stays signed in.
       const { data: { session } } = await supabase.auth.getSession();
       pushSessionToExtension(session);
+
+      // Returning from Stripe Checkout: confirm the session directly so the plan
+      // reflects immediately, without waiting on the webhook. Then clean the URL.
+      const checkoutSessionId = new URLSearchParams(window.location.search).get("session_id");
+      if (checkoutSessionId) {
+        try {
+          await confirmCheckout(checkoutSessionId);
+        } catch (err) {
+          console.error("Checkout confirmation failed", err);
+        }
+        window.history.replaceState({}, "", "/dashboard");
+      }
 
       // Load each panel independently so one failing endpoint doesn't blank the rest.
       const [status, profileData, statsData, historyData] = await Promise.allSettled([

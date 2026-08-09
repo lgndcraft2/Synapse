@@ -170,6 +170,10 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
+class CheckoutConfirmRequest(BaseModel):
+    session_id: str
+
+
 # ── Dashboard stats ───────────────────────────────────────────────
 
 class DashboardStats(BaseModel):

@@ -2,5 +2,8 @@
   "dependencies": {
     "codex": "^0.2.3",
     "dompurify": "^3.4.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0"
   }
 }

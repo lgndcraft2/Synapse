@@ -20,12 +20,15 @@ const updateMsg = document.getElementById("update-msg");
 const dismissBtn = document.getElementById("dismiss-update");
 const feedbackStats = document.getElementById("feedback-stats");
 const clearFeedback = document.getElementById("clear-feedback");
-const backendUrl = document.getElementById("backend-url");
 const accountStatus = document.getElementById("account-status");
 const dashboardLink = document.getElementById("dashboard-link");
 const billingStatus = document.getElementById("billing-status");
-const saveProviderBtn = document.getElementById("save-provider-btn");
 const usageStats = document.getElementById("usage-stats");
+
+// The dashboard (frontend) origin — where users sign in. The extension talks to
+// the backend API automatically; there is no user-facing backend setting.
+const DASHBOARD_URL = "https://usesynapse.cv";
+if (dashboardLink) dashboardLink.href = DASHBOARD_URL + "/auth?tab=login";
 
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
@@ -61,22 +64,19 @@ chrome.runtime.sendMessage({ type: "GET_PROFILE" }, (res) => {
 // Reflect sign-in state and, when signed in, pull the latest dashboard profile.
 chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" }, (res) => {
   if (res?.authenticated) {
-    accountStatus.textContent = "Signed in — synced with your dashboard.";
+    const name = res.name || res.email || "your account";
+    accountStatus.textContent = `Signed in as ${name}.`;
     if (dashboardLink) dashboardLink.style.display = "none";
     chrome.runtime.sendMessage({ type: "REFRESH_PROFILE" }, (refresh) => {
       if (refresh?.profile) applyProfileToForm(refresh.profile);
     });
   } else {
-    accountStatus.textContent = "Not signed in — using anonymous free-tier limits.";
+    accountStatus.textContent = "Not signed in.";
     if (dashboardLink) dashboardLink.style.display = "inline";
   }
 });
 
 chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
-  const config = res?.providerConfig || {};
-  backendUrl.value = config.backendBaseUrl || "https://api.usesynapse.cv";
-  if (dashboardLink) dashboardLink.href = (backendUrl.value || "").replace(/\/+$/, "") + "/auth?tab=login";
-
   const usage = res?.providerUsage || {};
   const today = usage[todayKey()] || { requests: 0, providers: {} };
   const gemini = today.providers?.gemini || 0;
@@ -133,18 +133,6 @@ saveBtn.addEventListener("click", () => {
 
   chrome.runtime.sendMessage({ type: "SAVE_PROFILE", profile }, () => {
     setStatus("Profile saved.");
-  });
-});
-
-saveProviderBtn.addEventListener("click", () => {
-  const providerConfig = {
-    backendBaseUrl: backendUrl.value.trim().replace(/\/+$/, ""),
-    useBackendProxy: true
-  };
-
-  chrome.runtime.sendMessage({ type: "SAVE_PROVIDER_CONFIG", providerConfig }, () => {
-    if (dashboardLink) dashboardLink.href = providerConfig.backendBaseUrl + "/auth?tab=login";
-    setStatus("Backend settings saved.");
   });
 });
 

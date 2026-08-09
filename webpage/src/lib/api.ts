@@ -78,6 +78,25 @@ export async function createCheckoutSession(priceId: string) {
   return checkout_url;
 }
 
+export async function confirmCheckout(sessionId: string) {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/confirm`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to confirm checkout' }));
+    throw new Error(error.detail || 'Failed to confirm checkout');
+  }
+
+  return response.json();
+}
+
 export async function openCustomerPortal() {
   const authHeaders = await getAuthHeader();
   const response = await fetch(`${BACKEND_URL}/api/v1/billing/portal`, {
