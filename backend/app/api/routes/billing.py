@@ -5,7 +5,16 @@ from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.config import settings
 from app.models.models import User, Billing
-from app.schemas.schemas import CheckoutRequest, CheckoutResponse, CheckoutConfirmRequest, BillingOut
+from app.schemas.schemas import (
+    CheckoutRequest,
+    CheckoutResponse,
+    CheckoutConfirmRequest,
+    BillingOut,
+    ChangePlanRequest,
+    InvoiceOut,
+    PaymentMethodOut,
+    UsageOut,
+)
 from datetime import datetime, timezone
 import stripe
 import asyncio
@@ -245,6 +254,346 @@ async def billing_portal(
     return {"portal_url": session.url}
 
 
+# ── SUBSCRIPTION MANAGEMENT ───────────────────────────────────────
+
+async def _live_subscription(db, user: User) -> tuple[Billing, str]:
+    """Fetch the caller's billing row and assert it has a subscription to act on.
+
+    Every management action needs the same two things and fails the same way
+    without them, so the check lives here rather than in each endpoint.
+    """
+    result = await db.execute(select(Billing).where(Billing.user_id == user.id))
+    billing = result.scalar_one_or_none()
+    if not billing:
+        raise HTTPException(status_code=404, detail="Billing record not found.")
+    if not billing.stripe_subscription_id:
+        raise HTTPException(
+            status_code=400,
+            detail="You do not have an active subscription to manage.",
+        )
+    return billing, billing.stripe_subscription_id
+
+
+def _sync_from_subscription(billing: Billing, sub) -> None:
+    """Copy the authoritative Stripe subscription state onto the billing row."""
+    status = _normalize_subscription_status(sub.get("status"))
+    period_end = _subscription_period_end(sub)
+    billing.status = status
+    billing.plan = _plan_for_subscription(sub, status, period_end)
+    billing.billing_period = _billing_period_for_subscription(sub)
+    billing.cancel_at_period_end = bool(sub.get("cancel_at_period_end"))
+    billing.renews_at = period_end
+    billing.updated_at = datetime.utcnow()
+
+
+@router.post("/cancel", response_model=BillingOut)
+async def cancel_subscription(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Schedules cancellation at the end of the current billing period.
+
+    The user keeps the access they have already paid for; the plan drops to free
+    when Stripe fires customer.subscription.deleted at period end. This is
+    reversible via POST /billing/resume until that moment.
+    """
+    billing, subscription_id = await _live_subscription(db, current_user)
+
+    if billing.cancel_at_period_end:
+        # Already scheduled — return current state rather than erroring, so a
+        # double-submit from the UI is harmless.
+        return billing
+
+    try:
+        sub = await asyncio.to_thread(
+            stripe.Subscription.modify,
+            subscription_id,
+            cancel_at_period_end=True,
+        )
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Could not cancel subscription: {e.user_message or 'Stripe error.'}")
+
+    _sync_from_subscription(billing, sub)
+    billing.cancelled_at = datetime.utcnow()
+    await db.flush()
+    return billing
+
+
+@router.post("/resume", response_model=BillingOut)
+async def resume_subscription(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Clears a scheduled cancellation, so the subscription renews as normal.
+
+    Only valid while the period has not yet ended — once Stripe has actually
+    deleted the subscription the user must check out again.
+    """
+    billing, subscription_id = await _live_subscription(db, current_user)
+
+    try:
+        sub = await asyncio.to_thread(
+            stripe.Subscription.modify,
+            subscription_id,
+            cancel_at_period_end=False,
+        )
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Could not resume subscription: {e.user_message or 'Stripe error.'}")
+
+    _sync_from_subscription(billing, sub)
+    billing.cancelled_at = None
+    await db.flush()
+    return billing
+
+
+@router.post("/change-plan", response_model=BillingOut)
+async def change_plan(
+    body: ChangePlanRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Moves an existing subscription to a different price, prorated.
+
+    Stripe credits the unused portion of the current plan against the new one,
+    so an upgrade charges only the difference and a downgrade leaves a credit.
+    """
+    if body.price_id not in settings.allowed_price_ids:
+        raise HTTPException(status_code=400, detail="Invalid or unauthorized price ID.")
+
+    billing, subscription_id = await _live_subscription(db, current_user)
+
+    try:
+        sub = await asyncio.to_thread(stripe.Subscription.retrieve, subscription_id)
+        items = sub["items"]["data"]
+        if not items:
+            raise HTTPException(status_code=400, detail="Subscription has no line items to change.")
+
+        current_price_id = items[0]["price"]["id"]
+        if current_price_id == body.price_id:
+            raise HTTPException(status_code=400, detail="You are already on this plan.")
+
+        updated = await asyncio.to_thread(
+            stripe.Subscription.modify,
+            subscription_id,
+            items=[{"id": items[0]["id"], "price": body.price_id}],
+            proration_behavior="create_prorations",
+            # A plan change is a deliberate purchase decision — don't silently
+            # keep an unfinished trial running on the new price.
+            trial_end="now" if sub.get("status") == "trialing" else None,
+        )
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Could not change plan: {e.user_message or 'Stripe error.'}")
+
+    _sync_from_subscription(billing, updated)
+    # The tier changed, so the denormalised copy on the user must follow.
+    current_user.plan = billing.plan
+    current_user.updated_at = datetime.utcnow()
+    await db.flush()
+    return billing
+
+
+@router.get("/invoices", response_model=list[InvoiceOut])
+async def list_invoices(
+    limit: int = 12,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Past invoices for the caller. Empty list when they have never paid."""
+    result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
+    billing = result.scalar_one_or_none()
+    if not billing or not billing.stripe_customer_id:
+        return []
+
+    try:
+        invoices = await asyncio.to_thread(
+            stripe.Invoice.list,
+            customer=billing.stripe_customer_id,
+            limit=max(1, min(limit, 100)),
+        )
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=400, detail="Could not load billing history.")
+
+    return [
+        InvoiceOut(
+            id=inv["id"],
+            number=inv.get("number"),
+            created=datetime.fromtimestamp(inv["created"], tz=timezone.utc),
+            amount_paid=inv.get("amount_paid", 0),
+            amount_due=inv.get("amount_due", 0),
+            currency=(inv.get("currency") or "usd").upper(),
+            status=inv.get("status"),
+            description=inv.get("description"),
+            hosted_invoice_url=inv.get("hosted_invoice_url"),
+            invoice_pdf=inv.get("invoice_pdf"),
+        )
+        for inv in invoices.get("data", [])
+        # Drafts are not yet real charges and would confuse a receipts list.
+        if inv.get("status") != "draft"
+    ]
+
+
+@router.get("/payment-method", response_model=PaymentMethodOut)
+async def get_payment_method(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    The card on file, for display only.
+
+    Returns empty fields rather than 404 when there is no card, so the UI can
+    render a neutral "no payment method" state without treating it as an error.
+    Updating a card always happens in Stripe's hosted portal — raw card details
+    must never reach this server.
+    """
+    result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
+    billing = result.scalar_one_or_none()
+    if not billing or not billing.stripe_customer_id:
+        return PaymentMethodOut()
+
+    try:
+        customer = await asyncio.to_thread(
+            stripe.Customer.retrieve,
+            billing.stripe_customer_id,
+            expand=["invoice_settings.default_payment_method"],
+        )
+        pm = (customer.get("invoice_settings") or {}).get("default_payment_method")
+
+        # Customers created before a default was set still have the card on the
+        # subscription itself — fall back to the first attached card.
+        if not pm:
+            methods = await asyncio.to_thread(
+                stripe.PaymentMethod.list,
+                customer=billing.stripe_customer_id,
+                type="card",
+                limit=1,
+            )
+            data = methods.get("data", [])
+            pm = data[0] if data else None
+    except stripe.error.StripeError:
+        return PaymentMethodOut()
+
+    if not pm:
+        return PaymentMethodOut()
+
+    card = pm.get("card") or {}
+    return PaymentMethodOut(
+        brand=card.get("brand"),
+        last4=card.get("last4"),
+        exp_month=card.get("exp_month"),
+        exp_year=card.get("exp_year"),
+    )
+
+
+@router.get("/usage", response_model=UsageOut)
+async def get_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Quota consumed against the caller's tier.
+
+    Reads the same Redis counters and lifetime row that
+    app/services/rate_limit.py enforces, so the meter cannot disagree with the
+    429 the reformat endpoint would return. Fails soft: if Redis is unreachable
+    the counts come back as 0 rather than breaking the billing screen.
+    """
+    from datetime import timedelta
+    from app.services.rate_limit import redis_client
+    from app.models.models import UsageTracking
+    from redis.exceptions import RedisError
+
+    entitlement = await _entitled_plan(db, current_user)
+    now = datetime.now(timezone.utc)
+
+    # Premium and institutional have no ceiling.
+    if entitlement in ("premium", "institutional"):
+        return UsageOut(
+            plan=entitlement,
+            unlimited=True,
+            limit_type="none",
+            used=0,
+            limit=None,
+            remaining=None,
+            resets_at=None,
+        )
+
+    async def _count(key: str) -> int:
+        try:
+            value = await redis_client.get(key)
+            return int(value) if value else 0
+        except (RedisError, ValueError):
+            return 0
+
+    # Thinker Lite — a monthly cap, resetting at the start of next month.
+    if entitlement == "lite":
+        used = await _count(f"rl:month:user:{current_user.id}:{now.strftime('%Y%m')}")
+        next_month = (now.replace(day=1) + timedelta(days=32)).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        limit = settings.LITE_MONTHLY_LIMIT
+        return UsageOut(
+            plan="lite",
+            unlimited=False,
+            limit_type="monthly",
+            used=used,
+            limit=limit,
+            remaining=max(0, limit - used),
+            resets_at=next_month,
+        )
+
+    # Free tier — a daily cap that rolls over at midnight UTC, plus a hard
+    # lifetime cap tracked in Postgres.
+    used = await _count(f"rl:daily:user:{current_user.id}")
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    tracking = await db.execute(
+        select(UsageTracking).where(UsageTracking.fingerprint == str(current_user.id))
+    )
+    row = tracking.scalar_one_or_none()
+
+    limit = settings.FREE_DAILY_LIMIT
+    return UsageOut(
+        plan="free",
+        unlimited=False,
+        limit_type="daily",
+        used=used,
+        limit=limit,
+        remaining=max(0, limit - used),
+        resets_at=midnight,
+        lifetime_used=row.lifetime_requests if row else 0,
+        lifetime_limit=settings.FREE_LIFETIME_LIMIT,
+    )
+
+
+async def _entitled_plan(db, user: User) -> str:
+    """The tier the caller is actually entitled to right now.
+
+    Mirrors rate_limit._active_paid_plan: a lapsed or non-active subscription
+    falls back to free, whatever the stored plan says.
+    """
+    if user.plan == "institutional":
+        return "institutional"
+    if user.plan not in ("lite", "premium"):
+        return "free"
+
+    result = await db.execute(select(Billing).where(Billing.user_id == user.id))
+    billing = result.scalar_one_or_none()
+    if not billing or billing.plan not in ("lite", "premium"):
+        return "free"
+    if billing.status not in ("active", "trialing"):
+        return "free"
+
+    renews_at = billing.renews_at
+    if renews_at is not None and renews_at.tzinfo is None:
+        renews_at = renews_at.replace(tzinfo=timezone.utc)
+    if renews_at is not None and renews_at <= datetime.now(timezone.utc):
+        return "free"
+    return billing.plan
+
+
 # ── STRIPE WEBHOOKS ───────────────────────────────────────────────
 webhook_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -339,6 +688,9 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
             plan=plan,
             status=status,
             billing_period=_billing_period_for_subscription(sub),
+            # A fresh checkout supersedes any earlier scheduled cancellation.
+            cancel_at_period_end=bool(sub.get("cancel_at_period_end")),
+            cancelled_at=None,
             renews_at=period_end,
             trial_ends_at=trial_end,
             updated_at=datetime.utcnow(),
@@ -371,6 +723,9 @@ async def _update_subscription(db, sub_data):
             plan=plan,
             status=status,
             billing_period=_billing_period_for_subscription(sub_data),
+            # Keeps us in step when the user cancels or resumes from Stripe's
+            # own portal rather than our screen.
+            cancel_at_period_end=bool(sub_data.get("cancel_at_period_end")),
             renews_at=period_end,
             updated_at=datetime.utcnow(),
         )
@@ -399,6 +754,8 @@ async def _cancel_subscription(db, sub_data):
             .values(
                 plan="free",
                 status="cancelled",
+                # The subscription is gone, so there is nothing left pending.
+                cancel_at_period_end=False,
                 cancelled_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )

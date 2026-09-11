@@ -102,6 +102,9 @@ class Billing(Base):
     plan:                   Mapped[str]       = mapped_column(String, default="free")
     billing_period:         Mapped[str]       = mapped_column(String, default="monthly")
     status:                 Mapped[str]       = mapped_column(String, default="active")
+    # Mirrors Stripe's subscription.cancel_at_period_end. Lets the UI say
+    # "cancels on X" rather than "renews on X" without querying Stripe.
+    cancel_at_period_end:   Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     trial_ends_at:          Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
     renews_at:              Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at:           Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)

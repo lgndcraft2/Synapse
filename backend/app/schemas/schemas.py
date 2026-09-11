@@ -150,12 +150,65 @@ class BillingOut(BaseModel):
     plan: str
     status: str
     billing_period: Optional[str]
+    # True once the user has cancelled but still has paid-for time remaining.
+    # renews_at then means "access ends on", not "you will be charged on".
+    cancel_at_period_end: bool = False
     trial_ends_at: Optional[datetime]
     renews_at: Optional[datetime]
+    cancelled_at: Optional[datetime] = None
     stripe_customer_id: Optional[str]
+    # Present only when there is a live Stripe subscription to act on, so the
+    # UI knows whether cancel / resume / change-plan are available at all.
+    stripe_subscription_id: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class ChangePlanRequest(BaseModel):
+    price_id: str
+
+
+class InvoiceOut(BaseModel):
+    """One past invoice, straight from Stripe."""
+    id: str
+    number: Optional[str] = None
+    created: datetime
+    amount_paid: int          # in the currency's smallest unit (cents)
+    amount_due: int
+    currency: str
+    status: Optional[str]     # paid | open | void | uncollectible | draft
+    description: Optional[str] = None
+    hosted_invoice_url: Optional[str] = None
+    invoice_pdf: Optional[str] = None
+
+
+class PaymentMethodOut(BaseModel):
+    """The card on file. Card data never touches our servers — Stripe returns
+    only these display-safe fields."""
+    brand: Optional[str] = None
+    last4: Optional[str] = None
+    exp_month: Optional[int] = None
+    exp_year: Optional[int] = None
+
+
+class UsageOut(BaseModel):
+    """Quota consumed against the caller's current tier.
+
+    Mirrors what app/services/rate_limit.py actually enforces, so the meter on
+    the billing screen can never disagree with the 429 the API would return.
+    """
+    plan: str
+    unlimited: bool
+    # "monthly" (Thinker Lite), "daily" (free tier), or "none" when unlimited.
+    limit_type: str
+    used: int
+    limit: Optional[int]
+    remaining: Optional[int]
+    resets_at: Optional[datetime]
+    # The free tier also carries a hard lifetime cap alongside the daily one.
+    lifetime_used: Optional[int] = None
+    lifetime_limit: Optional[int] = None
 
 
 class CheckoutRequest(BaseModel):

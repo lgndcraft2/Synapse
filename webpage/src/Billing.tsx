@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
-import { createCheckoutSession, getBillingStatus, openCustomerPortal } from './lib/api';
+import { createCheckoutSession, getBillingStatus } from './lib/api';
 import {
   PLANS,
   PLAN_LABELS,
@@ -24,6 +24,7 @@ interface BillingInfo {
   plan: string;
   status: string;
   billing_period?: string | null;
+  cancel_at_period_end?: boolean;
   renews_at?: string | null;
   trial_ends_at?: string | null;
   stripe_customer_id?: string | null;
@@ -80,7 +81,6 @@ export default function Billing() {
   const [selected, setSelected] = useState<Plan | null>(null);
 
   const [isRedirecting, setIsRedirecting] = useState(false);
-  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,18 +145,6 @@ export default function Billing() {
     }
   }
 
-  async function handleManage() {
-    if (isOpeningPortal) return;
-    setError(null);
-    setIsOpeningPortal(true);
-    try {
-      window.location.href = await openCustomerPortal();
-    } catch (err: any) {
-      setError(err?.message || 'We could not open the billing portal. Please try again.');
-      setIsOpeningPortal(false);
-    }
-  }
-
   function choose(plan: Plan) {
     setSelected(plan);
     setError(null);
@@ -207,31 +195,34 @@ export default function Billing() {
           <div className="flex justify-between items-end gap-4 flex-wrap">
             <div>
               <p className="font-medium" style={{ color: '#1b1c1c' }}>
-                {billing?.status === 'trialing'
-                  ? 'Free trial'
-                  : billing?.status === 'past_due'
-                    ? 'Payment overdue'
-                    : isPaid
-                      ? `${billing?.billing_period === 'annual' ? 'Annual' : 'Monthly'} access`
-                      : 'Free tier'}
+                {billing?.cancel_at_period_end
+                  ? 'Ending soon'
+                  : billing?.status === 'trialing'
+                    ? 'Free trial'
+                    : billing?.status === 'past_due'
+                      ? 'Payment overdue'
+                      : isPaid
+                        ? `${billing?.billing_period === 'annual' ? 'Annual' : 'Monthly'} access`
+                        : 'Free tier'}
               </p>
               <p className="text-sm mt-1" style={{ color: '#5e5f5b' }}>
-                {billing?.renews_at
-                  ? `Renews on ${formatDate(billing.renews_at)}`
-                  : billing?.trial_ends_at
-                    ? `Trial ends ${formatDate(billing.trial_ends_at)}`
-                    : 'Free tier limits apply'}
+                {billing?.cancel_at_period_end && billing?.renews_at
+                  ? `Access ends ${formatDate(billing.renews_at)}`
+                  : billing?.renews_at
+                    ? `Renews on ${formatDate(billing.renews_at)}`
+                    : billing?.trial_ends_at
+                      ? `Trial ends ${formatDate(billing.trial_ends_at)}`
+                      : 'Free tier limits apply'}
               </p>
             </div>
             {canManage && !isLoading && (
-              <button
+              <a
+                href="/subscription"
                 className="text-sm font-semibold hover:underline"
-                style={{ color: '#004635', background: 'none', border: 0, padding: 0 }}
-                onClick={handleManage}
-                disabled={isOpeningPortal}
+                style={{ color: '#004635' }}
               >
-                {isOpeningPortal ? 'Opening…' : 'Manage subscription'}
-              </button>
+                Manage subscription
+              </a>
             )}
           </div>
           {error && <ErrorPanel message={error} />}

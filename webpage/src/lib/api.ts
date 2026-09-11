@@ -97,6 +97,97 @@ export async function confirmCheckout(sessionId: string) {
   return response.json();
 }
 
+/** Schedules cancellation at the end of the current billing period. */
+export async function cancelSubscription() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/cancel`, {
+    method: 'POST',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to cancel subscription' }));
+    throw new Error(error.detail || 'Failed to cancel subscription');
+  }
+
+  return response.json();
+}
+
+/** Clears a scheduled cancellation so the subscription renews as normal. */
+export async function resumeSubscription() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/resume`, {
+    method: 'POST',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to resume subscription' }));
+    throw new Error(error.detail || 'Failed to resume subscription');
+  }
+
+  return response.json();
+}
+
+/** Moves an existing subscription to a different price, prorated by Stripe. */
+export async function changePlan(priceId: string) {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/change-plan`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ price_id: priceId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to change plan' }));
+    throw new Error(error.detail || 'Failed to change plan');
+  }
+
+  return response.json();
+}
+
+export async function getInvoices() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/invoices`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch billing history');
+  }
+
+  return response.json();
+}
+
+export async function getPaymentMethod() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/payment-method`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch payment method');
+  }
+
+  return response.json();
+}
+
+export async function getUsage() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/billing/usage`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch usage');
+  }
+
+  return response.json();
+}
+
 export async function openCustomerPortal() {
   const authHeaders = await getAuthHeader();
   const response = await fetch(`${BACKEND_URL}/api/v1/billing/portal`, {

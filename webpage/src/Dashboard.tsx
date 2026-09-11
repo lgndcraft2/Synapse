@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import {
   getBillingStatus,
-  openCustomerPortal,
   getDashboardStats,
   getProfile,
   updateProfile,
@@ -197,15 +196,6 @@ export default function Dashboard() {
       alert("Failed to switch profile. Please try again.");
     } finally {
       setIsSwitching(false);
-    }
-  }
-
-  async function handleManageBilling() {
-    try {
-      const url = await openCustomerPortal();
-      window.location.href = url;
-    } catch (err) {
-      alert("Failed to open billing portal. Please try again.");
     }
   }
 
@@ -448,7 +438,7 @@ export default function Dashboard() {
                   </p>
                 </div>
                 {billing && billing.plan !== 'free' && (
-                  <button className="text-sm font-semibold hover:underline" style={{ color: "#004635" }} onClick={handleManageBilling}>Manage</button>
+                  <a href="/subscription" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Manage</a>
                 )}
                 {(!billing || billing.plan === 'free') && !isLoading && (
                    <a href="/billing" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Upgrade</a>
