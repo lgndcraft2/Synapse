@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
-import { createCheckoutSession } from './lib/api';
+import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
 import ConfigBanner from './component/ConfigBanner';
 
 const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
@@ -54,49 +54,6 @@ const stats = [
   ['$4.8B', 'EdTech Segment Growth'],
 ];
 
-const pricingPlans = [
-  {
-    name: 'Explorer',
-    price: 'Free',
-    priceId: '',
-    features: [
-      'Web reformatting',
-      'Single profile',
-      '30 section reformats per month',
-      'Basic cognitive profile',
-      'Chrome extension only',
-    ],
-    cta: 'Start Free',
-  },
-  {
-    name: 'Thinker Lite',
-    price: '$4',
-    suffix: '/mo',
-    priceId: import.meta.env.VITE_STRIPE_THINKER_LITE_PRICE_ID,
-    features: [
-      'Everything in Free',
-      'Up to 300 section reformats per month',
-      'Google Docs support',
-      'Faster processing',
-      'Basic adaptive feedback',
-    ],
-    cta: 'Upgrade',
-    featured: true,
-  },
-  {
-    name: 'Deep Thinker',
-    price: '$8',
-    suffix: '/mo',
-    priceId: import.meta.env.VITE_STRIPE_DEEP_THINKER_PRICE_ID,
-    features: [
-      'Unlimited reformats',
-      'Full Google Docs/PDF support',
-      'Cognitive pattern insights',
-      'Full adaptive feedback loop',
-    ],
-    cta: 'Go Deep',
-  },
-];
 
 const faqs = [
   [
@@ -179,22 +136,14 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function handleUpgrade(priceId: string) {
-    if (!priceId) return;
-
+  // Send everyone to /billing to review the order before Stripe. Signed-out
+  // visitors sign up first and land back on the same plan.
+  async function handleUpgrade(tier: string) {
+    const target = `/billing?plan=${tier}`;
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      window.location.href = '/auth?tab=signup';
-      return;
-    }
-
-    try {
-      const checkoutUrl = await createCheckoutSession(priceId);
-      window.location.href = checkoutUrl;
-    } catch (err: any) {
-      console.error('Checkout failed:', err);
-      alert(`Failed to start checkout: ${err?.message || 'Unknown error'}`);
-    }
+    window.location.href = session
+      ? target
+      : `/auth?tab=signup&next=${encodeURIComponent(target)}`;
   }
 
   return (
@@ -431,17 +380,17 @@ function App() {
         <section className="pricing full-section" id="pricing">
           <div className="section-heading">
             <h2>Choose Your Flow</h2>
-            <p>No diagnosis required. No data sold. Ever.</p>
+            <p>No diagnosis required. No data sold. Ever. Paid plans start with a {TRIAL_DAYS}-day free trial.</p>
           </div>
           <div className="pricing-grid">
-            {pricingPlans.map((plan) => (
+            {PLANS.map((plan) => (
               <article className={`price-card ${plan.featured ? 'featured offset-shadow' : ''}`} key={plan.name}>
                 {plan.featured && <div className="badge">Recommended</div>}
                 <h3>{plan.name}</h3>
-                {plan.name === 'Deep Thinker' && <p className="pricing-note">$8/mo primary pricing, with local university pricing available in Nigeria.</p>}
+                {plan.note && <p className="pricing-note">{plan.note}</p>}
                 <div className="price">
-                  {plan.price}
-                  {plan.suffix && <span>{plan.suffix}</span>}
+                  {plan.monthly ? formatPriceShort(plan.monthly.amount) : 'Free'}
+                  {plan.monthly && <span>/mo</span>}
                 </div>
                 <ul>
                   {plan.features.map((feature) => (
@@ -451,9 +400,9 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                <button 
+                <button
                   className={`button ${plan.featured ? 'button-primary' : 'button-secondary'}`}
-                  onClick={() => plan.priceId ? handleUpgrade(plan.priceId) : (window.location.href = '/auth?tab=signup')}
+                  onClick={() => plan.monthly ? handleUpgrade(plan.tier) : (window.location.href = '/auth?tab=signup')}
                 >
                   {plan.cta}
                 </button>

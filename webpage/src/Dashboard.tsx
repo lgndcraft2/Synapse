@@ -10,6 +10,7 @@ import {
   confirmCheckout,
 } from "./lib/api";
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
+import { PLAN_LABELS } from "./lib/plans";
 import ConfigBanner from "./component/ConfigBanner";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
@@ -48,14 +49,6 @@ interface HistoryEntry {
 // Order the "Switch Profile" button cycles through. Mirrors the backend's
 // ProfileUpdate Literal for profile_type.
 const PROFILE_TYPES = ["load-reducer", "comprehension-gap", "hyperfocus"];
-
-// Human-readable labels for internal plan tiers.
-const PLAN_LABELS: Record<string, string> = {
-  free: "Free",
-  lite: "Thinker Lite",
-  premium: "Deep Thinker",
-  institutional: "Institutional",
-};
 
 function titleCase(value: string) {
   return value.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase());
@@ -246,132 +239,6 @@ export default function Dashboard() {
   return (
     <>
       <ConfigBanner />
-      {/* Google Fonts + Material Symbols + scoped utility styles */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
-
-        .shadow-tactile { box-shadow: 2px 2px 0px 0px rgba(0,70,53,0.15); }
-        .font-serif { font-family: 'Source Serif 4', serif; }
-        .font-body  { font-family: 'Atkinson Hyperlegible Next', sans-serif; }
-        .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-size: 20px; line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal; direction: ltr; -webkit-font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; font-variation-settings: 'FILL' 1; }
-
-        /* ── Scoped utility layer (Tailwind-compatible subset used by this page) ── */
-        .dash ul { list-style: none; margin: 0; padding: 0; }
-        .dash li { margin: 0; }
-
-        .dash .flex { display: flex; }
-        .dash .inline-flex { display: inline-flex; }
-        .dash .grid { display: grid; }
-        .dash .block { display: block; }
-        .dash .flex-col { flex-direction: column; }
-        .dash .flex-grow { flex-grow: 1; }
-        .dash .flex-wrap { flex-wrap: wrap; }
-
-        .dash .items-center { align-items: center; }
-        .dash .items-start { align-items: flex-start; }
-        .dash .items-end { align-items: flex-end; }
-        .dash .justify-center { justify-content: center; }
-        .dash .justify-between { justify-content: space-between; }
-
-        .dash .gap-1 { gap: 0.25rem; }
-        .dash .gap-2 { gap: 0.5rem; }
-        .dash .gap-3 { gap: 0.75rem; }
-        .dash .gap-4 { gap: 1rem; }
-        .dash .gap-6 { gap: 1.5rem; }
-        .dash .gap-10 { gap: 2.5rem; }
-
-        .dash .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-        .dash .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-        .dash .w-full { width: 100%; }
-        .dash .w-2 { width: 0.5rem; }
-        .dash .w-8 { width: 2rem; }
-        .dash .w-24 { width: 6rem; }
-        .dash .w-32 { width: 8rem; }
-        .dash .h-2 { height: 0.5rem; }
-        .dash .h-8 { height: 2rem; }
-        .dash .h-32 { height: 8rem; }
-        .dash .h-full { height: 100%; }
-
-        .dash .mx-auto { margin-left: auto; margin-right: auto; }
-        .dash .ml-2 { margin-left: 0.5rem; }
-        .dash .mt-auto { margin-top: auto; }
-        .dash .mt-0\\.5 { margin-top: 0.125rem; }
-        .dash .mt-1 { margin-top: 0.25rem; }
-        .dash .mt-4 { margin-top: 1rem; }
-        .dash .mb-2 { margin-bottom: 0.5rem; }
-        .dash .mb-4 { margin-bottom: 1rem; }
-        .dash .mb-6 { margin-bottom: 1.5rem; }
-        .dash .-mx-2 { margin-left: -0.5rem; margin-right: -0.5rem; }
-
-        .dash .p-2 { padding: 0.5rem; }
-        .dash .p-4 { padding: 1rem; }
-        .dash .p-5 { padding: 1.25rem; }
-        .dash .p-6 { padding: 1.5rem; }
-        .dash .p-8 { padding: 2rem; }
-        .dash .p-1\\.5 { padding: 0.375rem; }
-        .dash .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
-        .dash .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
-        .dash .px-10 { padding-left: 2.5rem; padding-right: 2.5rem; }
-        .dash .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
-        .dash .py-1\\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
-        .dash .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-        .dash .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-        .dash .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
-        .dash .py-0\\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
-        .dash .pb-2 { padding-bottom: 0.5rem; }
-        .dash .pb-3 { padding-bottom: 0.75rem; }
-        .dash .pr-4 { padding-right: 1rem; }
-
-        .dash .space-y-3 > * + * { margin-top: 0.75rem; }
-        .dash .space-y-4 > * + * { margin-top: 1rem; }
-
-        .dash .rounded { border-radius: 0.25rem; }
-        .dash .rounded-lg { border-radius: 0.5rem; }
-        .dash .rounded-xl { border-radius: 0.75rem; }
-        .dash .rounded-full { border-radius: 9999px; }
-        .dash .rounded-bl-full { border-bottom-left-radius: 9999px; }
-
-        .dash .text-xs { font-size: 0.75rem; line-height: 1rem; }
-        .dash .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
-        .dash .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
-        .dash .text-2xl { font-size: 1.5rem; line-height: 2rem; }
-        .dash .text-right { text-align: right; }
-
-        .dash .font-medium { font-weight: 500; }
-        .dash .font-semibold { font-weight: 600; }
-        .dash .font-bold { font-weight: 700; }
-
-        .dash .uppercase { text-transform: uppercase; }
-        .dash .tracking-wider { letter-spacing: 0.05em; }
-        .dash .tracking-widest { letter-spacing: 0.1em; }
-
-        .dash .shrink-0 { flex-shrink: 0; }
-        .dash .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .dash .relative { position: relative; }
-        .dash .absolute { position: absolute; }
-        .dash .top-0 { top: 0; }
-        .dash .right-0 { right: 0; }
-        .dash .overflow-hidden { overflow: hidden; }
-        .dash .opacity-50 { opacity: 0.5; }
-        .dash .cursor-pointer { cursor: pointer; }
-
-        .dash .transition-colors { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
-        .dash .hover\\:opacity-80:hover { opacity: 0.8; }
-        .dash .hover\\:underline:hover { text-decoration: underline; }
-
-        @media (min-width: 640px) {
-          .dash .sm\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        }
-        @media (min-width: 768px) {
-          .dash .md\\:grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-          .dash .md\\:col-span-7 { grid-column: span 7 / span 7; }
-          .dash .md\\:col-span-4 { grid-column: span 4 / span 4; }
-          .dash .md\\:col-start-9 { grid-column-start: 9; }
-        }
-      `}</style>
-
       <div className="dash font-body" style={{ backgroundColor: "#fcf9f8", color: "#1b1c1c", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
         {/* ── HEADER ─────────────────────────────────────────────── */}
@@ -584,7 +451,7 @@ export default function Dashboard() {
                   <button className="text-sm font-semibold hover:underline" style={{ color: "#004635" }} onClick={handleManageBilling}>Manage</button>
                 )}
                 {(!billing || billing.plan === 'free') && !isLoading && (
-                   <a href="/#pricing" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Upgrade</a>
+                   <a href="/billing" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Upgrade</a>
                 )}
               </div>
             </section>

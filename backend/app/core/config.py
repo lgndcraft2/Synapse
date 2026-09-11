@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str
     STRIPE_THINKER_LITE_PRICE_ID: str = ""   # Thinker Lite ($4/mo) → "lite" plan
     STRIPE_DEEP_THINKER_PRICE_ID: str = ""   # Deep Thinker ($8/mo) → "premium" plan
+    # Annual equivalents. Leave blank until the prices exist in Stripe — the
+    # frontend hides the monthly/annual toggle unless both are configured.
+    STRIPE_THINKER_LITE_ANNUAL_PRICE_ID: str = ""   # Thinker Lite ($40/yr) → "lite"
+    STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID: str = ""   # Deep Thinker ($80/yr) → "premium"
     # Deprecated aliases — kept so existing deployments keep working. Both map to premium.
     STRIPE_PREMIUM_PRICE_ID: str = ""
     STRIPE_PREMIUM_ANNUAL_PRICE_ID: str = ""
@@ -76,11 +80,39 @@ class Settings(BaseSettings):
             mapping[self.STRIPE_THINKER_LITE_PRICE_ID] = "lite"
         if self.STRIPE_DEEP_THINKER_PRICE_ID:
             mapping[self.STRIPE_DEEP_THINKER_PRICE_ID] = "premium"
+        if self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID:
+            mapping[self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID] = "lite"
+        if self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID:
+            mapping[self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID] = "premium"
         # Backward-compatible aliases — both grant Deep Thinker / premium.
         if self.STRIPE_PREMIUM_PRICE_ID:
             mapping.setdefault(self.STRIPE_PREMIUM_PRICE_ID, "premium")
         if self.STRIPE_PREMIUM_ANNUAL_PRICE_ID:
             mapping.setdefault(self.STRIPE_PREMIUM_ANNUAL_PRICE_ID, "premium")
+        return mapping
+
+    @property
+    def price_period_map(self) -> dict:
+        """Maps each configured Stripe price ID to its billing cadence.
+
+        Anything not listed here is treated as monthly, which matches the
+        default on the Billing model.
+        """
+        mapping: dict = {}
+        for price_id in (
+            self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID,
+            self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID,
+            self.STRIPE_PREMIUM_ANNUAL_PRICE_ID,
+        ):
+            if price_id:
+                mapping[price_id] = "annual"
+        for price_id in (
+            self.STRIPE_THINKER_LITE_PRICE_ID,
+            self.STRIPE_DEEP_THINKER_PRICE_ID,
+            self.STRIPE_PREMIUM_PRICE_ID,
+        ):
+            if price_id:
+                mapping.setdefault(price_id, "monthly")
         return mapping
 
     @property

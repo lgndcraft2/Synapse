@@ -9,6 +9,18 @@ type AuthTab = 'login' | 'signup' | 'reset';
 
 type VisiblePasswords = Record<'signup' | 'confirm' | 'login', boolean>;
 
+/**
+ * Where to land after signing in. Callers pass ?next= to preserve intent —
+ * e.g. /billing?plan=premium when the upgrade flow bounced them here.
+ * Only same-origin relative paths are honoured, so this can not become an
+ * open redirect.
+ */
+function getNextPath(): string {
+  const next = new URLSearchParams(window.location.search).get("next");
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  return "/dashboard";
+}
+
 function getInitialTab(): AuthTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
   if (tab === 'login') return 'login';
@@ -51,7 +63,7 @@ function AuthPage() {
         showToast('Synchronizing profile...', 'info');
         try {
           await syncUser();
-          window.location.href = '/dashboard';
+          window.location.href = getNextPath();
         } catch (err: any) {
           showToast(err.message || 'Failed to sync user data', 'error');
           setIsLoading(false);
@@ -96,7 +108,7 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin + '/auth',
+        redirectTo: window.location.origin + '/auth' + window.location.search,
       },
     });
     if (error) {
@@ -127,7 +139,7 @@ function AuthPage() {
           password,
           options: {
             data: { full_name: name },
-            emailRedirectTo: window.location.origin + '/auth',
+            emailRedirectTo: window.location.origin + '/auth' + window.location.search,
           },
         });
         if (error) throw error;
@@ -135,7 +147,7 @@ function AuthPage() {
         if (data.session) {
           showToast('Account created! Syncing...', 'success');
           await syncUser();
-          window.location.href = '/dashboard';
+          window.location.href = getNextPath();
         } else {
           setSuccessMessage('Check your email for the confirmation link.');
           showToast('Check your email to verify.', 'success');

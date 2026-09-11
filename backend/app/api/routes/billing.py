@@ -62,6 +62,19 @@ def _plan_for_subscription(sub, status: str, renews_at: datetime | None) -> str:
     return settings.price_plan_map.get(price_id, "premium")
 
 
+def _billing_period_for_subscription(sub) -> str:
+    """Resolve the billing cadence from the subscription's price ID.
+
+    Unknown or unexpectedly shaped prices fall back to "monthly", which matches
+    the Billing model's default.
+    """
+    try:
+        price_id = sub["items"]["data"][0]["price"]["id"]
+    except (KeyError, IndexError, TypeError):
+        return "monthly"
+    return settings.price_period_map.get(price_id, "monthly")
+
+
 @router.get("/status", response_model=BillingOut)
 async def billing_status(
     db: AsyncSession = Depends(get_db),
@@ -164,8 +177,8 @@ async def create_checkout(
         line_items=[{"price": body.price_id, "quantity": 1}],
         mode="subscription",
         subscription_data={"trial_period_days": 7},
-        success_url=_frontend_url("/dashboard?session_id={CHECKOUT_SESSION_ID}"),
-        cancel_url=_frontend_url("/"),
+        success_url=_frontend_url("/billing/success?session_id={CHECKOUT_SESSION_ID}"),
+        cancel_url=_frontend_url("/billing/cancelled"),
         metadata={"user_id": str(current_user.id)},
     )
 
@@ -325,6 +338,7 @@ async def _activate_premium(db, user_id, customer_id, subscription_id, sub):
             stripe_subscription_id=subscription_id,
             plan=plan,
             status=status,
+            billing_period=_billing_period_for_subscription(sub),
             renews_at=period_end,
             trial_ends_at=trial_end,
             updated_at=datetime.utcnow(),
@@ -356,6 +370,7 @@ async def _update_subscription(db, sub_data):
         .values(
             plan=plan,
             status=status,
+            billing_period=_billing_period_for_subscription(sub_data),
             renews_at=period_end,
             updated_at=datetime.utcnow(),
         )
