@@ -124,3 +124,33 @@ class UsageTracking(Base):
     first_seen:        Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     last_seen:         Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     flagged_for_abuse: Mapped[bool]      = mapped_column(Boolean, default=False)
+
+
+class SupportTicket(Base):
+    """A ticket filed from the /support page.
+
+    Anonymous submissions are allowed (user_id is nullable) so that somebody
+    whose sign-in is broken can still reach support; `email` is what makes the
+    ticket answerable either way.
+    """
+    __tablename__ = "support_tickets"
+
+    id:          Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reference:   Mapped[str]       = mapped_column(String, unique=True, nullable=False)
+    user_id:     Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    email:       Mapped[str]       = mapped_column(String, nullable=False)
+    topic:       Mapped[str]       = mapped_column(String, nullable=False)
+    subject:     Mapped[str]       = mapped_column(Text, nullable=False)
+    message:     Mapped[str]       = mapped_column(Text, nullable=False)
+    # Plan, profile, extension and browser at submission time — optional, the
+    # user can decline to attach it.
+    #
+    # none_as_null=True matters: SQLAlchemy's JSON type otherwise persists
+    # Python None as the JSON value 'null', so a declined attachment would
+    # still satisfy "diagnostics IS NOT NULL" and read as present.
+    diagnostics: Mapped[dict]      = mapped_column(JSON(none_as_null=True), nullable=True)
+    status:      Mapped[str]       = mapped_column(String, default="open", nullable=False)
+    reply:       Mapped[str]       = mapped_column(Text, nullable=True)
+    replied_at:  Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at:  Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at:  Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

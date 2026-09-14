@@ -6,6 +6,8 @@ import Dashboard from './Dashboard';
 import Billing from './Billing';
 import CheckoutResult from './CheckoutResult';
 import Subscription from './Subscription';
+import Profile from './Profile';
+import Support from './Support';
 import './styles.css';
 
 const { pathname } = window.location;
@@ -13,15 +15,19 @@ const { pathname } = window.location;
 // bare /billing prefix catches them.
 const Root = pathname.startsWith('/auth')
   ? AuthPage
-  : /^\/(subscription|billing\/manage)/.test(pathname)
-    ? Subscription
-    : /^\/billing\/(success|cancelled)/.test(pathname)
-      ? CheckoutResult
-      : pathname.startsWith('/billing')
-        ? Billing
-        : pathname.startsWith('/dashboard')
-          ? Dashboard
-          : App;
+  : pathname.startsWith('/support')
+    ? Support
+    : pathname.startsWith('/profile')
+      ? Profile
+      : /^\/(subscription|billing\/manage)/.test(pathname)
+        ? Subscription
+        : /^\/billing\/(success|cancelled)/.test(pathname)
+          ? CheckoutResult
+          : pathname.startsWith('/billing')
+            ? Billing
+            : pathname.startsWith('/dashboard')
+              ? Dashboard
+              : App;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -62,24 +62,58 @@ export function AppHeader({ user, backTo }: AppHeaderProps) {
             </a>
           )}
         </div>
-        <div
-          className="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-colors hover:opacity-80"
-          onClick={signOut}
-          title="Sign out"
-        >
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
-            style={{ backgroundColor: '#1b5e4b', color: '#94d5bd' }}
-          >
-            {initialsFor(user)}
+        {user ? (
+          /* Avatar opens the profile; signing out is its own target beside it,
+             so the two can't be hit by mistake. */
+          <div className="flex items-center gap-1">
+            <a
+              href="/profile"
+              className="flex items-center gap-2 p-1.5 rounded-lg transition-colors hover:opacity-80"
+              title="Your profile"
+              aria-label="Your profile"
+            >
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
+                style={{ backgroundColor: '#1b5e4b', color: '#94d5bd' }}
+              >
+                {initialsFor(user)}
+              </div>
+            </a>
+            <button
+              className="flex items-center justify-center p-1.5 rounded-lg transition-colors hover:opacity-80"
+              style={{ background: 'none', border: 0, cursor: 'pointer' }}
+              onClick={signOut}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <span
+                className="material-symbols-outlined text-lg"
+                style={{ color: '#5e5f5b', fontVariationSettings: "'FILL' 0" }}
+              >
+                logout
+              </span>
+            </button>
           </div>
-          <span
-            className="material-symbols-outlined text-lg"
-            style={{ color: '#5e5f5b', fontVariationSettings: "'FILL' 0" }}
-          >
-            logout
-          </span>
-        </div>
+        ) : (
+          /* Public app-shell pages (e.g. /support) are reachable signed out,
+             so mirror the landing page's actions rather than an empty corner. */
+          <div className="flex items-center gap-3">
+            <a
+              href="/auth?tab=login"
+              className="text-sm font-semibold transition-colors hover:opacity-80"
+              style={{ color: '#5e5f5b' }}
+            >
+              Login
+            </a>
+            <a
+              href="/auth?tab=signup"
+              className="rounded px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+              style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
+            >
+              Get Extension
+            </a>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -98,7 +132,7 @@ export function AppFooter() {
           <a href="/">Privacy Policy</a>
           <a href="/">Accessibility Statement</a>
           <a href="/#library">Research Library</a>
-          <a href="/">Contact Support</a>
+          <a href="/support">Contact Support</a>
         </nav>
       </div>
     </footer>

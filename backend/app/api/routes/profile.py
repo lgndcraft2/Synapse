@@ -26,6 +26,65 @@ async def get_profile(
     return profile
 
 
+_FIELD_LABELS = {
+    "profile_type": "Reading type",
+    "preferred_format": "Preferred format",
+    "chunk_size": "Chunk size",
+    "needs_examples_first": "Examples first",
+    "simplify_vocab": "Simplify vocabulary",
+    "max_nesting_depth": "Nesting depth",
+    "use_headers": "Section headers",
+    "notes": "Personal notes",
+}
+
+
+_PROFILE_TYPE_LABELS = {
+    "load-reducer": "Load Reducer",
+    "comprehension-gap": "Comprehension Gap",
+    "hyperfocus": "Hyperfocus Reader",
+}
+
+
+def _display(value, field: str = "") -> str:
+    """Render a profile value for the history summary.
+
+    Uses the same friendly names the UI shows, so the summary line and the
+    before/after diff rendered beneath it can't disagree.
+    """
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    if value is None or value == "":
+        return "empty"
+    if field == "profile_type":
+        return _PROFILE_TYPE_LABELS.get(value, str(value))
+    return str(value)
+
+
+def _summarise_changes(previous: dict, new: dict) -> str:
+    """Describe what actually changed, rather than that something did.
+
+    The history log is surfaced on the profile page and the dashboard, so a
+    per-field summary is what makes it readable. Falls back to the generic
+    wording when a patch changes nothing.
+    """
+    parts = []
+    for field, label in _FIELD_LABELS.items():
+        before, after = previous.get(field), new.get(field)
+        if before == after:
+            continue
+        if field == "notes":
+            # Note bodies are too long to inline; say that they changed.
+            parts.append("Personal notes updated" if after else "Personal notes cleared")
+        elif isinstance(after, bool):
+            parts.append(f"{label} turned {_display(after, field)}")
+        else:
+            parts.append(f"{label} {_display(before, field)} → {_display(after, field)}")
+
+    if not parts:
+        return "No changes were made to your profile settings."
+    return "; ".join(parts) + "."
+
+
 @profile_router.patch("", response_model=ProfileOut)
 async def update_profile(
     body: ProfileUpdate,
@@ -71,7 +130,7 @@ async def update_profile(
     # Log the change
     history = ProfileHistory(
         user_id=current_user.id,
-        change_summary="User manually updated profile settings.",
+        change_summary=_summarise_changes(previous_state, new_state),
         previous_state=previous_state,
         new_state=new_state,
     )

@@ -23,6 +23,7 @@ import {
   type Plan,
 } from './lib/plans';
 import AppShell from './component/AppShell';
+import { CARD, INSET, Eyebrow, Notice, Section } from './component/ui';
 
 interface BillingInfo {
   plan: string;
@@ -65,50 +66,6 @@ interface Usage {
   resets_at?: string | null;
   lifetime_used?: number | null;
   lifetime_limit?: number | null;
-}
-
-const CARD: React.CSSProperties = { backgroundColor: '#f6f3f2', border: '1px solid #3d3d38' };
-const INSET: React.CSSProperties = { backgroundColor: '#f0eded', border: '1px solid #3d3d38' };
-
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="block text-xs font-semibold uppercase" style={{ color: '#5e5f5b', letterSpacing: '0.08em' }}>
-      {children}
-    </span>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h2
-        className="font-serif font-semibold mb-4 pb-2 text-2xl"
-        style={{ borderBottom: '1px solid #e4e2e1', color: '#1b1c1c' }}
-      >
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function Notice({ kind, children }: { kind: 'error' | 'success'; children: React.ReactNode }) {
-  const palette =
-    kind === 'error'
-      ? { backgroundColor: '#ffdad6', color: '#ba1a1a', icon: 'error' }
-      : { backgroundColor: '#d7f2e5', color: '#004635', icon: 'check_circle' };
-  return (
-    <div
-      className="rounded p-4 flex items-start gap-3 text-sm"
-      style={{ backgroundColor: palette.backgroundColor, color: palette.color }}
-      role={kind === 'error' ? 'alert' : 'status'}
-    >
-      <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18 }}>
-        {palette.icon}
-      </span>
-      <span>{children}</span>
-    </div>
-  );
 }
 
 /** Status chip. Cancelling is its own state — it is not the same as active. */
@@ -410,7 +367,7 @@ export default function Subscription() {
                         <div className="mt-auto">
                           {isCurrent ? (
                             <button
-                              className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider"
+                              className="subscription-action rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider"
                               style={{ border: '1px solid #707974', color: '#5e5f5b', backgroundColor: 'transparent', cursor: 'default' }}
                               disabled
                             >
@@ -418,7 +375,7 @@ export default function Subscription() {
                             </button>
                           ) : (
                             <button
-                              className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                              className="subscription-action rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
                               style={{ backgroundColor: isUpgrade ? '#004635' : 'transparent', color: isUpgrade ? '#ffffff' : '#004635', border: '1px solid #004635' }}
                               onClick={() =>
                                 run(
@@ -581,7 +538,7 @@ export default function Subscription() {
               )}
               {(billing?.stripe_customer_id || isPaid) && (
                 <button
-                  className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80 flex items-center justify-center gap-2"
+                  className="subscription-action rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80 flex items-center justify-center gap-2"
                   style={{ border: '1px solid #004635', color: '#004635', backgroundColor: 'transparent' }}
                   onClick={handlePortal}
                   disabled={busy === 'portal'}
@@ -605,7 +562,7 @@ export default function Subscription() {
                 Billing questions, refunds, or something that looks wrong — get in touch and we'll
                 sort it out.
               </p>
-              <a href="/" className="text-sm font-semibold hover:underline mt-3 block" style={{ color: '#004635' }}>
+              <a href="/support" className="text-sm font-semibold hover:underline mt-3 block" style={{ color: '#004635' }}>
                 Contact support
               </a>
             </section>

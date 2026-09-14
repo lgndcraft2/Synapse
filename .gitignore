@@ -1,5 +1,8 @@
 /node_modules
 /.playwright-mcp
+/.impeccable
+/.claude
+/.agents
 /webpage/dist
 
 # Playwright e2e artifacts
@@ -8,3 +11,4 @@
 /tests/.state.json
 /tests/.env.backup
 /tests/*.log
+playwright.config.mjs

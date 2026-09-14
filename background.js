@@ -550,7 +550,13 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "SYNAPSE_PING") {
-    sendResponse({ ok: true, installed: true });
+    // The version lets the support page report which build a user is on,
+    // which is usually the first thing worth knowing about a bug report.
+    sendResponse({
+      ok: true,
+      installed: true,
+      version: chrome.runtime.getManifest().version
+    });
     return true;
   }
 

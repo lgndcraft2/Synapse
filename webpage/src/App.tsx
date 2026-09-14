@@ -459,7 +459,7 @@ function App() {
             <a href="#top">Privacy Policy</a>
             <a href="#top">Accessibility Statement</a>
             <a href="#library">Research Library</a>
-            <a href="#top">Contact Support</a>
+            <a href="/support">Contact Support</a>
           </nav>
         </div>
       </footer>

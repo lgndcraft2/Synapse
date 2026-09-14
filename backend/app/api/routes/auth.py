@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.db.database import get_db
 from app.models.models import User, CognitiveProfile, Billing
 from app.schemas.schemas import UserOut
@@ -9,6 +9,10 @@ from app.core.config import settings
 from supabase import create_client
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
+import asyncio
+import logging
+
+logger = logging.getLogger("synapse.auth")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -121,3 +125,69 @@ async def sync_user_from_supabase(
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.delete("/account", status_code=204)
+async def delete_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently deletes the caller's account.
+
+    Order matters: cancel billing first so deletion can never strand a paying
+    subscription, then remove the local rows, then the Supabase auth user. If
+    the auth user survived, the next sign-in would silently recreate the
+    account via /auth/sync.
+    """
+    import stripe
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    # ── 1. Cancel any live Stripe subscription ────────────────────────
+    result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
+    billing = result.scalar_one_or_none()
+    if billing and billing.stripe_subscription_id:
+        try:
+            await asyncio.to_thread(stripe.Subscription.delete, billing.stripe_subscription_id)
+        except stripe.error.StripeError as e:
+            # Never delete the account while money is still owed on it — the
+            # user would have no way left to stop the charges.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "We could not cancel your subscription, so your account was not "
+                    f"deleted. Please cancel it first. ({e.user_message or 'Stripe error'})"
+                ),
+            )
+
+    supabase_uid = current_user.supabase_uid
+    user_id = current_user.id
+
+    # ── 2. Delete the local rows ──────────────────────────────────────
+    # cognitive_profiles, profile_history, reading_sessions, feedback_log and
+    # billing all declare ON DELETE CASCADE; usage_tracking.user_id is SET NULL
+    # by design, so abuse counters survive the account.
+    #
+    # This is a Core DELETE on purpose. db.delete(current_user) would make the
+    # ORM "de-associate" the children by nulling their user_id first — which
+    # the NOT NULL constraint rejects — because the relationships do not set
+    # passive_deletes. Issuing the statement directly lets the database apply
+    # the cascade the schema already declares.
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.flush()
+
+    # ── 3. Delete the Supabase auth user ──────────────────────────────
+    if supabase_uid:
+        try:
+            await asyncio.to_thread(supabase.auth.admin.delete_user, supabase_uid)
+        except Exception as e:
+            # The local data is already gone and the transaction commits on
+            # clean exit; surfacing a 500 here would wrongly suggest nothing
+            # happened. Log loudly instead so the orphan can be swept up.
+            logger.error(
+                "Deleted local account %s but could not remove Supabase user %s: %s",
+                user_id, supabase_uid, e,
+            )
+
+    return None

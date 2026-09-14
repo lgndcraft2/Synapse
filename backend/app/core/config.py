@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET_KEY: str
     FRONTEND_URL: str = "http://localhost:3000"
+    # Where support tickets are delivered, and the address shown on /support.
+    # Must match the frontend's VITE_SUPPORT_EMAIL.
+    SUPPORT_EMAIL: str = "help@support.usesynapse.cv"
+    # Transactional email (Resend). Leave RESEND_API_KEY blank to disable
+    # sending entirely — tickets are still saved, they just aren't emailed.
+    # MAIL_FROM must be on a domain verified in Resend, or sends are rejected.
+    RESEND_API_KEY: str = ""
+    MAIL_FROM: str = "Synapse Support <help@support.usesynapse.cv>"
     ALLOWED_ORIGINS: str = "http://localhost:3000"
     CHROME_EXTENSION_ID: str = ""
     ALLOWED_ORIGIN_REGEX: str = ""

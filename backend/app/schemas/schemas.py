@@ -237,3 +237,38 @@ class DashboardStats(BaseModel):
     time_saved_minutes: int
     recent_sessions: list[SessionOut]
     feedback_breakdown: dict[str, int]
+
+
+# ── Support ───────────────────────────────────────────────────────
+
+SupportTopic = Literal[
+    "billing", "extension", "account", "profile", "accessibility", "other"
+]
+
+
+class SupportTicketCreate(BaseModel):
+    topic: SupportTopic
+    subject: str = Field(..., min_length=1, max_length=200)
+    message: str = Field(..., min_length=1, max_length=5000)
+    # Required only for anonymous submissions — the route falls back to the
+    # authenticated user's address when a token is present.
+    email: Optional[EmailStr] = None
+    # Plan / profile / extension / browser snapshot. The user can decline to
+    # send it, in which case this stays null.
+    diagnostics: Optional[dict] = None
+
+
+class SupportTicketOut(BaseModel):
+    id: uuid.UUID
+    reference: str
+    topic: str
+    subject: str
+    message: str
+    email: str
+    status: str
+    reply: Optional[str] = None
+    replied_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

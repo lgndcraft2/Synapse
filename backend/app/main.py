@@ -1,11 +1,29 @@
+import logging
+import sys
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
+
+# ── Logging ───────────────────────────────────────────────────────
+# Nothing configured logging before, so the app's own INFO messages went to
+# Python's last-resort handler, which only emits WARNING and above — "support
+# ticket filed", "rate limiter degraded" and friends were invisible. Scope a
+# handler to the `synapse.*` namespace only, so uvicorn's own loggers keep
+# their formatting and access lines aren't duplicated.
+_synapse_logger = logging.getLogger("synapse")
+if not _synapse_logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+    _synapse_logger.addHandler(_handler)
+    _synapse_logger.setLevel(logging.DEBUG if settings.APP_ENV == "development" else logging.INFO)
+    _synapse_logger.propagate = False
 from app.api.routes.auth import router as auth_router
 from app.api.routes.reformat import router as reformat_router
 from app.api.routes.billing import router as billing_router, webhook_router
 from app.api.routes.profile import profile_router, feedback_router, stats_router
+from app.api.routes.support import router as support_router
 
 # ── Request Size Limit Middleware ─────────────────────────────────
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -61,6 +79,7 @@ app.include_router(billing_router,   prefix="/api/v1")
 app.include_router(webhook_router,   prefix="/api/v1")
 app.include_router(profile_router,   prefix="/api/v1")
 app.include_router(feedback_router,  prefix="/api/v1")
+app.include_router(support_router,   prefix="/api/v1")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os

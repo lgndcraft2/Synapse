@@ -130,7 +130,7 @@ export default function Billing() {
     const priceId = priceIdFor(selected, period);
     if (!priceId) {
       setError(
-        `${selected.name} isn't available for ${periodNoun(period)}ly billing yet. Pick another option or contact support.`,
+        `${selected.name} isn't available for ${periodNoun(period)}ly billing yet. Pick another option, or let us know at /support.`,
       );
       return;
     }

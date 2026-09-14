@@ -238,12 +238,20 @@ export default function Dashboard() {
               <span className="material-symbols-outlined">psychology</span>
               Synapse
             </div>
-            <div className="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-colors hover:opacity-80" onClick={handleLogout}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
-                style={{ backgroundColor: "#1b5e4b", color: "#94d5bd" }}>
-                {user?.user_metadata?.full_name?.split(' ').map((n: string) => n[0]).join('') || user?.email?.[0].toUpperCase() || 'AA'}
-              </div>
-              <span className="material-symbols-outlined text-lg" style={{ color: "#5e5f5b", fontVariationSettings: "'FILL' 0" }}>logout</span>
+            {/* Avatar opens the profile; signing out is its own target beside it. */}
+            <div className="flex items-center gap-1">
+              <a href="/profile" className="flex items-center gap-2 p-1.5 rounded-lg transition-colors hover:opacity-80"
+                title="Your profile" aria-label="Your profile">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
+                  style={{ backgroundColor: "#1b5e4b", color: "#94d5bd" }}>
+                  {user?.user_metadata?.full_name?.split(' ').map((n: string) => n[0]).join('') || user?.email?.[0].toUpperCase() || 'AA'}
+                </div>
+              </a>
+              <button className="flex items-center justify-center p-1.5 rounded-lg transition-colors hover:opacity-80"
+                style={{ background: 'none', border: 0, cursor: 'pointer' }}
+                onClick={handleLogout} title="Sign out" aria-label="Sign out">
+                <span className="material-symbols-outlined text-lg" style={{ color: "#5e5f5b", fontVariationSettings: "'FILL' 0" }}>logout</span>
+              </button>
             </div>
           </div>
         </header>
@@ -303,12 +311,18 @@ export default function Dashboard() {
                     {profile?.profile_type ? titleCase(profile.profile_type) : "Load Reducer"}
                   </h2>
                 </div>
-                <button className="rounded px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-                  style={{ border: "1px solid #004635", color: "#004635", opacity: (!profile || isSwitching) ? 0.5 : 1, cursor: (!profile || isSwitching) ? "default" : "pointer" }}
-                  onClick={handleSwitchProfile}
-                  disabled={!profile || isSwitching}>
-                  {isSwitching ? "Switching…" : "Switch Profile"}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button className="rounded px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+                    style={{ border: "1px solid #004635", color: "#004635", opacity: (!profile || isSwitching) ? 0.5 : 1, cursor: (!profile || isSwitching) ? "default" : "pointer" }}
+                    onClick={handleSwitchProfile}
+                    disabled={!profile || isSwitching}>
+                    {isSwitching ? "Switching…" : "Switch Profile"}
+                  </button>
+                  <a href="/profile" className="rounded px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+                    style={{ backgroundColor: "#004635", color: "#ffffff", border: "1px solid #004635" }}>
+                    Edit
+                  </a>
+                </div>
               </div>
               <div className="relative" style={{ borderTop: "1px solid #3d3d38", paddingTop: 24 }}>
                 <h3 className="text-xs font-semibold uppercase mb-4" style={{ color: "#404944", letterSpacing: "0.05em" }}>
@@ -458,7 +472,7 @@ export default function Dashboard() {
               <a href="/">Privacy Policy</a>
               <a href="/">Accessibility Statement</a>
               <a href="/#library">Research Library</a>
-              <a href="/">Contact Support</a>
+              <a href="/support">Contact Support</a>
             </nav>
           </div>
         </footer>

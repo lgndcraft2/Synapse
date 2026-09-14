@@ -249,6 +249,64 @@ export async function updateProfile(update: Record<string, unknown>) {
   return response.json();
 }
 
+/** Permanently deletes the account: Stripe subscription, local rows, auth user. */
+export async function deleteAccount() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/auth/account`, {
+    method: 'DELETE',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to delete account' }));
+    throw new Error(error.detail || 'Failed to delete account');
+  }
+
+  return true;
+}
+
+/**
+ * Files a support ticket. Auth is optional — anonymous callers must pass an
+ * email so the ticket is answerable.
+ */
+export async function createSupportTicket(ticket: {
+  topic: string;
+  subject: string;
+  message: string;
+  email?: string;
+  diagnostics?: Record<string, unknown> | null;
+}) {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/support/tickets`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(ticket),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to send your ticket' }));
+    throw new Error(error.detail || 'Failed to send your ticket');
+  }
+
+  return response.json();
+}
+
+export async function getMyTickets() {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(`${BACKEND_URL}/api/v1/support/tickets`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch your tickets');
+  }
+
+  return response.json();
+}
+
 export async function getProfileHistory() {
   const authHeaders = await getAuthHeader();
   const response = await fetch(`${BACKEND_URL}/api/v1/profile/history`, {

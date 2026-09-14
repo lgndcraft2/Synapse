@@ -1270,6 +1270,8 @@ h2 {
 
 .price-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--tertiary);
   border-radius: 2px;
   background: var(--surface-lowest);
@@ -1355,7 +1357,16 @@ h2 {
 }
 
 .price-card .button {
-  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+  margin-top: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .surface-low {
@@ -2228,6 +2239,7 @@ h2 {
 .dash .mt-0\.5 { margin-top: 0.125rem; }
 .dash .mt-1 { margin-top: 0.25rem; }
 .dash .mt-2 { margin-top: 0.5rem; }
+.dash .mt-3 { margin-top: 0.75rem; }
 .dash .mt-4 { margin-top: 1rem; }
 .dash .mt-6 { margin-top: 1.5rem; }
 .dash .mt-8 { margin-top: 2rem; }
@@ -2259,6 +2271,7 @@ h2 {
 .dash .py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
 .dash .pb-2 { padding-bottom: 0.5rem; }
 .dash .pb-3 { padding-bottom: 0.75rem; }
+.dash .pt-3 { padding-top: 0.75rem; }
 .dash .pt-4 { padding-top: 1rem; }
 .dash .pt-6 { padding-top: 1.5rem; }
 .dash .pr-4 { padding-right: 1rem; }
@@ -2291,6 +2304,7 @@ h2 {
 .dash .tracking-wider { letter-spacing: 0.05em; }
 .dash .tracking-widest { letter-spacing: 0.1em; }
 
+.dash .self-start { align-self: flex-start; }
 .dash .shrink-0 { flex-shrink: 0; }
 .dash .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash .relative { position: relative; }
@@ -2300,6 +2314,17 @@ h2 {
 .dash .overflow-hidden { overflow: hidden; }
 .dash .opacity-50 { opacity: 0.5; }
 .dash .cursor-pointer { cursor: pointer; }
+
+.dash .subscription-action {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  align-self: stretch;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 .dash .transition-colors { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
 .dash .transition-all { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
@@ -2319,4 +2344,207 @@ h2 {
   .dash .md\:col-span-6 { grid-column: span 6 / span 6; }
   .dash .md\:col-span-7 { grid-column: span 7 / span 7; }
   .dash .md\:col-start-9 { grid-column-start: 9; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Form controls for the app shell (/profile).
+   Focus treatment mirrors `.auth-form input` so the settings form and the
+   sign-in form agree. Controls stay native elements — restyled, never
+   replaced — so keyboard and screen-reader behaviour comes for free.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dash .field {
+  display: block;
+  width: 100%;
+  border: 1px solid #3d3d38;
+  border-radius: 4px;
+  background: #fcf9f8;
+  color: #1b1c1c;
+  font: inherit;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dash textarea.field {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+/* Native select keeps its own arrow; just reserve room for it. */
+.dash select.field {
+  padding-right: 32px;
+  cursor: pointer;
+}
+
+.dash .field:focus {
+  border-color: #004635;
+  box-shadow: inset 2px 2px 0 rgba(61, 61, 56, 0.1);
+}
+
+.dash .field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dash .field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #404944;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.dash .field-hint {
+  display: block;
+  margin-top: 6px;
+  color: #5e5f5b;
+  font-size: 0.75rem;
+}
+
+/* ── Labelled option row — a restyled checkbox with room to explain itself ── */
+
+.dash .option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #3d3d38;
+  border-radius: 8px;
+  background: #fcf9f8;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.dash .option-row:hover {
+  border-color: #004635;
+}
+
+.dash .option-row[data-on="true"] {
+  border-color: #004635;
+  background: #f6f3f2;
+}
+
+/* The real checkbox, sized up and given the house colours. */
+.dash .option-row input[type="checkbox"],
+.dash .option-row input[type="radio"] {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: #004635;
+  cursor: pointer;
+}
+
+.dash .option-row:focus-within {
+  border-color: #004635;
+  box-shadow: 2px 2px 0 0 rgba(0, 70, 53, 0.15);
+}
+
+.dash .option-title {
+  display: block;
+  color: #1b1c1c;
+  font-weight: 600;
+}
+
+.dash .option-desc {
+  display: block;
+  margin-top: 2px;
+  color: #5e5f5b;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* ── Choice card — the same idea at card scale, for `profile_type` ── */
+
+.dash .choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #3d3d38;
+  border-radius: 8px;
+  background: #fcf9f8;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.dash .choice-card:hover {
+  border-color: #004635;
+}
+
+.dash .choice-card[data-on="true"] {
+  border-color: #004635;
+  border-width: 2px;
+  background: #f6f3f2;
+  box-shadow: 2px 2px 0 0 rgba(0, 70, 53, 0.15);
+  /* Keep the 2px border from nudging the layout. */
+  padding: 15px;
+}
+
+.dash .choice-card:focus-within {
+  border-color: #004635;
+}
+
+.dash .choice-card input[type="radio"] {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: #004635;
+  cursor: pointer;
+}
+
+/* ── Segmented pill group — matches the dashboard's reading-day control ── */
+
+.dash .segmented {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid #3d3d38;
+  border-radius: 8px;
+  background: #f6f3f2;
+  padding: 4px;
+}
+
+.dash .segmented button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #5e5f5b;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.dash .segmented button[aria-pressed="true"] {
+  background: #004635;
+  color: #ffffff;
+}
+
+.dash .segmented button:focus-visible {
+  outline: 2px solid #004635;
+  outline-offset: 2px;
+}
+
+/* ── Sticky save bar ── */
+
+.dash .save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border: 1px solid #3d3d38;
+  border-radius: 8px;
+  background: #f0eded;
+  box-shadow: 0 -2px 12px rgba(27, 28, 28, 0.08);
+  padding: 16px 20px;
+  margin-top: 32px;
 }
