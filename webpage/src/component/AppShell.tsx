@@ -1,7 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { pushLogoutToExtension } from '../lib/extensionBridge';
 import ConfigBanner from './ConfigBanner';
+import { BrandLockup } from './Brand';
 
 /** Initials for the header avatar, matching the dashboard's derivation. */
 export function initialsFor(user: any): string {
@@ -23,6 +25,161 @@ export async function signOut() {
   window.location.href = '/auth?tab=login';
 }
 
+/** Destinations in the account dropdown, in the order they are read out. */
+const ACCOUNT_LINKS = [
+  { href: '/dashboard', icon: 'space_dashboard', label: 'Dashboard' },
+  { href: '/profile', icon: 'person', label: 'Your profile' },
+  { href: '/subscription', icon: 'credit_card', label: 'Subscription' },
+  { href: '/support', icon: 'help', label: 'Help and support' },
+];
+
+/**
+ * Account dropdown. Replaces the old avatar-link-plus-logout-icon pair, which
+ * put an irreversible action one stray click from the profile link and left
+ * the rest of the account screens reachable only by typing a URL.
+ *
+ * Follows the menu-button pattern: the trigger owns aria-expanded, the popover
+ * is a role="menu", and arrows move between items so the whole thing is usable
+ * without a mouse.
+ */
+function UserMenu({ user }: { user: any }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLElement | null)[]>([]);
+
+  const fullName: string | undefined = user?.user_metadata?.full_name;
+  const displayName = fullName || user?.email?.split('@')[0] || 'Your account';
+  const path = window.location.pathname;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      // Escape hands focus back to the trigger rather than dropping the
+      // keyboard user at the top of the document.
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  function focusItem(index: number) {
+    const items = itemRefs.current.filter(Boolean) as HTMLElement[];
+    if (!items.length) return;
+    items[(index + items.length) % items.length].focus();
+  }
+
+  function onMenuKeyDown(event: ReactKeyboardEvent) {
+    const items = itemRefs.current.filter(Boolean) as HTMLElement[];
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusItem(current + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusItem(current - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusItem(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusItem(items.length - 1);
+    } else if (event.key === 'Tab') {
+      setOpen(false);
+    }
+  }
+
+  function onTriggerKeyDown(event: ReactKeyboardEvent) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    setOpen(true);
+    // The items mount with the popover, so wait a frame before reaching in.
+    requestAnimationFrame(() => focusItem(event.key === 'ArrowUp' ? -1 : 0));
+  }
+
+  return (
+    <div className="user-menu" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="user-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span className="user-avatar" aria-hidden="true">
+          {initialsFor(user)}
+        </span>
+        <span className="user-name">{displayName}</span>
+        <span className="material-symbols-outlined user-chevron" aria-hidden="true">
+          expand_more
+        </span>
+        <span className="sr-only">Account menu</span>
+      </button>
+
+      {open && (
+        <div className="user-popover" role="menu" aria-label="Account" onKeyDown={onMenuKeyDown}>
+          <div className="user-popover-head">
+            <p className="user-popover-name">{displayName}</p>
+            {user?.email && <p className="user-popover-email">{user.email}</p>}
+          </div>
+
+          {ACCOUNT_LINKS.map((link, index) => {
+            const current = path === link.href || path.startsWith(`${link.href}/`);
+            return (
+              <a
+                key={link.href}
+                href={link.href}
+                role="menuitem"
+                tabIndex={-1}
+                ref={(el) => {
+                  itemRefs.current[index] = el;
+                }}
+                className="user-menu-item"
+                aria-current={current ? 'page' : undefined}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  {link.icon}
+                </span>
+                {link.label}
+              </a>
+            );
+          })}
+
+          <div className="user-menu-sep" role="separator" />
+
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            ref={(el) => {
+              itemRefs.current[ACCOUNT_LINKS.length] = el;
+            }}
+            className="user-menu-item"
+            onClick={signOut}
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">
+              logout
+            </span>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface AppHeaderProps {
   user: any;
   /** Optional breadcrumb shown beside the wordmark, e.g. "Billing". */
@@ -41,14 +198,7 @@ export function AppHeader({ user, backTo }: AppHeaderProps) {
         style={{ maxWidth: 1140 }}
       >
         <div className="flex items-center gap-6">
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 font-serif font-bold text-2xl"
-            style={{ color: '#004635' }}
-          >
-            <span className="material-symbols-outlined">psychology</span>
-            Synapse
-          </a>
+          <BrandLockup href="/dashboard" height={30} label="Synapse dashboard" />
           {backTo && (
             <a
               href={backTo.href}
@@ -63,53 +213,17 @@ export function AppHeader({ user, backTo }: AppHeaderProps) {
           )}
         </div>
         {user ? (
-          /* Avatar opens the profile; signing out is its own target beside it,
-             so the two can't be hit by mistake. */
-          <div className="flex items-center gap-1">
-            <a
-              href="/profile"
-              className="flex items-center gap-2 p-1.5 rounded-lg transition-colors hover:opacity-80"
-              title="Your profile"
-              aria-label="Your profile"
-            >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
-                style={{ backgroundColor: '#1b5e4b', color: '#94d5bd' }}
-              >
-                {initialsFor(user)}
-              </div>
-            </a>
-            <button
-              className="flex items-center justify-center p-1.5 rounded-lg transition-colors hover:opacity-80"
-              style={{ background: 'none', border: 0, cursor: 'pointer' }}
-              onClick={signOut}
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <span
-                className="material-symbols-outlined text-lg"
-                style={{ color: '#5e5f5b', fontVariationSettings: "'FILL' 0" }}
-              >
-                logout
-              </span>
-            </button>
-          </div>
+          <UserMenu user={user} />
         ) : (
           /* Public app-shell pages (e.g. /support) are reachable signed out,
-             so mirror the landing page's actions rather than an empty corner. */
+             so mirror the landing page's actions rather than an empty corner.
+             Both read as buttons: the bare text link beside a solid one made
+             the pair look unfinished. */
           <div className="flex items-center gap-3">
-            <a
-              href="/auth?tab=login"
-              className="text-sm font-semibold transition-colors hover:opacity-80"
-              style={{ color: '#5e5f5b' }}
-            >
-              Login
+            <a href="/auth?tab=login" className="header-action">
+              Log in
             </a>
-            <a
-              href="/auth?tab=signup"
-              className="rounded px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
-              style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
-            >
+            <a href="/auth?tab=signup" className="header-action header-action-primary">
               Get Extension
             </a>
           </div>
@@ -124,9 +238,7 @@ export function AppFooter() {
   return (
     <footer className="footer">
       <div className="footer-shell">
-        <a className="brand" href="/">
-          Synapse
-        </a>
+        <BrandLockup href="/" height={26} />
         <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
         <nav aria-label="Footer navigation">
           <a href="/">Privacy Policy</a>

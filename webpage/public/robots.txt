@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /$
+Allow: /support
+
+# Signed-in application surfaces: nothing useful for search, and every URL
+# behind them redirects to /auth for a crawler anyway.
+Disallow: /auth
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /billing
+Disallow: /subscription
+
+Sitemap: https://usesynapse.cv/sitemap.xml

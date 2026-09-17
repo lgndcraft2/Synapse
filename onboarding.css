@@ -59,6 +59,11 @@ body {
   letter-spacing: -0.02em;
 }
 
+.brand-logo img {
+  display: block;
+  border-radius: 7px;
+}
+
 .brand-steps {
   display: flex;
   flex-direction: column;

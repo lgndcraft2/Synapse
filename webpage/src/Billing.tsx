@@ -19,6 +19,7 @@ import {
   type Plan,
 } from './lib/plans';
 import AppShell from './component/AppShell';
+import { Skeleton } from './component/ui';
 
 interface BillingInfo {
   plan: string;
@@ -189,31 +190,40 @@ export default function Billing() {
               className="text-xs px-2 py-0.5 rounded font-semibold uppercase"
               style={{ backgroundColor: isPaid ? '#004635' : '#5e5f5b', color: '#ffffff' }}
             >
-              {isLoading ? '...' : PLAN_LABELS[currentTier] || currentTier}
+              {isLoading ? <Skeleton style={{ width: 72, height: 14 }} /> : PLAN_LABELS[currentTier] || currentTier}
             </span>
           </div>
           <div className="flex justify-between items-end gap-4 flex-wrap">
             <div>
-              <p className="font-medium" style={{ color: '#1b1c1c' }}>
-                {billing?.cancel_at_period_end
-                  ? 'Ending soon'
-                  : billing?.status === 'trialing'
-                    ? 'Free trial'
-                    : billing?.status === 'past_due'
-                      ? 'Payment overdue'
-                      : isPaid
-                        ? `${billing?.billing_period === 'annual' ? 'Annual' : 'Monthly'} access`
-                        : 'Free tier'}
-              </p>
-              <p className="text-sm mt-1" style={{ color: '#5e5f5b' }}>
-                {billing?.cancel_at_period_end && billing?.renews_at
-                  ? `Access ends ${formatDate(billing.renews_at)}`
-                  : billing?.renews_at
-                    ? `Renews on ${formatDate(billing.renews_at)}`
-                    : billing?.trial_ends_at
-                      ? `Trial ends ${formatDate(billing.trial_ends_at)}`
-                      : 'Free tier limits apply'}
-              </p>
+              {isLoading ? (
+                <>
+                  <Skeleton style={{ width: 128, height: 20 }} />
+                  <Skeleton style={{ width: 176, height: 16, marginTop: 8 }} />
+                </>
+              ) : (
+                <>
+                  <p className="font-medium" style={{ color: '#1b1c1c' }}>
+                    {billing?.cancel_at_period_end
+                      ? 'Ending soon'
+                      : billing?.status === 'trialing'
+                        ? 'Free trial'
+                        : billing?.status === 'past_due'
+                          ? 'Payment overdue'
+                          : isPaid
+                            ? `${billing?.billing_period === 'annual' ? 'Annual' : 'Monthly'} access`
+                            : 'Free tier'}
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: '#5e5f5b' }}>
+                    {billing?.cancel_at_period_end && billing?.renews_at
+                      ? `Access ends ${formatDate(billing.renews_at)}`
+                      : billing?.renews_at
+                        ? `Renews on ${formatDate(billing.renews_at)}`
+                        : billing?.trial_ends_at
+                          ? `Trial ends ${formatDate(billing.trial_ends_at)}`
+                          : 'Free tier limits apply'}
+                  </p>
+                </>
+              )}
             </div>
             {canManage && !isLoading && (
               <a

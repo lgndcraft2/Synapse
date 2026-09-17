@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase';
 import { syncUser } from './lib/api';
 import ConfigBanner from './component/ConfigBanner';
 import useToast from './lib/useToast';
+import { BrandLockup } from './component/Brand';
 
 type AuthTab = 'login' | 'signup' | 'reset';
 
@@ -178,9 +179,7 @@ function AuthPage() {
       <ConfigBanner />
       <ToastContainer />
       <main className="auth-page">
-      <a className="auth-brand brand" href="/" aria-label="Back to Synapse home">
-        Synapse
-      </a>
+      <BrandLockup href="/" height={34} className="auth-brand" label="Back to Synapse home" />
       <a className="auth-back" href="/">
         <ArrowLeft className="app-icon" aria-hidden="true" />
         Back to home

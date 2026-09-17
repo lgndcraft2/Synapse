@@ -23,7 +23,7 @@ import {
   type Plan,
 } from './lib/plans';
 import AppShell from './component/AppShell';
-import { CARD, INSET, Eyebrow, Notice, Section } from './component/ui';
+import { CARD, INSET, Eyebrow, Notice, Section, Skeleton } from './component/ui';
 
 interface BillingInfo {
   plan: string;
@@ -69,7 +69,15 @@ interface Usage {
 }
 
 /** Status chip. Cancelling is its own state — it is not the same as active. */
-function StatusChip({ billing }: { billing: BillingInfo | null }) {
+function StatusChip({ billing, loading }: { billing: BillingInfo | null; loading: boolean }) {
+  // Hold the chip's footprint while billing loads, so the plan heading beside
+  // it doesn't reflow once the status lands. This one corner of the card sits
+  // under a decorative disc in --surface-variant, which the default skeleton
+  // tone matches almost exactly — so this placeholder goes a shade darker to
+  // stay visible. The loaded chip has no such problem: it is always solid.
+  if (loading) {
+    return <Skeleton style={{ width: 74, height: 20, borderRadius: 4, backgroundColor: '#c8c6c0' }} />;
+  }
   if (!billing) return null;
   const cancelling = Boolean(billing.cancel_at_period_end);
   const map: Record<string, { label: string; bg: string; fg: string }> = {
@@ -216,7 +224,7 @@ export default function Subscription() {
                   <div>
                     <Eyebrow>Current plan</Eyebrow>
                     <h2 className="font-serif font-semibold mt-2" style={{ fontSize: 32, lineHeight: 1.2, color: '#004635' }}>
-                      {isLoading ? '…' : PLAN_LABELS[tier] || tier}
+                      {isLoading ? <Skeleton style={{ width: 190, height: 38 }} /> : PLAN_LABELS[tier] || tier}
                     </h2>
                     {isPaid && price && (
                       <p className="text-sm mt-1" style={{ color: '#5e5f5b' }}>
@@ -224,11 +232,20 @@ export default function Subscription() {
                       </p>
                     )}
                   </div>
-                  <StatusChip billing={billing} />
+                  <StatusChip billing={billing} loading={isLoading} />
                 </div>
 
                 <div className="pt-4" style={{ borderTop: '1px solid #3d3d38' }}>
-                  {isCancelling ? (
+                  {isLoading ? (
+                    <div aria-label="Loading subscription summary">
+                      <Skeleton style={{ width: '92%', height: 18 }} />
+                      <Skeleton style={{ width: '70%', height: 18, marginTop: 10 }} />
+                      <div className="flex flex-wrap gap-3 mt-6">
+                        <Skeleton style={{ width: 132, height: 42 }} />
+                        <Skeleton style={{ width: 156, height: 42 }} />
+                      </div>
+                    </div>
+                  ) : isCancelling ? (
                     <p className="text-base" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
                       <span className="font-semibold">Your subscription is ending.</span> You keep{' '}
                       {PLAN_LABELS[tier] || tier} until{' '}
@@ -257,36 +274,42 @@ export default function Subscription() {
                     </p>
                   )}
 
-                  <div className="flex flex-wrap gap-3 mt-6">
-                    {!isPaid && (
-                      <a
-                        href="/billing"
-                        className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
-                        style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
-                      >
-                        View plans
-                      </a>
-                    )}
-                    {isCancelling && hasSubscription && (
-                      <button
-                        className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
-                        style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
-                        onClick={() => run('resume', resumeSubscription, 'Your subscription will continue as normal.')}
-                        disabled={busy === 'resume'}
-                      >
-                        {busy === 'resume' ? 'Resuming…' : 'Resume subscription'}
-                      </button>
-                    )}
-                    {isPaid && !isCancelling && hasSubscription && (
-                      <button
-                        className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
-                        style={{ border: '1px solid #707974', color: '#5e5f5b', backgroundColor: 'transparent' }}
-                        onClick={() => setConfirmingCancel(true)}
-                      >
-                        Cancel subscription
-                      </button>
-                    )}
-                  </div>
+                  {/* Gated on the load: until billing lands, tier reads as
+                      "free", which would render "View plans" underneath the
+                      skeleton buttons above and then swap it for a different
+                      control. */}
+                  {!isLoading && (
+                    <div className="flex flex-wrap gap-3 mt-6">
+                      {!isPaid && (
+                        <a
+                          href="/billing"
+                          className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                          style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
+                        >
+                          View plans
+                        </a>
+                      )}
+                      {isCancelling && hasSubscription && (
+                        <button
+                          className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                          style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
+                          onClick={() => run('resume', resumeSubscription, 'Your subscription will continue as normal.')}
+                          disabled={busy === 'resume'}
+                        >
+                          {busy === 'resume' ? 'Resuming…' : 'Resume subscription'}
+                        </button>
+                      )}
+                      {isPaid && !isCancelling && hasSubscription && (
+                        <button
+                          className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                          style={{ border: '1px solid #707974', color: '#5e5f5b', backgroundColor: 'transparent' }}
+                          onClick={() => setConfirmingCancel(true)}
+                        >
+                          Cancel subscription
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -403,7 +426,26 @@ export default function Subscription() {
 
             {/* Billing history */}
             <Section title="Billing history">
-              {invoices.length > 0 ? (
+              {loading.invoices ? (
+                <ul aria-label="Loading billing history">
+                  {[0, 1, 2].map((i) => (
+                    <li
+                      key={i}
+                      className="py-3 flex justify-between items-center gap-4"
+                      style={{ borderBottom: '1px solid #e4e2e1' }}
+                    >
+                      <div className="pr-4 flex-grow">
+                        <Skeleton style={{ width: i === 1 ? 118 : 132, height: 17 }} />
+                        <Skeleton style={{ width: i === 2 ? 142 : 168, height: 14, marginTop: 7 }} />
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0">
+                        <Skeleton style={{ width: 56, height: 17 }} />
+                        <Skeleton style={{ width: 62, height: 14 }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : invoices.length > 0 ? (
                 <ul>
                   {invoices.map((inv) => (
                     <li
@@ -444,7 +486,7 @@ export default function Subscription() {
                 </ul>
               ) : (
                 <p className="text-sm italic" style={{ color: '#5e5f5b' }}>
-                  {loading.invoices ? 'Loading…' : 'No invoices yet. Your receipts will appear here after your first payment.'}
+                  No invoices yet. Your receipts will appear here after your first payment.
                 </p>
               )}
             </Section>
@@ -457,9 +499,16 @@ export default function Subscription() {
               <h3 className="font-serif font-semibold text-2xl mb-2" style={{ color: '#1b1c1c' }}>
                 Usage
               </h3>
-              {!usage ? (
+              {loading.usage ? (
+                <div aria-label="Loading usage">
+                  <Skeleton style={{ width: '62%', height: 15 }} />
+                  <Skeleton style={{ width: 92, height: 32, marginTop: 16 }} />
+                  <Skeleton style={{ width: '100%', height: 8, marginTop: 14, borderRadius: 999 }} />
+                  <Skeleton style={{ width: '76%', height: 14, marginTop: 10 }} />
+                </div>
+              ) : !usage ? (
                 <p className="text-sm italic" style={{ color: '#5e5f5b' }}>
-                  {loading.usage ? 'Loading…' : 'Usage is unavailable right now.'}
+                  Usage is unavailable right now.
                 </p>
               ) : usage.unlimited ? (
                 <>
@@ -513,7 +562,15 @@ export default function Subscription() {
               <h3 className="font-serif font-semibold text-2xl mb-4" style={{ color: '#1b1c1c' }}>
                 Payment method
               </h3>
-              {card?.last4 ? (
+              {loading.card ? (
+                <div className="flex items-center gap-3 mb-4" aria-label="Loading payment method">
+                  <Skeleton style={{ width: 28, height: 28, borderRadius: 6 }} />
+                  <div className="flex-grow">
+                    <Skeleton style={{ width: 148, height: 17 }} />
+                    <Skeleton style={{ width: 106, height: 14, marginTop: 7 }} />
+                  </div>
+                </div>
+              ) : card?.last4 ? (
                 <>
                   <div className="flex items-center gap-3 mb-4">
                     <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#004635' }}>
@@ -533,7 +590,7 @@ export default function Subscription() {
                 </>
               ) : (
                 <p className="text-sm mb-4 italic" style={{ color: '#5e5f5b' }}>
-                  {loading.card ? 'Loading…' : 'No card on file.'}
+                  No card on file.
                 </p>
               )}
               {(billing?.stripe_customer_id || isPaid) && (

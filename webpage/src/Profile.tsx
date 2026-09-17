@@ -29,7 +29,7 @@ import {
 } from './lib/profile';
 import { PLAN_LABELS, formatDate } from './lib/plans';
 import AppShell, { initialsFor } from './component/AppShell';
-import { CARD, INSET, Eyebrow, Notice, Section, Segmented } from './component/ui';
+import { CARD, INSET, Eyebrow, Notice, Section, Segmented, Skeleton } from './component/ui';
 
 interface HistoryEntry {
   changed_at: string;
@@ -279,7 +279,7 @@ export default function Profile() {
                   </div>
                   <div className="truncate">
                     <p className="font-serif font-semibold truncate" style={{ fontSize: 24, color: '#004635' }}>
-                      {savedName || user?.email?.split('@')[0] || '—'}
+                      {loading.profile ? <Skeleton style={{ width: 210, height: 30 }} /> : savedName || user?.email?.split('@')[0] || '—'}
                     </p>
                     <p className="text-sm truncate" style={{ color: '#5e5f5b' }}>
                       {user?.email || '—'}
@@ -339,7 +339,17 @@ export default function Profile() {
                 This drives everything else. Pick whichever is closest — it isn't a diagnosis.
               </p>
               {loading.profile || !draft ? (
-                <p className="text-sm italic" style={{ color: '#5e5f5b' }}>Loading…</p>
+                <div className="flex flex-col gap-3" aria-label="Loading reading profile">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="choice-card" style={{ cursor: 'default' }}>
+                      <Skeleton style={{ width: 20, height: 20, borderRadius: 999, marginTop: 2 }} />
+                      <span style={{ flex: 1 }}>
+                        <Skeleton style={{ width: i === 0 ? '72%' : '58%', height: 18 }} />
+                        <Skeleton style={{ width: '92%', height: 15, marginTop: 8 }} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {READING_TYPES.map((type) => (
@@ -366,7 +376,16 @@ export default function Profile() {
             </Section>
 
             {/* Shape of the output */}
-            {draft && (
+            {loading.profile || !draft ? (
+              <Section title="How pages get rebuilt">
+                <div className="flex flex-col gap-6" aria-label="Loading page rebuild settings">
+                  <Skeleton style={{ width: '100%', height: 44 }} />
+                  <Skeleton style={{ width: 260, height: 42 }} />
+                  <Skeleton style={{ width: 220, height: 42 }} />
+                  <Skeleton style={{ width: '100%', height: 96 }} />
+                </div>
+              </Section>
+            ) : (
               <Section title="How pages get rebuilt">
                 <div className="flex flex-col gap-6">
                   <label className="block">
@@ -446,7 +465,19 @@ export default function Profile() {
 
             {/* History */}
             <Section title="Adjustments log">
-              {history.length > 0 ? (
+              {loading.history ? (
+                <ul className="flex flex-col gap-4" aria-label="Loading adjustment history">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <li key={i} className="p-4 rounded-lg" style={INSET}>
+                      <div className="flex justify-between items-start gap-4 mb-2">
+                        <Skeleton style={{ width: i === 0 ? '72%' : '56%', height: 18 }} />
+                        <Skeleton style={{ width: 78, height: 14 }} />
+                      </div>
+                      <Skeleton style={{ width: '88%', height: 14, marginTop: 10 }} />
+                    </li>
+                  ))}
+                </ul>
+              ) : history.length > 0 ? (
                 <>
                   <ul className="flex flex-col gap-4">
                     {(showAllHistory ? history : history.slice(0, 5)).map((entry, i) => (
@@ -478,9 +509,7 @@ export default function Profile() {
                 </>
               ) : (
                 <p className="text-sm italic" style={{ color: '#5e5f5b' }}>
-                  {loading.history
-                    ? 'Loading…'
-                    : 'No adjustments yet. Changes you make here, and the ones Synapse makes as it learns, will show up in this log.'}
+                  No adjustments yet. Changes you make here, and the ones Synapse makes as it learns, will show up in this log.
                 </p>
               )}
             </Section>
@@ -488,7 +517,7 @@ export default function Profile() {
 
           {/* ── RIGHT ─────────────────────────────────────────────── */}
           <div className="md:col-span-4 md:col-start-9 flex flex-col gap-10" style={{ minWidth: 0 }}>
-            {draft && <Preview fields={draft} />}
+            {loading.profile || !draft ? <PreviewSkeleton /> : <Preview fields={draft} />}
 
             {/* Plan & usage */}
             <section className="p-6 rounded-lg" style={SIDE_PANEL}>
@@ -501,10 +530,15 @@ export default function Profile() {
                   className="text-xs px-2 py-0.5 rounded font-semibold uppercase"
                   style={{ backgroundColor: tier === 'free' ? '#5e5f5b' : '#004635', color: '#fff' }}
                 >
-                  {loading.billing ? '…' : PLAN_LABELS[tier] || tier}
+                  {loading.billing ? <Skeleton style={{ width: 72, height: 14 }} /> : PLAN_LABELS[tier] || tier}
                 </span>
               </div>
-              {usage && !usage.unlimited && usage.limit ? (
+              {loading.usage ? (
+                <div aria-label="Loading usage">
+                  <Skeleton style={{ width: '72%', height: 16 }} />
+                  <Skeleton style={{ width: '100%', height: 8, marginTop: 14, borderRadius: 999 }} />
+                </div>
+              ) : usage && !usage.unlimited && usage.limit ? (
                 <>
                   <div className="flex justify-between items-baseline mb-2">
                     <span className="text-sm" style={{ color: '#5e5f5b' }}>
@@ -685,6 +719,26 @@ function Diff({
         </li>
       ))}
     </ul>
+  );
+}
+
+function PreviewSkeleton() {
+  return (
+    <section className="p-6 rounded-lg" style={{ backgroundColor: '#fcf9f8', border: '1px solid #3d3d38' }}>
+      <h3 className="font-serif font-semibold text-2xl mb-2" style={{ color: '#1b1c1c' }}>
+        Preview
+      </h3>
+      <Skeleton style={{ width: '70%', height: 17, marginBottom: 22 }} />
+      <div className="rounded-lg p-4 flex flex-col gap-3" style={{ backgroundColor: '#f6f3f2', border: '1px solid #bfc9c3' }}>
+        <Skeleton style={{ width: '55%', height: 10, borderRadius: 2 }} />
+        <Skeleton style={{ width: 112, height: 30 }} />
+        <Skeleton style={{ width: '88%', height: 8, borderRadius: 999 }} />
+        <Skeleton style={{ width: '81%', height: 8, borderRadius: 999 }} />
+        <Skeleton style={{ width: '74%', height: 8, borderRadius: 999 }} />
+        <Skeleton style={{ width: 136, height: 16, marginTop: 4 }} />
+      </div>
+      <Skeleton style={{ width: '62%', height: 14, marginTop: 14 }} />
+    </section>
   );
 }
 

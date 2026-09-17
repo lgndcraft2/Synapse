@@ -11,6 +11,8 @@ import {
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import { PLAN_LABELS } from "./lib/plans";
 import ConfigBanner from "./component/ConfigBanner";
+import { Skeleton } from "./component/ui";
+import { AppFooter, AppHeader } from "./component/AppShell";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
 
@@ -199,12 +201,6 @@ export default function Dashboard() {
     }
   }
 
-  async function handleLogout() {
-    pushLogoutToExtension();
-    await supabase.auth.signOut();
-    window.location.href = "/auth?tab=login";
-  }
-
   const feedbackItems: FeedbackItem[] = stats ? [
     { label: "Clearer",      pct: stats.feedback_breakdown["clearer"] || 0, barColor: "#004635" },
     { label: "Too Complex",  pct: stats.feedback_breakdown["complex"] || 0, barColor: "#707974" },
@@ -232,29 +228,7 @@ export default function Dashboard() {
       <div className="dash font-body" style={{ backgroundColor: "#fcf9f8", color: "#1b1c1c", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
         {/* ── HEADER ─────────────────────────────────────────────── */}
-        <header style={{ backgroundColor: "#fcf9f8", borderBottom: "1px solid #3d3d38" }}>
-          <div className="flex justify-between items-center w-full px-10 py-4 mx-auto" style={{ maxWidth: 1140 }}>
-            <div className="flex items-center gap-2 font-serif font-bold text-2xl" style={{ color: "#004635" }}>
-              <span className="material-symbols-outlined">psychology</span>
-              Synapse
-            </div>
-            {/* Avatar opens the profile; signing out is its own target beside it. */}
-            <div className="flex items-center gap-1">
-              <a href="/profile" className="flex items-center gap-2 p-1.5 rounded-lg transition-colors hover:opacity-80"
-                title="Your profile" aria-label="Your profile">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
-                  style={{ backgroundColor: "#1b5e4b", color: "#94d5bd" }}>
-                  {user?.user_metadata?.full_name?.split(' ').map((n: string) => n[0]).join('') || user?.email?.[0].toUpperCase() || 'AA'}
-                </div>
-              </a>
-              <button className="flex items-center justify-center p-1.5 rounded-lg transition-colors hover:opacity-80"
-                style={{ background: 'none', border: 0, cursor: 'pointer' }}
-                onClick={handleLogout} title="Sign out" aria-label="Sign out">
-                <span className="material-symbols-outlined text-lg" style={{ color: "#5e5f5b", fontVariationSettings: "'FILL' 0" }}>logout</span>
-              </button>
-            </div>
-          </div>
-        </header>
+        <AppHeader user={user} />
 
         {/* ── MAIN ───────────────────────────────────────────────── */}
         <main className="flex-grow w-full mx-auto px-10 py-16 grid grid-cols-1 md:grid-cols-12 gap-10" style={{ maxWidth: 1140 }}>
@@ -308,7 +282,11 @@ export default function Dashboard() {
                     Current Active Profile
                   </span>
                   <h2 className="font-serif font-semibold" style={{ fontSize: 32, lineHeight: 1.2, color: "#004635" }}>
-                    {profile?.profile_type ? titleCase(profile.profile_type) : "Load Reducer"}
+                    {isLoading && !profile ? (
+                      <Skeleton style={{ width: 220, height: 38 }} />
+                    ) : (
+                      profile?.profile_type ? titleCase(profile.profile_type) : "Load Reducer"
+                    )}
                   </h2>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -329,7 +307,17 @@ export default function Dashboard() {
                   Recent Adjustments Log
                 </h3>
                 <ul className="space-y-4">
-                  {history.length > 0 ? (
+                  {isLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <li key={i} className="flex items-start gap-3">
+                        <Skeleton style={{ width: 18, height: 18, borderRadius: 999, marginTop: 2 }} />
+                        <div style={{ flex: 1 }}>
+                          <Skeleton style={{ width: i === 1 ? '78%' : '92%', height: 18 }} />
+                          <Skeleton style={{ width: 84, height: 14, marginTop: 8 }} />
+                        </div>
+                      </li>
+                    ))
+                  ) : history.length > 0 ? (
                     (showAllHistory ? history : history.slice(0, 4)).map((h, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
@@ -372,7 +360,7 @@ export default function Dashboard() {
                       {stat.label}
                     </span>
                     <div className="font-serif font-semibold" style={{ fontSize: 32, lineHeight: 1.2, color: "#004635" }}>
-                      {isLoading ? "..." : stat.value}
+                      {isLoading ? <Skeleton style={{ width: 62, height: 34 }} /> : stat.value}
                     </div>
                   </div>
                 ))}
@@ -389,7 +377,15 @@ export default function Dashboard() {
               <h3 className="font-serif font-semibold text-2xl mb-2" style={{ color: "#1b1c1c" }}>Feedback Insights</h3>
               <p className="text-sm mb-6" style={{ color: "#5e5f5b" }}>Based on your interactions with reformatted cards.</p>
               <div className="space-y-3">
-                {normalizedFeedback.length > 0 ? normalizedFeedback.map((item) => (
+                {isLoading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <Skeleton style={{ width: 74, height: 16 }} />
+                      <Skeleton style={{ flex: 1, height: 8, borderRadius: 999 }} />
+                      <Skeleton style={{ width: 26, height: 14 }} />
+                    </div>
+                  ))
+                ) : normalizedFeedback.length > 0 ? normalizedFeedback.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-2">
                     <span className="text-sm w-24 shrink-0" style={{ color: "#1b1c1c" }}>{item.label}</span>
                     <div className="flex-grow h-2 rounded-full overflow-hidden" style={{ backgroundColor: "#e4e2e1" }}>
@@ -409,7 +405,17 @@ export default function Dashboard() {
                 Recent Sessions
               </h3>
               <ul>
-                {stats?.recent_sessions && stats.recent_sessions.length > 0 ? stats.recent_sessions.map((s, i) => (
+                {isLoading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <li key={i} className="py-3 flex justify-between items-center px-2 -mx-2" style={{ borderBottom: "1px solid #e4e2e1" }}>
+                      <div style={{ flex: 1 }}>
+                        <Skeleton style={{ width: i === 0 ? '82%' : '64%', height: 18 }} />
+                        <Skeleton style={{ width: 92, height: 14, marginTop: 7 }} />
+                      </div>
+                      <Skeleton style={{ width: 78, height: 24 }} />
+                    </li>
+                  ))
+                ) : stats?.recent_sessions && stats.recent_sessions.length > 0 ? stats.recent_sessions.map((s, i) => (
                   <li key={i} className="py-3 flex justify-between items-center cursor-pointer px-2 -mx-2 rounded transition-colors hover:opacity-80"
                     style={{ borderBottom: "1px solid #e4e2e1" }}>
                     <div className="truncate pr-4">
@@ -435,21 +441,30 @@ export default function Dashboard() {
                   style={{ backgroundColor: (billing?.plan || 'free') === 'free' ? '#5e5f5b' : '#004635', color: "#ffffff" }}>
                   {billing?.plan
                     ? (PLAN_LABELS[billing.plan] || billing.plan).toUpperCase()
-                    : (isLoading ? '...' : 'FREE')}
+                    : (isLoading ? <Skeleton style={{ width: 46, height: 14 }} /> : 'FREE')}
                 </span>
               </div>
               <div className="flex justify-between items-end">
                 <div>
-                  <p className="font-medium" style={{ color: "#1b1c1c" }}>
-                    {billing?.status === 'trialing' ? 'Free Trial' : 'Monthly Access'}
-                  </p>
-                  <p className="text-sm mt-1" style={{ color: "#5e5f5b" }}>
-                    {billing?.renews_at 
-                      ? `Renews on ${new Date(billing.renews_at).toLocaleDateString()}` 
-                      : billing?.trial_ends_at 
-                        ? `Trial ends ${new Date(billing.trial_ends_at).toLocaleDateString()}`
-                        : 'Free tier limits apply'}
-                  </p>
+                  {isLoading ? (
+                    <>
+                      <Skeleton style={{ width: 128, height: 20 }} />
+                      <Skeleton style={{ width: 174, height: 16, marginTop: 8 }} />
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium" style={{ color: "#1b1c1c" }}>
+                        {billing?.status === 'trialing' ? 'Free Trial' : 'Monthly Access'}
+                      </p>
+                      <p className="text-sm mt-1" style={{ color: "#5e5f5b" }}>
+                        {billing?.renews_at 
+                          ? `Renews on ${new Date(billing.renews_at).toLocaleDateString()}` 
+                          : billing?.trial_ends_at 
+                            ? `Trial ends ${new Date(billing.trial_ends_at).toLocaleDateString()}`
+                            : 'Free tier limits apply'}
+                      </p>
+                    </>
+                  )}
                 </div>
                 {billing && billing.plan !== 'free' && (
                   <a href="/subscription" className="text-sm font-semibold hover:underline" style={{ color: "#004635", textDecoration: 'none' }}>Manage</a>
@@ -464,18 +479,7 @@ export default function Dashboard() {
         </main>
 
         {/* ── FOOTER (matches landing page) ──────────────────────── */}
-        <footer className="footer">
-          <div className="footer-shell">
-            <a className="brand" href="/">Synapse</a>
-            <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
-            <nav aria-label="Footer navigation">
-              <a href="/">Privacy Policy</a>
-              <a href="/">Accessibility Statement</a>
-              <a href="/#library">Research Library</a>
-              <a href="/support">Contact Support</a>
-            </nav>
-          </div>
-        </footer>
+        <AppFooter />
 
       </div>
     </>

@@ -53,6 +53,17 @@ export function Notice({ kind, children }: { kind: 'error' | 'success'; children
   );
 }
 
+/** Theme-matched placeholder used while account, billing, or profile data loads. */
+export function Skeleton({
+  className = '',
+  style,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return <span className={`dash-skeleton ${className}`.trim()} aria-hidden="true" style={style} />;
+}
+
 /** Segmented pill group — the dashboard's "How are you reading today?" control. */
 export function Segmented<T extends string | number>({
   value,

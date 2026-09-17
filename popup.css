@@ -16,11 +16,10 @@ body {
   border-bottom: 1px solid #eee;
 }
 .logo {
-  font-size: 15px;
-  font-weight: 700;
-  color: #1D9E75;
   display: block;
-  letter-spacing: -0.02em;
+  width: auto;
+  height: 24px;
+  margin-bottom: 3px;
 }
 .tagline {
   font-size: 11px;

@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
 import ConfigBanner from './component/ConfigBanner';
+import { BrandLockup } from './component/Brand';
 
 const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
 
@@ -151,9 +152,7 @@ function App() {
       <ConfigBanner />
       <header className="topbar">
         <div className="nav-shell">
-          <a className="brand" href="#top" aria-label="Synapse home">
-            Synapse
-          </a>
+          <BrandLockup href="#top" height={32} />
           <nav className="nav-links" aria-label="Primary navigation">
             {navItems.map((item) => (
               <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`}>
@@ -453,7 +452,7 @@ function App() {
 
       <footer className="footer">
         <div className="footer-shell">
-          <a className="brand" href="#top">Synapse</a>
+          <BrandLockup href="#top" height={26} />
           <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
           <nav aria-label="Footer navigation">
             <a href="#top">Privacy Policy</a>
