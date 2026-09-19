@@ -74,6 +74,8 @@ function ErrorPanel({ message }: { message: string }) {
 
 export default function Billing() {
   const [user, setUser] = useState<any>(null);
+  // False until the session has been read — see AppHeaderProps.authChecked.
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -96,6 +98,7 @@ export default function Billing() {
         return;
       }
       setUser(user);
+      setCheckedAuth(true);
 
       let status: BillingInfo | null = null;
       try {
@@ -154,7 +157,7 @@ export default function Billing() {
   }
 
   return (
-    <AppShell user={user} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
+    <AppShell user={user} authChecked={checkedAuth} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
       <main className="flex-grow w-full mx-auto px-10 py-16" style={{ maxWidth: 1140 }}>
         {step === 'plans'
           ? renderPlans()

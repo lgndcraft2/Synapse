@@ -14,7 +14,8 @@ import {
 import { PLAN_LABELS, formatDate } from './lib/plans';
 import { PROFILE_TYPE_LABELS, type ProfileType } from './lib/profile';
 import AppShell from './component/AppShell';
-import { CARD, INSET, Eyebrow, Notice, Section } from './component/ui';
+import { CARD, INSET, Eyebrow, Notice, Pager, Section } from './component/ui';
+import { useOffsetPage } from './lib/usePaging';
 
 interface Ticket {
   id: string;
@@ -30,6 +31,7 @@ interface Ticket {
 }
 
 const MESSAGE_MAX = 5000;
+const TICKETS_PER_PAGE = 5;
 const SUBJECT_MAX = 200;
 
 const TICKET_STATUS: Record<string, { label: string; bg: string }> = {
@@ -44,7 +46,6 @@ export default function Support() {
   const [billing, setBilling] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [extension, setExtension] = useState<ExtensionInfo | null>(null);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
 
   const [query, setQuery] = useState('');
 
@@ -73,7 +74,6 @@ export default function Support() {
       if (!user) return;
       getBillingStatus().then(setBilling).catch(() => {});
       getProfile().then(setProfile).catch(() => {});
-      getMyTickets().then((t) => setTickets(t || [])).catch(() => {});
     }
     load();
 
@@ -82,6 +82,11 @@ export default function Support() {
       setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }), 400);
     }
   }, []);
+
+  // Only signed-in callers have tickets; the hook stays idle until auth is known.
+  const ticketPage = useOffsetPage<Ticket>(getMyTickets, TICKETS_PER_PAGE, {
+    enabled: Boolean(user),
+  });
 
   const results = useMemo(() => searchContent(query), [query]);
 
@@ -129,7 +134,9 @@ export default function Support() {
         diagnostics: attachDiagnostics ? (diagnostics as Record<string, unknown>) : null,
       });
       setSent(ticket);
-      setTickets((prev) => [ticket, ...prev]);
+      // Back to the newest page rather than prepending: the row belongs to
+      // page 1 and the total has changed.
+      ticketPage.reset();
       setSubject('');
       setMessage('');
     } catch (err: any) {
@@ -142,7 +149,11 @@ export default function Support() {
   const planTier = billing?.plan || 'free';
 
   return (
-    <AppShell user={user} backTo={user ? { href: '/dashboard', label: 'Back to dashboard' } : undefined}>
+    <AppShell
+      user={user}
+      authChecked={checkedAuth}
+      backTo={user ? { href: '/dashboard', label: 'Back to dashboard' } : undefined}
+    >
       <main className="flex-grow w-full mx-auto px-10 py-16" style={{ maxWidth: 1140 }}>
         <section className="mb-8">
           <h1
@@ -344,10 +355,10 @@ export default function Support() {
             </section>
 
             {/* My tickets */}
-            {user && tickets.length > 0 && (
+            {user && ticketPage.items.length > 0 && (
               <Section title="Your tickets">
-                <ul className="flex flex-col gap-3">
-                  {tickets.map((t) => {
+                <ul className="flex flex-col gap-3" aria-busy={ticketPage.busy}>
+                  {ticketPage.items.map((t) => {
                     const chip = TICKET_STATUS[t.status] || TICKET_STATUS.open;
                     return (
                       <li key={t.id} className="p-4 rounded-lg" style={INSET}>
@@ -377,6 +388,25 @@ export default function Support() {
                     );
                   })}
                 </ul>
+                {ticketPage.error && (
+                  <div className="mt-4">
+                    <Notice kind="error">{ticketPage.error}</Notice>
+                  </div>
+                )}
+                {ticketPage.showPager && (
+                  <Pager
+                    label="Your tickets"
+                    page={ticketPage.page}
+                    pageCount={ticketPage.pageCount}
+                    rangeStart={ticketPage.rangeStart}
+                    rangeEnd={ticketPage.rangeEnd}
+                    total={ticketPage.total}
+                    hasMore={ticketPage.hasMore}
+                    busy={ticketPage.busy}
+                    onPrev={ticketPage.prev}
+                    onNext={ticketPage.next}
+                  />
+                )}
               </Section>
             )}
           </div>

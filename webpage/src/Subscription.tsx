@@ -23,7 +23,7 @@ import {
   type Plan,
 } from './lib/plans';
 import AppShell from './component/AppShell';
-import { CARD, INSET, Eyebrow, Notice, Section, Skeleton } from './component/ui';
+import { CARD, INSET, Eyebrow, Notice, Pager, Section, Skeleton } from './component/ui';
 
 interface BillingInfo {
   plan: string;
@@ -100,10 +100,21 @@ function StatusChip({ billing, loading }: { billing: BillingInfo | null; loading
   );
 }
 
+const INVOICES_PER_PAGE = 5;
+
 export default function Subscription() {
   const [user, setUser] = useState<any>(null);
+  // False until the session has been read — see AppHeaderProps.authChecked.
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  // Stripe pages by cursor and reports no total, so Prev is served by keeping
+  // the cursor that opened each page we have visited. cursors[0] is page 1's
+  // (always undefined); its length is the current page number.
+  const [invoiceCursors, setInvoiceCursors] = useState<(string | undefined)[]>([undefined]);
+  const [invoiceHasMore, setInvoiceHasMore] = useState(false);
+  const [invoicesBusy, setInvoicesBusy] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [card, setCard] = useState<PaymentMethod | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   // Each panel tracks its own load, so a slow Stripe call can't hold the whole
@@ -117,6 +128,9 @@ export default function Subscription() {
   const isLoading = loading.billing;
 
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [confirmingPlan, setConfirmingPlan] = useState<
+    { tier: string; name: string; priceId: string; isUpgrade: boolean } | null
+  >(null);
   const [busy, setBusy] = useState<null | 'cancel' | 'resume' | 'portal' | string>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -132,6 +146,7 @@ export default function Subscription() {
         return;
       }
       setUser(user);
+      setCheckedAuth(true);
 
       // Fire all four together but render each as it lands, so a slow Stripe
       // round trip doesn't hold up the panels that are already answerable.
@@ -146,7 +161,11 @@ export default function Subscription() {
 
       await Promise.all([
         settle(getBillingStatus(), 'billing', setBilling),
-        settle(getInvoices(), 'invoices', (v) => setInvoices(v || [])),
+        settle(getInvoices({ limit: INVOICES_PER_PAGE }), 'invoices', (v) => {
+          setInvoices(v.data || []);
+          setInvoiceHasMore(Boolean(v.has_more));
+          setInvoiceCursors([undefined, v.next_cursor || undefined]);
+        }),
         settle(getPaymentMethod(), 'card', setCard),
         settle(getUsage(), 'usage', setUsage),
       ]);
@@ -162,6 +181,44 @@ export default function Subscription() {
   const isCancelling = Boolean(billing?.cancel_at_period_end);
   const isPaid = tier !== 'free';
 
+  /**
+   * Loads an invoice page. `target` is 1-based; its cursor must already be in
+   * `invoiceCursors` (page 1's is undefined, and each response hands us the
+   * next one), so this only ever walks one page at a time in either direction.
+   */
+  async function loadInvoicePage(target: number) {
+    if (invoicesBusy) return;
+    setInvoicesBusy(true);
+    setInvoiceError(null);
+    try {
+      const result = await getInvoices({
+        limit: INVOICES_PER_PAGE,
+        starting_after: invoiceCursors[target - 1],
+      });
+      setInvoices(result.data || []);
+      setInvoiceHasMore(Boolean(result.has_more));
+      setInvoiceCursors((prev) => {
+        const next = prev.slice(0, target);
+        next[target] = result.next_cursor || undefined;
+        return next;
+      });
+    } catch (err: any) {
+      // Leave the rows on screen — a failed page turn shouldn't empty the list.
+      setInvoiceError(err?.message || 'Could not load this page of your billing history.');
+    } finally {
+      setInvoicesBusy(false);
+    }
+  }
+
+  /**
+   * Back to the newest invoices — used after money moves. Page 1's cursor is
+   * always undefined, so this needs no state reset first; loading it truncates
+   * the stack back to one entry, and a failure leaves the current page intact.
+   */
+  const resetInvoices = () => loadInvoicePage(1);
+
+  const invoicePage = invoiceCursors.length - 1;
+
   async function run(key: string, action: () => Promise<any>, successMessage?: string) {
     if (busy) return;
     setBusy(key);
@@ -172,7 +229,7 @@ export default function Subscription() {
       if (updated && typeof updated === 'object' && 'plan' in updated) setBilling(updated);
       if (successMessage) setNotice(successMessage);
       // Money moved or the plan changed — refresh the derived panels.
-      getInvoices().then(setInvoices).catch(() => {});
+      resetInvoices().catch(() => {});
       getUsage().then(setUsage).catch(() => {});
     } catch (err: any) {
       setError(err?.message || 'Something went wrong. Please try again.');
@@ -194,7 +251,7 @@ export default function Subscription() {
   }
 
   return (
-    <AppShell user={user} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
+    <AppShell user={user} authChecked={checkedAuth} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
       <main className="flex-grow w-full mx-auto px-10 py-16" style={{ maxWidth: 1140 }}>
         <section className="mb-10">
           <h1
@@ -401,11 +458,12 @@ export default function Subscription() {
                               className="subscription-action rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
                               style={{ backgroundColor: isUpgrade ? '#004635' : 'transparent', color: isUpgrade ? '#ffffff' : '#004635', border: '1px solid #004635' }}
                               onClick={() =>
-                                run(
-                                  p.tier,
-                                  () => changePlan(targetId),
-                                  `You're now on ${p.name}. Stripe has prorated the difference.`,
-                                )
+                                setConfirmingPlan({
+                                  tier: p.tier,
+                                  name: p.name,
+                                  priceId: targetId as string,
+                                  isUpgrade,
+                                })
                               }
                               disabled={busy === p.tier || !targetId}
                             >
@@ -418,10 +476,69 @@ export default function Subscription() {
                   })}
                 </div>
                 <p className="text-sm mt-4" style={{ color: '#5e5f5b' }}>
-                  Switching takes effect immediately. Stripe credits the unused part of your current
-                  plan against the new one, so you only pay the difference.
+                  Switching takes effect immediately, and we'll confirm the details before anything
+                  is charged.
                 </p>
               </Section>
+            )}
+
+            {/* Plan-change confirmation. Not a modal: the house pattern is an
+                inline panel, as with the cancellation confirm above. Green
+                rather than the cancel panel's red — switching is not
+                destructive, and danger styling here would cry wolf. */}
+            {confirmingPlan && (
+              <section
+                className="rounded-xl p-8 shadow-tactile"
+                style={{ backgroundColor: '#fcf9f8', border: '2px solid #004635' }}
+              >
+                <Eyebrow>Before you switch</Eyebrow>
+                <h2
+                  className="font-serif font-semibold mt-2 mb-4"
+                  style={{ fontSize: 28, lineHeight: 1.2, color: '#1b1c1c' }}
+                >
+                  {confirmingPlan.isUpgrade ? 'Upgrade to' : 'Switch to'} {confirmingPlan.name}?
+                </h2>
+                <p className="text-base mb-4" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
+                  This takes effect{' '}
+                  <span className="font-semibold">immediately</span>. Stripe credits the unused part
+                  of {PLAN_LABELS[tier] || tier} against {confirmingPlan.name}, so you're charged
+                  only the difference.
+                </p>
+                {billing?.status === 'trialing' && (
+                  <p className="text-base mb-4" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
+                    <span className="font-semibold">Your free trial ends now.</span> Switching plans
+                    during a trial starts billing today rather than on{' '}
+                    {formatDate(billing?.trial_ends_at)}.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                    style={{ backgroundColor: '#004635', color: '#ffffff', border: '1px solid #004635' }}
+                    onClick={async () => {
+                      const target = confirmingPlan;
+                      await run(
+                        target.tier,
+                        () => changePlan(target.priceId),
+                        `You're now on ${target.name}. Stripe has prorated the difference.`,
+                      );
+                      setConfirmingPlan(null);
+                    }}
+                    disabled={busy === confirmingPlan.tier}
+                  >
+                    {busy === confirmingPlan.tier
+                      ? 'Switching…'
+                      : `Yes, switch to ${confirmingPlan.name}`}
+                  </button>
+                  <button
+                    className="rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                    style={{ border: '1px solid #707974', color: '#5e5f5b', backgroundColor: 'transparent' }}
+                    onClick={() => setConfirmingPlan(null)}
+                  >
+                    Never mind
+                  </button>
+                </div>
+              </section>
             )}
 
             {/* Billing history */}
@@ -446,7 +563,7 @@ export default function Subscription() {
                   ))}
                 </ul>
               ) : invoices.length > 0 ? (
-                <ul>
+                <ul aria-busy={invoicesBusy}>
                   {invoices.map((inv) => (
                     <li
                       key={inv.id}
@@ -488,6 +605,26 @@ export default function Subscription() {
                 <p className="text-sm italic" style={{ color: '#5e5f5b' }}>
                   No invoices yet. Your receipts will appear here after your first payment.
                 </p>
+              )}
+              {invoiceError && (
+                <div className="mt-4">
+                  <Notice kind="error">{invoiceError}</Notice>
+                </div>
+              )}
+              {(invoicePage > 1 || invoiceHasMore) && (
+                <Pager
+                  label="Billing history"
+                  page={invoicePage}
+                  rangeStart={invoices.length ? (invoicePage - 1) * INVOICES_PER_PAGE + 1 : 0}
+                  rangeEnd={
+                    invoices.length ? (invoicePage - 1) * INVOICES_PER_PAGE + invoices.length : 0
+                  }
+                  /* Stripe reports no total, so no "of N" here. */
+                  hasMore={invoiceHasMore}
+                  busy={invoicesBusy}
+                  onPrev={() => loadInvoicePage(invoicePage - 1)}
+                  onNext={() => loadInvoicePage(invoicePage + 1)}
+                />
               )}
             </Section>
           </div>

@@ -29,7 +29,8 @@ import {
 } from './lib/profile';
 import { PLAN_LABELS, formatDate } from './lib/plans';
 import AppShell, { initialsFor } from './component/AppShell';
-import { CARD, INSET, Eyebrow, Notice, Section, Segmented, Skeleton } from './component/ui';
+import { CARD, INSET, Eyebrow, Notice, Pager, Section, Segmented, Skeleton } from './component/ui';
+import { useOffsetPage } from './lib/usePaging';
 
 interface HistoryEntry {
   changed_at: string;
@@ -55,8 +56,9 @@ interface Usage {
   resets_at?: string | null;
 }
 
-/** The backend caps /profile/history at 20 rows. */
-const HISTORY_LIMIT = 20;
+const HISTORY_PER_PAGE = 5;
+/** Upper bound for the one-shot fetch that feeds the JSON export. */
+const HISTORY_EXPORT_MAX = 50;
 
 const SIDE_PANEL: React.CSSProperties = {
   backgroundColor: '#fcf9f8',
@@ -78,8 +80,9 @@ const PROFILE_ACTION: React.CSSProperties = {
 
 export default function Profile() {
   const [user, setUser] = useState<any>(null);
+  // False until the session has been read — see AppHeaderProps.authChecked.
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
 
@@ -91,8 +94,7 @@ export default function Profile() {
   const [name, setName] = useState('');
   const [savedName, setSavedName] = useState('');
 
-  const [loading, setLoading] = useState({ profile: true, history: true, billing: true, usage: true });
-  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [loading, setLoading] = useState({ profile: true, billing: true, usage: true });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -110,6 +112,7 @@ export default function Profile() {
         return;
       }
       setUser(user);
+      setCheckedAuth(true);
       const initialName = user.user_metadata?.full_name || '';
       setName(initialName);
       setSavedName(initialName);
@@ -128,13 +131,14 @@ export default function Profile() {
           setSaved(fields);
           setDraft(fields);
         }),
-        settle(getProfileHistory(), 'history', (h) => setHistory(h || [])),
         settle(getBillingStatus(), 'billing', setBilling),
         settle(getUsage(), 'usage', setUsage),
       ]);
     }
     load();
   }, []);
+
+  const historyPage = useOffsetPage<HistoryEntry>(getProfileHistory, HISTORY_PER_PAGE);
 
   const dirtyFields = saved && draft ? changedKeys(saved, draft) : [];
   const nameDirty = name.trim() !== savedName.trim();
@@ -169,7 +173,7 @@ export default function Profile() {
         const fields = toFields(updated);
         setSaved(fields);
         setDraft(fields);
-        getProfileHistory().then((h) => setHistory(h || [])).catch(() => {});
+        historyPage.reset();
       }
 
       // users.name has no PATCH endpoint — it is written by /auth/sync from
@@ -192,7 +196,7 @@ export default function Profile() {
     }
   }
 
-  function exportProfile() {
+  async function exportProfile() {
     // Everything we hold about this account, assembled client-side — the
     // landing page promises users can take their profile elsewhere.
     const payload = {
@@ -204,7 +208,11 @@ export default function Profile() {
         member_since: user?.created_at || null,
       },
       cognitive_profile: saved,
-      profile_history: history,
+      // Fetched fresh rather than reusing the page on screen: exporting only
+      // the visible five would quietly truncate the file.
+      profile_history: await getProfileHistory({ limit: HISTORY_EXPORT_MAX, offset: 0 })
+        .then((h) => h.data || [])
+        .catch(() => historyPage.items),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -236,7 +244,7 @@ export default function Profile() {
   const provider = user?.app_metadata?.provider;
 
   return (
-    <AppShell user={user} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
+    <AppShell user={user} authChecked={checkedAuth} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
       <main className="flex-grow w-full mx-auto px-10 py-16" style={{ maxWidth: 1140 }}>
         <section className="mb-10">
           <h1
@@ -465,7 +473,7 @@ export default function Profile() {
 
             {/* History */}
             <Section title="Adjustments log">
-              {loading.history ? (
+              {historyPage.loading ? (
                 <ul className="flex flex-col gap-4" aria-label="Loading adjustment history">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <li key={i} className="p-4 rounded-lg" style={INSET}>
@@ -477,10 +485,10 @@ export default function Profile() {
                     </li>
                   ))}
                 </ul>
-              ) : history.length > 0 ? (
+              ) : historyPage.items.length > 0 ? (
                 <>
-                  <ul className="flex flex-col gap-4">
-                    {(showAllHistory ? history : history.slice(0, 5)).map((entry, i) => (
+                  <ul className="flex flex-col gap-4" aria-busy={historyPage.busy}>
+                    {historyPage.items.map((entry, i) => (
                       <li key={i} className="p-4 rounded-lg" style={INSET}>
                         <div className="flex justify-between items-start gap-4 mb-2">
                           <p className="font-medium" style={{ color: '#1b1c1c' }}>
@@ -494,17 +502,24 @@ export default function Profile() {
                       </li>
                     ))}
                   </ul>
-                  {history.length > 5 && (
-                    <button
-                      className="mt-4 text-sm font-semibold hover:underline"
-                      style={{ color: '#004635', background: 'none', border: 0, padding: 0 }}
-                      onClick={() => setShowAllHistory((v) => !v)}
-                    >
-                      {showAllHistory ? 'Show less' : `Show all ${history.length} changes`}
-                    </button>
+                  {historyPage.error && (
+                    <div className="mt-4">
+                      <Notice kind="error">{historyPage.error}</Notice>
+                    </div>
                   )}
-                  {history.length >= HISTORY_LIMIT && (
-                    <p className="field-hint mt-2">Showing your most recent {HISTORY_LIMIT} changes.</p>
+                  {historyPage.showPager && (
+                    <Pager
+                      label="Adjustments log"
+                      page={historyPage.page}
+                      pageCount={historyPage.pageCount}
+                      rangeStart={historyPage.rangeStart}
+                      rangeEnd={historyPage.rangeEnd}
+                      total={historyPage.total}
+                      hasMore={historyPage.hasMore}
+                      busy={historyPage.busy}
+                      onPrev={historyPage.prev}
+                      onNext={historyPage.next}
+                    />
                   )}
                 </>
               ) : (

@@ -30,6 +30,8 @@ function Badge({ icon, background, color }: { icon: string; background: string; 
 
 export default function CheckoutResult() {
   const [user, setUser] = useState<any>(null);
+  // False until the session has been read — see AppHeaderProps.authChecked.
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [state, setState] = useState<State>('confirming');
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export default function CheckoutResult() {
         return;
       }
       setUser(user);
+      setCheckedAuth(true);
 
       // Stripe sends cancellations to /billing/cancelled with no session.
       if (window.location.pathname.startsWith('/billing/cancelled')) {
@@ -104,7 +107,7 @@ export default function CheckoutResult() {
   const planName = PLAN_LABELS[billing?.plan || ''] || plan?.name || 'your new plan';
 
   return (
-    <AppShell user={user} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
+    <AppShell user={user} authChecked={checkedAuth} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
       <main
         className="flex-grow w-full mx-auto px-10 py-16 flex items-center justify-center"
         style={{ maxWidth: 1140 }}

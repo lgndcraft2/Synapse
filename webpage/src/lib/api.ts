@@ -8,6 +8,31 @@ async function getAuthHeader(): Promise<Record<string, string>> {
   return { 'Authorization': `Bearer ${session.access_token}` };
 }
 
+/**
+ * One page of a list endpoint.
+ *
+ * `total` is null for sources that cannot count cheaply — Stripe's invoice
+ * list is cursor-paginated and reports no total — so callers must handle its
+ * absence rather than assume a page count. `next_cursor` is set only by those
+ * cursor-paginated sources.
+ */
+export interface Paged<T> {
+  data: T[];
+  total: number | null;
+  has_more: boolean;
+  next_cursor?: string | null;
+}
+
+/** Serialises defined params only, so `?limit=10` never becomes `?limit=undefined`. */
+function query(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export async function syncUser() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -149,11 +174,15 @@ export async function changePlan(priceId: string) {
   return response.json();
 }
 
-export async function getInvoices() {
+/** Cursor-paged: pass the previous page's `next_cursor` as `starting_after`. */
+export async function getInvoices(
+  params: { limit?: number; starting_after?: string | null } = {},
+): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/invoices`, {
-    headers: authHeaders,
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/billing/invoices${query(params)}`,
+    { headers: authHeaders },
+  );
 
   if (!response.ok) {
     throw new Error('Failed to fetch billing history');
@@ -211,6 +240,26 @@ export async function getDashboardStats() {
 
   if (!response.ok) {
     throw new Error('Failed to fetch dashboard stats');
+  }
+
+  return response.json();
+}
+
+/**
+ * One page of reading sessions. The aggregate /dashboard/stats payload still
+ * carries `recent_sessions` for other callers; the dashboard list reads this.
+ */
+export async function getReadingSessions(
+  params: { limit?: number; offset?: number } = {},
+): Promise<Paged<any>> {
+  const authHeaders = await getAuthHeader();
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/dashboard/sessions${query(params)}`,
+    { headers: authHeaders },
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch reading sessions');
   }
 
   return response.json();
@@ -294,11 +343,14 @@ export async function createSupportTicket(ticket: {
   return response.json();
 }
 
-export async function getMyTickets() {
+export async function getMyTickets(
+  params: { limit?: number; offset?: number } = {},
+): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/support/tickets`, {
-    headers: authHeaders,
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/support/tickets${query(params)}`,
+    { headers: authHeaders },
+  );
 
   if (!response.ok) {
     throw new Error('Failed to fetch your tickets');
@@ -307,11 +359,14 @@ export async function getMyTickets() {
   return response.json();
 }
 
-export async function getProfileHistory() {
+export async function getProfileHistory(
+  params: { limit?: number; offset?: number } = {},
+): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/profile/history`, {
-    headers: authHeaders,
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/profile/history${query(params)}`,
+    { headers: authHeaders },
+  );
 
   if (!response.ok) {
     throw new Error('Failed to fetch profile history');

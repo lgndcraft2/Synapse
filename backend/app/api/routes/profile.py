@@ -4,7 +4,7 @@ from sqlalchemy import select, func, and_
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.models import User, CognitiveProfile, ProfileHistory, FeedbackLog, ReadingSession
-from app.schemas.schemas import ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut
+from app.schemas.schemas import ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut, Page
 from datetime import datetime, timedelta
 import json
 
@@ -141,25 +141,46 @@ async def update_profile(
 
 @profile_router.get("/history")
 async def get_profile_history(
+    limit: int = 10,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """One page of the caller's profile changes, newest first.
+
+    Params are clamped rather than rejected: a hand-edited or stale URL should
+    degrade to a sane page, not 422 in the middle of someone's history.
+    """
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    owned = ProfileHistory.user_id == current_user.id
+
+    total = await db.scalar(
+        select(func.count()).select_from(ProfileHistory).where(owned)
+    ) or 0
+
     result = await db.execute(
         select(ProfileHistory)
-        .where(ProfileHistory.user_id == current_user.id)
+        .where(owned)
         .order_by(ProfileHistory.changed_at.desc())
-        .limit(20)
+        .offset(offset)
+        .limit(limit)
     )
     history = result.scalars().all()
-    return [
-        {
-            "changed_at": h.changed_at,
-            "change_summary": h.change_summary,
-            "previous_state": h.previous_state,
-            "new_state": h.new_state,
-        }
-        for h in history
-    ]
+    return {
+        "data": [
+            {
+                "changed_at": h.changed_at,
+                "change_summary": h.change_summary,
+                "previous_state": h.previous_state,
+                "new_state": h.new_state,
+            }
+            for h in history
+        ],
+        "total": total,
+        "has_more": offset + len(history) < total,
+    }
 
 
 # ── Feedback ──────────────────────────────────────────────────────
@@ -195,6 +216,43 @@ async def submit_feedback(
 
 # ── Dashboard stats ───────────────────────────────────────────────
 stats_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _sessions_query(user_id):
+    """The caller's reading sessions, newest first — shared by the aggregate
+    stats payload and the paged sessions list so the two can never drift."""
+    return (
+        select(ReadingSession)
+        .where(ReadingSession.user_id == user_id)
+        .order_by(ReadingSession.created_at.desc())
+    )
+
+
+@stats_router.get("/sessions", response_model=Page[SessionOut])
+async def list_reading_sessions(
+    limit: int = 10,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One page of the caller's reading sessions, newest first."""
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    total = await db.scalar(
+        select(func.count())
+        .select_from(ReadingSession)
+        .where(ReadingSession.user_id == current_user.id)
+    ) or 0
+
+    result = await db.execute(_sessions_query(current_user.id).offset(offset).limit(limit))
+    sessions = result.scalars().all()
+
+    return Page[SessionOut](
+        data=sessions,
+        total=total,
+        has_more=offset + len(sessions) < total,
+    )
 
 
 @stats_router.get("/stats", response_model=DashboardStats)
@@ -242,13 +300,9 @@ async def get_dashboard_stats(
     # Time saved estimate (avg 2 min per card)
     time_saved_minutes = int(cards_month) * 2
 
-    # Recent sessions
-    result = await db.execute(
-        select(ReadingSession)
-        .where(ReadingSession.user_id == current_user.id)
-        .order_by(ReadingSession.created_at.desc())
-        .limit(10)
-    )
+    # Recent sessions. Kept on this aggregate for existing callers even though
+    # the dashboard list now reads the paged /dashboard/sessions route.
+    result = await db.execute(_sessions_query(current_user.id).limit(10))
     recent_sessions = result.scalars().all()
 
     # Feedback breakdown

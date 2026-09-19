@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.db.database import get_db
@@ -12,6 +12,7 @@ from app.schemas.schemas import (
     BillingOut,
     ChangePlanRequest,
     InvoiceOut,
+    Page,
     PaymentMethodOut,
     UsageOut,
 )
@@ -395,28 +396,46 @@ async def change_plan(
     return billing
 
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+@router.get("/invoices", response_model=Page[InvoiceOut])
 async def list_invoices(
-    limit: int = 12,
+    response: Response,
+    limit: int = 10,
+    starting_after: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Past invoices for the caller. Empty list when they have never paid."""
+    """One page of past invoices. Empty page when they have never paid.
+
+    Stripe's list API is cursor-paginated and reports no total, so `total` is
+    always None here and clients page with `next_cursor` rather than an offset.
+    """
+    # Receipts are per-user and must never be served from a shared or back-button
+    # cache — a second account on the same browser would see the first one's history.
+    response.headers["Cache-Control"] = "no-store, private"
+
     result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
     billing = result.scalar_one_or_none()
+    # The customer id is the only thing scoping this query. Without the guard,
+    # stripe.Invoice.list(customer=None) would return the whole account's
+    # invoices — every other user's history included.
     if not billing or not billing.stripe_customer_id:
-        return []
+        return Page[InvoiceOut](data=[])
+    customer_id = billing.stripe_customer_id
 
     try:
         invoices = await asyncio.to_thread(
             stripe.Invoice.list,
-            customer=billing.stripe_customer_id,
+            customer=customer_id,
             limit=max(1, min(limit, 100)),
+            # Stripe ignores a None cursor, so the first page needs no branch.
+            starting_after=starting_after,
         )
     except stripe.error.StripeError:
         raise HTTPException(status_code=400, detail="Could not load billing history.")
 
-    return [
+    raw = invoices.get("data", [])
+
+    rows = [
         InvoiceOut(
             id=inv["id"],
             number=inv.get("number"),
@@ -429,10 +448,24 @@ async def list_invoices(
             hosted_invoice_url=inv.get("hosted_invoice_url"),
             invoice_pdf=inv.get("invoice_pdf"),
         )
-        for inv in invoices.get("data", [])
+        for inv in raw
+        # Belt and braces: re-assert ownership on every row rather than trusting
+        # the filter we sent, so a bad param or an SDK change can never surface
+        # another customer's invoice.
+        if inv.get("customer") == customer_id
         # Drafts are not yet real charges and would confuse a receipts list.
-        if inv.get("status") != "draft"
+        and inv.get("status") != "draft"
     ]
+
+    return Page[InvoiceOut](
+        data=rows,
+        # Both of these must come from the *unfiltered* Stripe response. The
+        # filtering above can shorten a page, so a short page does not mean the
+        # end, and cursoring from the last surviving row would skip whatever was
+        # filtered out after it.
+        has_more=bool(invoices.get("has_more")),
+        next_cursor=raw[-1]["id"] if raw else None,
+    )
 
 
 @router.get("/payment-method", response_model=PaymentMethodOut)

@@ -64,6 +64,74 @@ export function Skeleton({
   return <span className={`dash-skeleton ${className}`.trim()} aria-hidden="true" style={style} />;
 }
 
+/**
+ * Prev / Next page control with a live-announced range.
+ *
+ * `total` and `pageCount` are optional on purpose: Stripe's invoice list is
+ * cursor-paginated and reports no total, so that list renders "Page 2" with
+ * Next disabled once the cursor runs out, while offset-backed lists get the
+ * full "Page 2 of 5" and "Showing 6-10 of 23". One control, both shapes.
+ */
+export function Pager({
+  page,
+  pageCount,
+  rangeStart,
+  rangeEnd,
+  total,
+  hasMore,
+  busy = false,
+  onPrev,
+  onNext,
+  label,
+}: {
+  /** 1-based. */
+  page: number;
+  pageCount?: number | null;
+  rangeStart: number;
+  rangeEnd: number;
+  total?: number | null;
+  hasMore: boolean;
+  busy?: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  label: string;
+}) {
+  const atStart = page <= 1;
+  return (
+    <nav className="pager" aria-label={label}>
+      {/* Paging silently swaps every row, so the range has to be announced. */}
+      <p className="pager-range" aria-live="polite">
+        {rangeEnd >= rangeStart ? (
+          <>
+            Showing {rangeStart}–{rangeEnd}
+            {typeof total === 'number' ? ` of ${total}` : ''}
+          </>
+        ) : (
+          'Nothing to show'
+        )}
+      </p>
+      <div className="pager-controls">
+        <button type="button" onClick={onPrev} disabled={atStart || busy}>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            chevron_left
+          </span>
+          Prev
+        </button>
+        <span className="pager-count">
+          Page {page}
+          {typeof pageCount === 'number' && pageCount > 0 ? ` of ${pageCount}` : ''}
+        </span>
+        <button type="button" onClick={onNext} disabled={!hasMore || busy}>
+          Next
+          <span className="material-symbols-outlined" aria-hidden="true">
+            chevron_right
+          </span>
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 /** Segmented pill group — the dashboard's "How are you reading today?" control. */
 export function Segmented<T extends string | number>({
   value,

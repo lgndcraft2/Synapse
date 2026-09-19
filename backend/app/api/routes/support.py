@@ -12,7 +12,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from jose import JWTError
 from redis.exceptions import RedisError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -20,7 +20,7 @@ from app.core.dependencies import get_current_user
 from app.core.jwt_verify import verify_supabase_jwt
 from app.db.database import get_db
 from app.models.models import SupportTicket, User
-from app.schemas.schemas import SupportTicketCreate, SupportTicketOut
+from app.schemas.schemas import Page, SupportTicketCreate, SupportTicketOut
 from app.services.email import send_ticket_confirmation, send_ticket_to_support
 from app.services.rate_limit import redis_client
 
@@ -191,16 +191,34 @@ async def create_ticket(
     return ticket
 
 
-@router.get("/tickets", response_model=list[SupportTicketOut])
+@router.get("/tickets", response_model=Page[SupportTicketOut])
 async def list_my_tickets(
+    limit: int = 10,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """The caller's own tickets, newest first."""
+    """One page of the caller's own tickets, newest first."""
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    owned = SupportTicket.user_id == current_user.id
+
+    total = await db.scalar(
+        select(func.count()).select_from(SupportTicket).where(owned)
+    ) or 0
+
     result = await db.execute(
         select(SupportTicket)
-        .where(SupportTicket.user_id == current_user.id)
+        .where(owned)
         .order_by(SupportTicket.created_at.desc())
-        .limit(50)
+        .offset(offset)
+        .limit(limit)
     )
-    return list(result.scalars().all())
+    tickets = list(result.scalars().all())
+
+    return Page[SupportTicketOut](
+        data=tickets,
+        total=total,
+        has_more=offset + len(tickets) < total,
+    )

@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { pushLogoutToExtension } from '../lib/extensionBridge';
 import ConfigBanner from './ConfigBanner';
+import { Skeleton } from './ui';
 import { BrandLockup } from './Brand';
 
 /** Initials for the header avatar, matching the dashboard's derivation. */
@@ -182,6 +183,14 @@ function UserMenu({ user }: { user: any }) {
 
 interface AppHeaderProps {
   user: any;
+  /**
+   * False while the session is still being read. Without it a signed-in user
+   * sees "Log in / Get Extension" flash before the account menu replaces it,
+   * because "not known yet" is indistinguishable from "signed out".
+   * Defaults true so a caller that hasn't been updated keeps the old behaviour
+   * rather than showing a placeholder forever.
+   */
+  authChecked?: boolean;
   /** Optional breadcrumb shown beside the wordmark, e.g. "Billing". */
   backTo?: { href: string; label: string };
 }
@@ -190,7 +199,7 @@ interface AppHeaderProps {
  * The app-shell header shared by /dashboard, /billing and /billing/success:
  * wordmark on the left, avatar + logout on the right.
  */
-export function AppHeader({ user, backTo }: AppHeaderProps) {
+export function AppHeader({ user, authChecked = true, backTo }: AppHeaderProps) {
   return (
     <header style={{ backgroundColor: '#fcf9f8', borderBottom: '1px solid #3d3d38' }}>
       <div
@@ -212,7 +221,19 @@ export function AppHeader({ user, backTo }: AppHeaderProps) {
             </a>
           )}
         </div>
-        {user ? (
+        {!authChecked ? (
+          /* Auth not resolved yet. Shaped like the signed-in trigger so the
+             swap costs no layout shift in the common case; the name bar is
+             hidden below 768px exactly as .user-name is. */
+          <div className="user-trigger-placeholder" aria-hidden="true">
+            {/* Avatar, name and chevron, at the trigger's own metrics: below
+                768px this comes to exactly the trigger's width, and above it
+                lands within a few px of a typical name. */}
+            <Skeleton style={{ width: 32, height: 32, borderRadius: 999 }} />
+            <Skeleton className="user-trigger-placeholder-name" style={{ width: 90, height: 14 }} />
+            <Skeleton style={{ width: 20, height: 20, borderRadius: 4 }} />
+          </div>
+        ) : user ? (
           <UserMenu user={user} />
         ) : (
           /* Public app-shell pages (e.g. /support) are reachable signed out,
@@ -253,12 +274,14 @@ export function AppFooter() {
 
 interface AppShellProps {
   user: any;
+  /** See AppHeaderProps.authChecked. */
+  authChecked?: boolean;
   backTo?: { href: string; label: string };
   children: ReactNode;
 }
 
 /** Page chrome: config banner, header, main slot, footer. */
-export default function AppShell({ user, backTo, children }: AppShellProps) {
+export default function AppShell({ user, authChecked = true, backTo, children }: AppShellProps) {
   return (
     <>
       <ConfigBanner />
@@ -272,7 +295,7 @@ export default function AppShell({ user, backTo, children }: AppShellProps) {
           flexDirection: 'column',
         }}
       >
-        <AppHeader user={user} backTo={backTo} />
+        <AppHeader user={user} authChecked={authChecked} backTo={backTo} />
         {children}
         <AppFooter />
       </div>

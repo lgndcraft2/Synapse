@@ -1,7 +1,26 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, Literal
+from typing import Generic, Optional, Literal, TypeVar
 from datetime import datetime
 import uuid
+
+
+# ── Pagination ────────────────────────────────────────────────────
+
+T = TypeVar("T")
+
+
+class Page(BaseModel, Generic[T]):
+    """One page of a list endpoint.
+
+    `total` is None for sources that cannot count cheaply — Stripe's list API
+    is cursor-paginated and reports no total — so clients must treat it as
+    optional and fall back to "Page N" instead of "Page N of M".
+    `next_cursor` is likewise only set by cursor-paginated sources.
+    """
+    data: list[T]
+    total: Optional[int] = None
+    has_more: bool = False
+    next_cursor: Optional[str] = None
 
 
 # ── Auth ─────────────────────────────────────────────────────────

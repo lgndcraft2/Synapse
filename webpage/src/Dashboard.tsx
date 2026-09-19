@@ -1,17 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
-import {
-  getBillingStatus,
-  getDashboardStats,
-  getProfile,
-  updateProfile,
-  getProfileHistory,
-  confirmCheckout,
-} from "./lib/api";
+import { confirmCheckout, getBillingStatus, getDashboardStats, getProfile, getProfileHistory, getReadingSessions, updateProfile } from "./lib/api";
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import { PLAN_LABELS } from "./lib/plans";
 import ConfigBanner from "./component/ConfigBanner";
-import { Skeleton } from "./component/ui";
+import { Pager, Skeleton } from "./component/ui";
+import { useOffsetPage } from "./lib/usePaging";
 import { AppFooter, AppHeader } from "./component/AppShell";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
@@ -98,6 +92,9 @@ function timeSince(dateString: string) {
   return Math.floor(seconds) + " seconds ago";
 }
 
+const HISTORY_PER_PAGE = 4;
+const SESSIONS_PER_PAGE = 5;
+
 export default function Dashboard() {
   const [readingDay, setReadingDay] = useState<SessionDifficulty>(() => {
     if (typeof localStorage === "undefined") return "normal";
@@ -105,13 +102,18 @@ export default function Dashboard() {
     return saved === "hard" || saved === "flowing" || saved === "normal" ? saved : "normal";
   });
   const [user, setUser] = useState<any>(null);
+  // False until the session has been read — see AppHeaderProps.authChecked.
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [stats, setStats] = useState<StatsInfo | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [showAllHistory, setShowAllHistory] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Both lists page against the server; the dashboard shows short pages since
+  // it is a summary view, with the full log on /profile.
+  const historyPage = useOffsetPage<HistoryEntry>(getProfileHistory, HISTORY_PER_PAGE);
+  const sessionPage = useOffsetPage<Session>(getReadingSessions, SESSIONS_PER_PAGE);
 
   // Persist the "How are you reading today?" selection across visits.
   useEffect(() => {
@@ -128,6 +130,7 @@ export default function Dashboard() {
         return;
       }
       setUser(user);
+      setCheckedAuth(true);
 
       // Hand the current session to the extension so it stays signed in.
       const { data: { session } } = await supabase.auth.getSession();
@@ -146,19 +149,17 @@ export default function Dashboard() {
       }
 
       // Load each panel independently so one failing endpoint doesn't blank the rest.
-      const [status, profileData, statsData, historyData] = await Promise.allSettled([
+      const [status, profileData, statsData] = await Promise.allSettled([
         getBillingStatus(),
         getProfile(),
         getDashboardStats(),
-        getProfileHistory(),
       ]);
 
       if (status.status === "fulfilled") setBilling(status.value);
       if (profileData.status === "fulfilled") setProfile(profileData.value);
       if (statsData.status === "fulfilled") setStats(statsData.value);
-      if (historyData.status === "fulfilled") setHistory(historyData.value);
 
-      for (const r of [status, profileData, statsData, historyData]) {
+      for (const r of [status, profileData, statsData]) {
         if (r.status === "rejected") console.error("Dashboard load error", r.reason);
       }
 
@@ -188,12 +189,9 @@ export default function Dashboard() {
     try {
       const updated = await updateProfile({ profile_type: nextType });
       setProfile(updated);
-      // The backend logs a history entry for the change — refresh the log.
-      try {
-        setHistory(await getProfileHistory());
-      } catch {
-        /* non-fatal: the profile still switched */
-      }
+      // The backend logs a history entry for the change — the newest page now
+      // holds it, so go back to the top of the log.
+      historyPage.reset();
     } catch (err) {
       alert("Failed to switch profile. Please try again.");
     } finally {
@@ -228,7 +226,7 @@ export default function Dashboard() {
       <div className="dash font-body" style={{ backgroundColor: "#fcf9f8", color: "#1b1c1c", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
         {/* ── HEADER ─────────────────────────────────────────────── */}
-        <AppHeader user={user} />
+        <AppHeader user={user} authChecked={checkedAuth} />
 
         {/* ── MAIN ───────────────────────────────────────────────── */}
         <main className="flex-grow w-full mx-auto px-10 py-16 grid grid-cols-1 md:grid-cols-12 gap-10" style={{ maxWidth: 1140 }}>
@@ -306,8 +304,8 @@ export default function Dashboard() {
                 <h3 className="text-xs font-semibold uppercase mb-4" style={{ color: "#404944", letterSpacing: "0.05em" }}>
                   Recent Adjustments Log
                 </h3>
-                <ul className="space-y-4">
-                  {isLoading ? (
+                <ul className="space-y-4" aria-busy={historyPage.busy}>
+                  {historyPage.loading ? (
                     Array.from({ length: 3 }).map((_, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <Skeleton style={{ width: 18, height: 18, borderRadius: 999, marginTop: 2 }} />
@@ -317,8 +315,8 @@ export default function Dashboard() {
                         </div>
                       </li>
                     ))
-                  ) : history.length > 0 ? (
-                    (showAllHistory ? history : history.slice(0, 4)).map((h, i) => (
+                  ) : historyPage.items.length > 0 ? (
+                    historyPage.items.map((h, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 18, color: "#004635" }}>tune</span>
                         <div>
@@ -337,11 +335,19 @@ export default function Dashboard() {
                     </li>
                   )}
                 </ul>
-                {history.length > 4 && (
-                  <button className="mt-4 text-sm font-semibold hover:underline" style={{ color: "#004635" }}
-                    onClick={() => setShowAllHistory((v) => !v)}>
-                    {showAllHistory ? "Show less" : "View full history"}
-                  </button>
+                {historyPage.showPager && (
+                  <Pager
+                    label="Recent adjustments"
+                    page={historyPage.page}
+                    pageCount={historyPage.pageCount}
+                    rangeStart={historyPage.rangeStart}
+                    rangeEnd={historyPage.rangeEnd}
+                    total={historyPage.total}
+                    hasMore={historyPage.hasMore}
+                    busy={historyPage.busy}
+                    onPrev={historyPage.prev}
+                    onNext={historyPage.next}
+                  />
                 )}
               </div>
             </section>
@@ -404,8 +410,8 @@ export default function Dashboard() {
               <h3 className="font-serif font-semibold text-2xl mb-4 pb-2" style={{ borderBottom: "1px solid #e4e2e1", color: "#1b1c1c" }}>
                 Recent Sessions
               </h3>
-              <ul>
-                {isLoading ? (
+              <ul aria-busy={sessionPage.busy}>
+                {sessionPage.loading ? (
                   Array.from({ length: 4 }).map((_, i) => (
                     <li key={i} className="py-3 flex justify-between items-center px-2 -mx-2" style={{ borderBottom: "1px solid #e4e2e1" }}>
                       <div style={{ flex: 1 }}>
@@ -415,7 +421,7 @@ export default function Dashboard() {
                       <Skeleton style={{ width: 78, height: 24 }} />
                     </li>
                   ))
-                ) : stats?.recent_sessions && stats.recent_sessions.length > 0 ? stats.recent_sessions.map((s, i) => (
+                ) : sessionPage.items.length > 0 ? sessionPage.items.map((s, i) => (
                   <li key={i} className="py-3 flex justify-between items-center cursor-pointer px-2 -mx-2 rounded transition-colors hover:opacity-80"
                     style={{ borderBottom: "1px solid #e4e2e1" }}>
                     <div className="truncate pr-4">
@@ -428,6 +434,20 @@ export default function Dashboard() {
                   <li className="py-3 text-sm" style={{ color: "#5e5f5b", fontStyle: "italic" }}>No reading sessions recorded.</li>
                 )}
               </ul>
+              {sessionPage.showPager && (
+                <Pager
+                  label="Recent sessions"
+                  page={sessionPage.page}
+                  pageCount={sessionPage.pageCount}
+                  rangeStart={sessionPage.rangeStart}
+                  rangeEnd={sessionPage.rangeEnd}
+                  total={sessionPage.total}
+                  hasMore={sessionPage.hasMore}
+                  busy={sessionPage.busy}
+                  onPrev={sessionPage.prev}
+                  onNext={sessionPage.next}
+                />
+              )}
             </section>
 
             {/* Billing */}
