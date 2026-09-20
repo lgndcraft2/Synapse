@@ -26,8 +26,19 @@ class Page(BaseModel, Generic[T]):
 # ── Auth ─────────────────────────────────────────────────────────
 
 class TokenResponse(BaseModel):
+    """What every successful authentication returns.
+
+    `user` is inlined so the client never needs a follow-up /auth/me round
+    trip, and so the token and the rendered account can never disagree.
+    `expires_at` is absolute unix seconds because that is what the browser
+    extension stores and compares against; `expires_in` is included for
+    clients that would rather not trust their own clock.
+    """
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str
+    expires_at: int
+    expires_in: int
     user: "UserOut"
 
 
@@ -38,9 +49,70 @@ class UserOut(BaseModel):
     avatar_url: Optional[str]
     plan: str
     created_at: datetime
+    # Replaces Supabase's app_metadata.provider. Note "both" is reachable —
+    # a password account that later links Google — so clients must not treat
+    # this as a two-state flag.
+    auth_provider: Literal["password", "google", "both"] = "password"
+    email_verified: bool = False
 
     class Config:
         from_attributes = True
+
+
+# ── Auth request bodies ──────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    # 10 is a deliberate step up from the 6 Supabase enforced. The ceiling
+    # exists because Argon2 hashes whatever it is given, and a megabyte of
+    # "password" is a free denial-of-service otherwise.
+    password: str = Field(min_length=10, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=80)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = Field(default=None, max_length=512)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class UpdateMeRequest(BaseModel):
+    """Renaming yourself.
+
+    Previously impossible without a round trip through Supabase: users.name
+    had no PATCH endpoint and was only writable by /auth/sync reading the
+    Supabase session.
+    """
+    name: str = Field(min_length=1, max_length=80)
+
+
+class OAuthExchangeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=512)
 
 
 # ── Cognitive Profile ─────────────────────────────────────────────

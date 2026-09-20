@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.models import User, CognitiveProfile, ProfileHistory, FeedbackLog, ReadingSession
 from app.schemas.schemas import ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut, Page
-from datetime import datetime, timedelta
-import json
+from datetime import datetime, timedelta, timezone
 
 # ── Profile ───────────────────────────────────────────────────────
 profile_router = APIRouter(prefix="/profile", tags=["profile"])
@@ -260,39 +259,29 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
 
-    # Cards this week
+    # One pass over reading_sessions instead of three.
+    #
+    # These were three separate queries with overlapping predicates — all
+    # filtered to the same user, two to the same 30-day window — so the table
+    # was scanned three times to produce numbers that fall out of a single
+    # grouped aggregate. CASE rather than FILTER so the expression is portable
+    # to SQLite, which the test suite runs on.
+    in_week = case((ReadingSession.created_at >= week_ago, ReadingSession.cards_generated), else_=0)
     result = await db.execute(
-        select(func.sum(ReadingSession.cards_generated))
-        .where(and_(
+        select(
+            func.coalesce(func.sum(in_week), 0),
+            func.coalesce(func.sum(ReadingSession.cards_generated), 0),
+            func.count(ReadingSession.id),
+        ).where(and_(
             ReadingSession.user_id == current_user.id,
-            ReadingSession.created_at >= week_ago
+            ReadingSession.created_at >= month_ago,
         ))
     )
-    cards_week = result.scalar() or 0
-
-    # Cards this month
-    result = await db.execute(
-        select(func.sum(ReadingSession.cards_generated))
-        .where(and_(
-            ReadingSession.user_id == current_user.id,
-            ReadingSession.created_at >= month_ago
-        ))
-    )
-    cards_month = result.scalar() or 0
-
-    # Pages visited (distinct sessions this month)
-    result = await db.execute(
-        select(func.count(ReadingSession.id))
-        .where(and_(
-            ReadingSession.user_id == current_user.id,
-            ReadingSession.created_at >= month_ago
-        ))
-    )
-    pages_visited = result.scalar() or 0
+    cards_week, cards_month, pages_visited = result.one()
 
     # Words processed estimate (avg 250 words per card)
     words_processed = int(cards_month) * 250

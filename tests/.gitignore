@@ -1,0 +1,5 @@
+.e2e.db
+backend.log
+vite.log
+.state.json
+.env.backup

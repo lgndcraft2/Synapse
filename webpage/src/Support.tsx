@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { getUser } from './lib/auth';
 import { createSupportTicket, getBillingStatus, getMyTickets, getProfile } from './lib/api';
 import { pingExtension, type ExtensionInfo } from './lib/extensionBridge';
 import {
@@ -63,10 +63,8 @@ export default function Support() {
     async function load() {
       // This page must work signed out — someone whose sign-in is broken is
       // exactly the person who needs it. No redirect guard here.
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user || null);
+      const user = getUser();
+      setUser(user);
       setCheckedAuth(true);
 
       pingExtension().then(setExtension);

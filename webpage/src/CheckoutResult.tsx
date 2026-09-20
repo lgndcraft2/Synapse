@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { requireAuth, getSession } from './lib/auth';
 import { confirmCheckout } from './lib/api';
 import { pushSessionToExtension } from './lib/extensionBridge';
 import { PLAN_LABELS, formatDate, formatPrice, planByTier, priceFor } from './lib/plans';
@@ -40,14 +40,8 @@ export default function CheckoutResult() {
 
   useEffect(() => {
     async function run() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.href = `/auth?tab=login&next=${next}`;
-        return;
-      }
+      const user = await requireAuth(window.location.pathname + window.location.search);
+      if (!user) return;
       setUser(user);
       setCheckedAuth(true);
 
@@ -80,10 +74,7 @@ export default function CheckoutResult() {
 
       // Hand the refreshed session to the extension so the new tier applies
       // without the user having to sign in again there.
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      pushSessionToExtension(session);
+      pushSessionToExtension(getSession());
 
       // Drop session_id from the URL so a refresh doesn't re-confirm.
       window.history.replaceState({}, '', '/billing/success');

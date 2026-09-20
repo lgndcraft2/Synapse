@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_optional_user
 from app.models.models import User, CognitiveProfile, FeedbackLog, ReadingSession, Billing
 from app.schemas.schemas import (
     ReformatRequest, ReformatResponse,
@@ -16,7 +16,6 @@ from app.services.ai import (
     build_feedback_summary
 )
 from app.core.config import settings
-from jose import jwt, JWTError
 from datetime import datetime
 import asyncio
 import logging
@@ -24,25 +23,6 @@ import logging
 logger = logging.getLogger("synapse.reformat")
 
 router = APIRouter(prefix="/reformat", tags=["reformat"])
-
-
-async def _get_optional_user(request: Request, db: AsyncSession) -> User | None:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None
-    token = auth.split(" ", 1)[1]
-    try:
-        payload = jwt.decode(
-            token, settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"], audience="authenticated"
-        )
-        uid = payload.get("sub")
-        if not uid:
-            return None
-        result = await db.execute(select(User).where(User.supabase_uid == uid))
-        return result.scalar_one_or_none()
-    except JWTError:
-        return None
 
 
 async def _validate_input_length(db: AsyncSession, user: User | None, text: str):
@@ -122,7 +102,7 @@ async def reformat_page(
     db: AsyncSession = Depends(get_db),
 ):
     # ── 1. Identify user ─────────────────────────────────────────
-    user = await _get_optional_user(request, db)
+    user = await get_optional_user(request, db)
 
     # ── 1.5 Validate Input Length ────────────────────────────────
     await _validate_input_length(db, user, body.page_text)
@@ -231,7 +211,7 @@ async def analyse_sections_route(
     db: AsyncSession = Depends(get_db),
 ):
     """Identify logical sections on a page."""
-    user = await _get_optional_user(request, db)
+    user = await get_optional_user(request, db)
     await _validate_input_length(db, user, body.page_text)
     await check_rate_limit(db, user, body.fingerprint, request)
     
@@ -258,7 +238,7 @@ async def reformat_document_route(
     db: AsyncSession = Depends(get_db),
 ):
     """Process and reformat a document (PDF, image)."""
-    user = await _get_optional_user(request, db)
+    user = await get_optional_user(request, db)
     await _validate_input_length(db, user, body.base64_data)
     await check_rate_limit(db, user, body.fingerprint, request)
     

@@ -4,11 +4,13 @@
 //   2. we must know the extension's ID (VITE_EXTENSION_ID)
 // If either is missing (e.g. the extension isn't installed), every call is a safe no-op.
 
-import type { Session } from '@supabase/supabase-js';
+import type { Session } from './auth';
 
 const EXTENSION_ID = import.meta.env.VITE_EXTENSION_ID || '';
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Handed to the extension so it knows which API to refresh against. It
+// previously received a Supabase URL and anon key; it now gets neither, so no
+// API key ever leaves the dashboard.
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 type ChromeRuntime = {
   sendMessage: (id: string, message: unknown, callback?: (response: unknown) => void) => void;
@@ -43,8 +45,7 @@ export function pushSessionToExtension(session: Session | null) {
     access_token: session.access_token,
     refresh_token: session.refresh_token,
     expires_at: session.expires_at ?? null,
-    supabase_url: SUPABASE_URL,
-    supabase_anon_key: SUPABASE_ANON_KEY,
+    api_url: API_URL,
   });
 }
 

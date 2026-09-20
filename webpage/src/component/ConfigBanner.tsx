@@ -1,7 +1,7 @@
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isBackendConfigured } from '../lib/auth';
 
 export default function ConfigBanner() {
-  if (isSupabaseConfigured) return null;
+  if (isBackendConfigured) return null;
 
   return (
     <div style={{
@@ -16,7 +16,7 @@ export default function ConfigBanner() {
       zIndex: 1000,
       boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
     }}>
-      ⚠️ Supabase Configuration Required: Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.
+      ⚠️ Backend not configured: set VITE_BACKEND_URL in your .env file. Sign-in and all data loading will fail without it.
     </div>
   );
 }

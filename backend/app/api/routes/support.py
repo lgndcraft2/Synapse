@@ -10,14 +10,12 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from jose import JWTError
 from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.dependencies import get_current_user
-from app.core.jwt_verify import verify_supabase_jwt
+from app.core.dependencies import get_current_user, get_optional_user
 from app.db.database import get_db
 from app.models.models import SupportTicket, User
 from app.schemas.schemas import Page, SupportTicketCreate, SupportTicketOut
@@ -44,32 +42,6 @@ TOPIC_LABELS = {
 # that a person with a genuine problem is never blocked.
 ANON_HOURLY_LIMIT = 5
 AUTHED_HOURLY_LIMIT = 20
-
-
-async def _get_optional_user(request: Request, db: AsyncSession) -> User | None:
-    """Resolve the caller when a valid token is present, else None.
-
-    Auth is optional here on purpose: support must stay reachable by someone
-    whose sign-in is exactly what is broken.
-
-    Uses verify_supabase_jwt rather than decoding with the shared secret
-    directly. This project's Supabase issues asymmetric (ES256/RS256) tokens
-    verified against its JWKS — an HS256-only decode rejects every one of them
-    and would quietly treat every signed-in user as anonymous.
-    """
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None
-    token = auth.split(" ", 1)[1]
-    try:
-        payload = await verify_supabase_jwt(token)
-        uid = payload.get("sub")
-        if not uid:
-            return None
-        result = await db.execute(select(User).where(User.supabase_uid == uid))
-        return result.scalar_one_or_none()
-    except JWTError:
-        return None
 
 
 def _reference() -> str:
@@ -127,7 +99,7 @@ async def create_ticket(
     The row is written first and the two emails are queued as background tasks,
     so a slow or failing mail provider delays nothing and loses nothing.
     """
-    user = await _get_optional_user(request, db)
+    user = await get_optional_user(request, db)
     await _enforce_submission_limit(request, user)
 
     email = (user.email if user else None) or (str(body.email) if body.email else None)

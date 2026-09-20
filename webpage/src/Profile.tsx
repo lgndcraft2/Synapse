@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { requireAuth, clearSession, updateName } from './lib/auth';
 import {
   deleteAccount,
   getBillingStatus,
   getProfile,
   getProfileHistory,
   getUsage,
-  syncUser,
   updateProfile,
 } from './lib/api';
 import {
@@ -82,7 +81,6 @@ export default function Profile() {
   const [user, setUser] = useState<any>(null);
   // False until the session has been read — see AppHeaderProps.authChecked.
   const [checkedAuth, setCheckedAuth] = useState(false);
-  const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
 
@@ -104,16 +102,11 @@ export default function Profile() {
 
   useEffect(() => {
     async function load() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        window.location.href = `/auth?tab=login&next=${encodeURIComponent('/profile')}`;
-        return;
-      }
+      const user = await requireAuth('/profile');
+      if (!user) return;
       setUser(user);
       setCheckedAuth(true);
-      const initialName = user.user_metadata?.full_name || '';
+      const initialName = user.name || '';
       setName(initialName);
       setSavedName(initialName);
 
@@ -126,7 +119,6 @@ export default function Profile() {
 
       await Promise.all([
         settle(getProfile(), 'profile', (p) => {
-          setProfile(p);
           const fields = toFields(p);
           setSaved(fields);
           setDraft(fields);
@@ -169,23 +161,19 @@ export default function Profile() {
         const patch: Record<string, unknown> = {};
         for (const key of dirtyFields) patch[key] = draft[key];
         const updated = await updateProfile(patch);
-        setProfile(updated);
         const fields = toFields(updated);
         setSaved(fields);
         setDraft(fields);
         historyPage.reset();
       }
 
-      // users.name has no PATCH endpoint — it is written by /auth/sync from
-      // the Supabase session, so update the metadata first, then re-sync.
+      // users.name now has a real PATCH endpoint. This used to write
+      // Supabase user_metadata and then call /auth/sync to read it back,
+      // because nothing here could write the column directly.
       if (nameDirty) {
-        const { error: authError } = await supabase.auth.updateUser({
-          data: { full_name: name.trim() },
-        });
-        if (authError) throw new Error(authError.message);
-        await syncUser();
-        setSavedName(name.trim());
-        setUser((u: any) => ({ ...u, user_metadata: { ...u?.user_metadata, full_name: name.trim() } }));
+        const updated = await updateName(name.trim());
+        setSavedName(updated.name || '');
+        setUser((u: any) => ({ ...u, name: updated.name }));
       }
 
       setNotice('Your profile has been updated.');
@@ -232,7 +220,8 @@ export default function Profile() {
     setError(null);
     try {
       await deleteAccount();
-      await supabase.auth.signOut();
+      // No logout call — the account is gone, so /auth/logout would 401.
+      clearSession();
       window.location.href = '/';
     } catch (err: any) {
       setError(err?.message || 'We could not delete your account.');

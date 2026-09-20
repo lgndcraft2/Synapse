@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { signOut as authSignOut } from '../lib/auth';
 import { pushLogoutToExtension } from '../lib/extensionBridge';
 import ConfigBanner from './ConfigBanner';
 import { Skeleton } from './ui';
@@ -8,7 +8,7 @@ import { BrandLockup } from './Brand';
 
 /** Initials for the header avatar, matching the dashboard's derivation. */
 export function initialsFor(user: any): string {
-  const fullName: string | undefined = user?.user_metadata?.full_name;
+  const fullName: string | undefined = user?.name;
   if (fullName) {
     return fullName
       .split(' ')
@@ -22,7 +22,10 @@ export function initialsFor(user: any): string {
 
 export async function signOut() {
   pushLogoutToExtension();
-  await supabase.auth.signOut();
+  // Revokes the refresh token server-side, which Supabase used to handle for
+  // us. Clears local state even if the call fails, so a network error can
+  // never leave someone stuck signed in.
+  await authSignOut();
   window.location.href = '/auth?tab=login';
 }
 
@@ -49,7 +52,7 @@ function UserMenu({ user }: { user: any }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
-  const fullName: string | undefined = user?.user_metadata?.full_name;
+  const fullName: string | undefined = user?.name;
   const displayName = fullName || user?.email?.split('@')[0] || 'Your account';
   const path = window.location.pathname;
 

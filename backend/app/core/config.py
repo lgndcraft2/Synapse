@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -5,12 +6,36 @@ from typing import List
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
+    # Alembic only. DDL and advisory locks are unreliable over a transaction-mode
+    # pooler, so migrations may need the direct endpoint even when the app uses
+    # the pooled one. Blank falls back to DATABASE_URL.
+    MIGRATION_DATABASE_URL: str = ""
 
-    # Supabase
-    SUPABASE_URL: str
-    SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_ROLE_KEY: str
-    SUPABASE_JWT_SECRET: str
+    # ── First-party auth ──────────────────────────────────────────
+    # Tokens are signed with APP_SECRET_KEY (declared further down). Access
+    # tokens are short-lived and stateless; refresh tokens are opaque, stored
+    # hashed, and rotate on every use.
+    ACCESS_TOKEN_TTL_SECONDS: int = 15 * 60
+    REFRESH_TOKEN_TTL_SECONDS: int = 30 * 24 * 3600
+    # Absolute ceiling on a rotation family. Without it a sliding refresh token
+    # never dies.
+    REFRESH_FAMILY_TTL_SECONDS: int = 180 * 24 * 3600
+    JWT_ISSUER: str = "synapse"
+    JWT_AUDIENCE: str = "synapse-api"
+
+    EMAIL_VERIFY_TTL_SECONDS: int = 24 * 3600
+    PASSWORD_RESET_TTL_SECONDS: int = 3600
+
+    # Google OAuth (first-party). GOOGLE_REDIRECT_URI must match the value
+    # registered in the Cloud Console byte-for-byte, including scheme and path.
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
+
+    # How many proxies sit in front of the app. request.client.host is the edge's
+    # address behind Render, which would collapse every user into one rate-limit
+    # bucket; 0 means "trust request.client.host directly" (local dev).
+    TRUSTED_PROXY_COUNT: int = 0
 
     # Redis
     UPSTASH_REDIS_URL: str
@@ -67,6 +92,40 @@ class Settings(BaseSettings):
     FREE_TEXT_LIMIT: int = 50000
     TRIAL_TEXT_LIMIT: int = 100000
     PREMIUM_TEXT_LIMIT: int = 500000
+
+    @field_validator("APP_SECRET_KEY")
+    @classmethod
+    def _secret_key_is_strong(cls, v: str) -> str:
+        """
+        Fail at boot rather than at audit.
+
+        This key signs every access token. It was declared but read by no code
+        until first-party auth landed, so whatever value a deployment is
+        carrying has never been load-bearing and must not be trusted now.
+        """
+        if len(v) < 32:
+            raise ValueError(
+                "APP_SECRET_KEY must be at least 32 characters. Generate one with "
+                "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`."
+            )
+        return v
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(
+            self.GOOGLE_CLIENT_ID
+            and self.GOOGLE_CLIENT_SECRET
+            and self.GOOGLE_REDIRECT_URI
+        )
+
+    @property
+    def migration_database_url(self) -> str:
+        return self.MIGRATION_DATABASE_URL or self.DATABASE_URL
+
+    @property
+    def cookies_secure(self) -> bool:
+        """Secure cookies everywhere except local development over plain http."""
+        return self.APP_ENV != "development"
 
     @property
     def gemini_keys(self) -> List[str]:
@@ -145,6 +204,11 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # Unknown keys are ignored rather than fatal. Removing the four
+        # SUPABASE_* settings would otherwise refuse to boot any deployment
+        # whose .env or dashboard still carries them, turning a cleanup into an
+        # outage. The cost is that a typo'd setting name is silently ignored.
+        extra = "ignore"
 
 
 settings = Settings()

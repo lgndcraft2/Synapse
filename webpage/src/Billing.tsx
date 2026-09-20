@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { requireAuth } from './lib/auth';
 import { createCheckoutSession, getBillingStatus } from './lib/api';
 import {
   PLANS,
@@ -88,15 +88,9 @@ export default function Billing() {
 
   useEffect(() => {
     async function load() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        // Come back here once they're signed in.
-        const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.href = `/auth?tab=login&next=${next}`;
-        return;
-      }
+      // Come back here once they're signed in.
+      const user = await requireAuth(window.location.pathname + window.location.search);
+      if (!user) return;
       setUser(user);
       setCheckedAuth(true);
 

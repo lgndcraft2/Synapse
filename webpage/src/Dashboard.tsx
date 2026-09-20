@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "./lib/supabase";
+import { requireAuth, getSession, subscribeAuth } from "./lib/auth";
 import { confirmCheckout, getBillingStatus, getDashboardStats, getProfile, getProfileHistory, getReadingSessions, updateProfile } from "./lib/api";
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import { PLAN_LABELS } from "./lib/plans";
@@ -124,17 +124,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        window.location.href = "/auth?tab=login";
-        return;
-      }
+      const user = await requireAuth();
+      if (!user) return;
       setUser(user);
       setCheckedAuth(true);
 
       // Hand the current session to the extension so it stays signed in.
-      const { data: { session } } = await supabase.auth.getSession();
-      pushSessionToExtension(session);
+      pushSessionToExtension(getSession());
 
       // Returning from Stripe Checkout: confirm the session directly so the plan
       // reflects immediately, without waiting on the webhook. Then clean the URL.
@@ -170,14 +166,10 @@ export default function Dashboard() {
 
   // Keep the extension's session fresh, and tell it to sign out when we do.
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") {
-        pushLogoutToExtension();
-      } else if (session) {
-        pushSessionToExtension(session);
-      }
+    return subscribeAuth((session) => {
+      if (session) pushSessionToExtension(session);
+      else pushLogoutToExtension();
     });
-    return () => subscription.unsubscribe();
   }, []);
 
   async function handleSwitchProfile() {

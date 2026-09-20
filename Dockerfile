@@ -23,6 +23,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/app ./app
 
+# Migrations. Previously omitted, which is why nothing ever ran them — the
+# schema was maintained by hand in the Supabase SQL editor.
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
+
 # Copy built frontend assets from build stage to a static folder in backend
 COPY --from=build-frontend /webpage/dist ./static
 
@@ -33,5 +38,13 @@ ENV APP_ENV=production
 # Expose the combined port
 EXPOSE 8000
 
-# Start the application
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the application.
+#
+# Migrations run before the server binds, so a container never serves traffic
+# against a schema it does not expect. env.py takes a transaction-scoped
+# advisory lock, so parallel instances starting together serialise rather than
+# racing.
+#
+# $PORT is honoured rather than hardcoded: Render assigns it, and the previous
+# hardcoded 8000 meant the platform's health check could miss the app entirely.
+CMD ["sh", "-c", "alembic upgrade head && exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

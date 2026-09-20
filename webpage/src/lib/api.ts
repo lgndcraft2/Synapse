@@ -1,11 +1,43 @@
-import { supabase } from './supabase';
+import { getAccessToken, clearSession, redirectToLogin } from './auth';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
+/**
+ * Bearer header for an authenticated call, or `{}` when signed out.
+ *
+ * Still returns `{}` rather than throwing, so the shape every other function
+ * here depends on is unchanged. getAccessToken() transparently refreshes an
+ * expiring token, and is single-flight, so the parallel calls several screens
+ * fire on mount share one refresh instead of racing.
+ */
 async function getAuthHeader(): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return {};
-  return { 'Authorization': `Bearer ${session.access_token}` };
+  const token = await getAccessToken();
+  if (!token) return {};
+  return { 'Authorization': `Bearer ${token}` };
+}
+
+/**
+ * Handles a 401 once, centrally.
+ *
+ * Without this, an unrecoverable session surfaces as whichever of the ~19 API
+ * calls happened to fire first, each with its own unrelated error toast. The
+ * session is already gone by the time a 401 arrives — getAccessToken clears it
+ * on a terminal refresh failure — so this is about getting the user to the
+ * login screen rather than leaving them on a broken page.
+ */
+function handleUnauthorized(response: Response): void {
+  if (response.status !== 401) return;
+  clearSession();
+  const here = window.location.pathname + window.location.search;
+  // /auth itself 401ing must not bounce in a loop.
+  if (!window.location.pathname.startsWith('/auth')) redirectToLogin(here);
+}
+
+/** fetch + the central 401 handler. Every call below goes through this. */
+async function authedFetch(input: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init);
+  handleUnauthorized(response);
+  return response;
 }
 
 /**
@@ -33,43 +65,9 @@ function query(params: Record<string, string | number | undefined | null>): stri
   return qs ? `?${qs}` : '';
 }
 
-export async function syncUser() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const authHeaders = await getAuthHeader();
-  try {
-    const response = await fetch(`${BACKEND_URL}/api/v1/auth/sync`, {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        supabase_uid: user.id,
-        email: user.email,
-        name: user.user_metadata?.full_name || user.email?.split('@')[0],
-        avatar_url: user.user_metadata?.avatar_url,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Sync failed' }));
-      throw new Error(error.detail || 'Sync failed');
-    }
-
-    return response.json();
-  } catch (err: any) {
-    if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-      throw new Error('Backend server unreachable. Please ensure the backend is running at ' + BACKEND_URL);
-    }
-    throw err;
-  }
-}
-
 export async function getBillingStatus() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/status`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/status`, {
     headers: authHeaders,
   });
 
@@ -83,7 +81,7 @@ export async function getBillingStatus() {
 
 export async function createCheckoutSession(priceId: string) {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/checkout`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/checkout`, {
     method: 'POST',
     headers: {
       ...authHeaders,
@@ -105,7 +103,7 @@ export async function createCheckoutSession(priceId: string) {
 
 export async function confirmCheckout(sessionId: string) {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/confirm`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/confirm`, {
     method: 'POST',
     headers: {
       ...authHeaders,
@@ -125,7 +123,7 @@ export async function confirmCheckout(sessionId: string) {
 /** Schedules cancellation at the end of the current billing period. */
 export async function cancelSubscription() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/cancel`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/cancel`, {
     method: 'POST',
     headers: authHeaders,
   });
@@ -141,7 +139,7 @@ export async function cancelSubscription() {
 /** Clears a scheduled cancellation so the subscription renews as normal. */
 export async function resumeSubscription() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/resume`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/resume`, {
     method: 'POST',
     headers: authHeaders,
   });
@@ -157,7 +155,7 @@ export async function resumeSubscription() {
 /** Moves an existing subscription to a different price, prorated by Stripe. */
 export async function changePlan(priceId: string) {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/change-plan`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/change-plan`, {
     method: 'POST',
     headers: {
       ...authHeaders,
@@ -179,7 +177,7 @@ export async function getInvoices(
   params: { limit?: number; starting_after?: string | null } = {},
 ): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(
+  const response = await authedFetch(
     `${BACKEND_URL}/api/v1/billing/invoices${query(params)}`,
     { headers: authHeaders },
   );
@@ -193,7 +191,7 @@ export async function getInvoices(
 
 export async function getPaymentMethod() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/payment-method`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/payment-method`, {
     headers: authHeaders,
   });
 
@@ -206,7 +204,7 @@ export async function getPaymentMethod() {
 
 export async function getUsage() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/usage`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/usage`, {
     headers: authHeaders,
   });
 
@@ -219,7 +217,7 @@ export async function getUsage() {
 
 export async function openCustomerPortal() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/billing/portal`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/portal`, {
     method: 'POST',
     headers: authHeaders,
   });
@@ -234,7 +232,7 @@ export async function openCustomerPortal() {
 
 export async function getDashboardStats() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/dashboard/stats`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/dashboard/stats`, {
     headers: authHeaders,
   });
 
@@ -253,7 +251,7 @@ export async function getReadingSessions(
   params: { limit?: number; offset?: number } = {},
 ): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(
+  const response = await authedFetch(
     `${BACKEND_URL}/api/v1/dashboard/sessions${query(params)}`,
     { headers: authHeaders },
   );
@@ -267,7 +265,7 @@ export async function getReadingSessions(
 
 export async function getProfile() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/profile`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/profile`, {
     headers: authHeaders,
   });
 
@@ -281,7 +279,7 @@ export async function getProfile() {
 
 export async function updateProfile(update: Record<string, unknown>) {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/profile`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/profile`, {
     method: 'PATCH',
     headers: {
       ...authHeaders,
@@ -301,7 +299,7 @@ export async function updateProfile(update: Record<string, unknown>) {
 /** Permanently deletes the account: Stripe subscription, local rows, auth user. */
 export async function deleteAccount() {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/auth/account`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/auth/account`, {
     method: 'DELETE',
     headers: authHeaders,
   });
@@ -326,7 +324,7 @@ export async function createSupportTicket(ticket: {
   diagnostics?: Record<string, unknown> | null;
 }) {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(`${BACKEND_URL}/api/v1/support/tickets`, {
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/support/tickets`, {
     method: 'POST',
     headers: {
       ...authHeaders,
@@ -347,7 +345,7 @@ export async function getMyTickets(
   params: { limit?: number; offset?: number } = {},
 ): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(
+  const response = await authedFetch(
     `${BACKEND_URL}/api/v1/support/tickets${query(params)}`,
     { headers: authHeaders },
   );
@@ -363,7 +361,7 @@ export async function getProfileHistory(
   params: { limit?: number; offset?: number } = {},
 ): Promise<Paged<any>> {
   const authHeaders = await getAuthHeader();
-  const response = await fetch(
+  const response = await authedFetch(
     `${BACKEND_URL}/api/v1/profile/history${query(params)}`,
     { headers: authHeaders },
   );

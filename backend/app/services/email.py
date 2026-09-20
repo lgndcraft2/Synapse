@@ -194,3 +194,63 @@ async def send_ticket_confirmation(
         html=html,
         reply_to=settings.SUPPORT_EMAIL,
     )
+
+
+# ── Authentication emails ─────────────────────────────────────────
+# Both of these are the *only* way a user can complete the flow they start, so
+# unlike ticket mail they are not best-effort: the callers log at ERROR when
+# is_configured() is False, because a silently undelivered reset link looks
+# identical to a working one from the user's side.
+
+async def send_verification_email(to: str, verify_url: str) -> bool:
+    """Confirm ownership of the address before the account can sign in."""
+    text = (
+        "Confirm your email to finish setting up Synapse.\n\n"
+        f"{verify_url}\n\n"
+        "This link expires in 24 hours. If you didn't create a Synapse "
+        "account, you can ignore this email."
+    )
+    html = _wrap(
+        "Confirm your email",
+        f"""
+  <p style="margin:0 0 20px">Confirm your address to finish setting up your Synapse account.</p>
+  <p style="margin:0 0 20px">
+    <a href="{escape(verify_url)}"
+       style="display:inline-block;background:#004635;color:#fff;text-decoration:none;
+              padding:12px 20px;border-radius:8px;font-weight:600">Confirm email</a>
+  </p>
+  <p style="margin:0 0 8px;font-size:13px;color:#4a4a45">
+    This link expires in 24 hours. If you didn't create a Synapse account, ignore this email.
+  </p>""",
+    )
+    return await send_email(to, "Confirm your Synapse email", text, html)
+
+
+async def send_password_reset_email(to: str, reset_url: str) -> bool:
+    """
+    Reset link.
+
+    Sent only to addresses that actually have an account, but the endpoint
+    that triggers it always reports success either way — otherwise the
+    response itself becomes an account-existence oracle.
+    """
+    text = (
+        "Reset your Synapse password.\n\n"
+        f"{reset_url}\n\n"
+        "This link expires in 1 hour and can only be used once. If you didn't "
+        "request this, your password is unchanged and no action is needed."
+    )
+    html = _wrap(
+        "Reset your password",
+        f"""
+  <p style="margin:0 0 20px">Choose a new password for your Synapse account.</p>
+  <p style="margin:0 0 20px">
+    <a href="{escape(reset_url)}"
+       style="display:inline-block;background:#004635;color:#fff;text-decoration:none;
+              padding:12px 20px;border-radius:8px;font-weight:600">Reset password</a>
+  </p>
+  <p style="margin:0 0 8px;font-size:13px;color:#4a4a45">
+    Expires in 1 hour, single use. If you didn't request this, your password is unchanged.
+  </p>""",
+    )
+    return await send_email(to, "Reset your Synapse password", text, html)

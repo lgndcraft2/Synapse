@@ -17,7 +17,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { getSession, subscribeAuth } from './lib/auth';
 import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
 import ConfigBanner from './component/ConfigBanner';
 import { BrandLockup } from './component/Brand';
@@ -48,12 +48,6 @@ const howItWorks = [
   },
 ];
 
-const stats = [
-  ['1.2B', 'Neurodivergent people worldwide'],
-  ['$58B', 'Global Accessibility Market'],
-  ['1 in 5', 'People with reading differences'],
-  ['$4.8B', 'EdTech Segment Growth'],
-];
 
 
 const faqs = [
@@ -128,20 +122,15 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(Boolean(session));
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(Boolean(session));
-    });
-    return () => subscription.unsubscribe();
+    setIsLoggedIn(Boolean(getSession()));
+    return subscribeAuth((session) => setIsLoggedIn(Boolean(session)));
   }, []);
 
   // Send everyone to /billing to review the order before Stripe. Signed-out
   // visitors sign up first and land back on the same plan.
   async function handleUpgrade(tier: string) {
     const target = `/billing?plan=${tier}`;
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = getSession();
     window.location.href = session
       ? target
       : `/auth?tab=signup&next=${encodeURIComponent(target)}`;

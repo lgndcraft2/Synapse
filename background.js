@@ -42,49 +42,79 @@ async function getClientFingerprint() {
   return fingerprint;
 }
 
-// ── Supabase session (handed off from the dashboard) ─────────────
+// ── Synapse session (handed off from the dashboard) ──────────────
 // The dashboard pushes the logged-in session here via onMessageExternal, so the
-// user never has to paste a token. The extension refreshes the token itself.
+// user never has to paste a token. The extension refreshes the token itself
+// against our own API — it no longer receives any API key.
+
+const SESSION_KEY = "synapseSession";
 
 async function getStoredSession() {
-  const { supabaseSession } = await storageGet("supabaseSession");
-  return supabaseSession || null;
+  const stored = await storageGet(SESSION_KEY);
+  return stored[SESSION_KEY] || null;
 }
 
-async function refreshSupabaseSession(session) {
-  const url = normalizeBackendBaseUrl(session.supabase_url);
-  if (!url || !session.refresh_token || !session.supabase_anon_key) return null;
+async function clearStoredSession() {
+  return new Promise(resolve => chrome.storage.local.remove(SESSION_KEY, resolve));
+}
+
+// Only one refresh may be in flight at a time. The backend rotates the refresh
+// token on every use and treats a second presentation of a spent token as
+// theft, revoking the whole session family — and several callers below reach
+// getValidAccessToken() concurrently. Without this mutex two of them would
+// present the same token and sign the user out for no reason.
+let refreshInFlight = null;
+
+async function doRefresh(session) {
+  const url = normalizeBackendBaseUrl(session.api_url);
+  if (!url || !session.refresh_token) return null;
 
   let response;
   try {
-    response = await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
+    response = await fetch(`${url}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: session.supabase_anon_key
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: session.refresh_token })
     });
   } catch {
+    // Network failure: the session may still be good, so keep it and retry later.
     return null;
   }
 
+  if (response.status === 401 || response.status === 403) {
+    // Terminal. Previously this kept the dead session forever, so the popup
+    // showed "not signed in" while storage still held it — and under the new
+    // backend every retry of a revoked token looks like an attack.
+    await clearStoredSession();
+    return null;
+  }
   if (!response.ok) return null;
+
   const data = await response.json().catch(() => null);
-  if (!data?.access_token) return null;
+  if (!data?.access_token || !data?.refresh_token) return null;
 
   const expiresAt = data.expires_at
     ? data.expires_at
-    : Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
+    : Math.floor(Date.now() / 1000) + (data.expires_in || 900);
 
   const updated = {
     ...session,
     access_token: data.access_token,
-    refresh_token: data.refresh_token || session.refresh_token,
+    // Always the new one. The old `data.refresh_token || session.refresh_token`
+    // fallback would silently re-present a spent token, which is exactly what
+    // reuse detection revokes the family for.
+    refresh_token: data.refresh_token,
     expires_at: expiresAt
   };
-  await storageSet({ supabaseSession: updated });
+  await storageSet({ [SESSION_KEY]: updated });
   return updated;
+}
+
+function refreshSession(session) {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh(session).finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
 }
 
 async function getValidAccessToken() {
@@ -92,10 +122,12 @@ async function getValidAccessToken() {
   if (session?.access_token) {
     const now = Math.floor(Date.now() / 1000);
     // Refresh a minute before expiry to avoid using a just-expired token.
-    if (!session.expires_at || session.expires_at - 60 > now) {
+    // A missing expires_at counts as expired: treating it as "never expires"
+    // was a Supabase-era accommodation that left dead tokens in use.
+    if (session.expires_at && session.expires_at - 60 > now) {
       return session.access_token;
     }
-    const refreshed = await refreshSupabaseSession(session);
+    const refreshed = await refreshSession(session);
     if (refreshed?.access_token) return refreshed.access_token;
     return null; // refresh failed — fall back to anonymous behaviour
   }
@@ -121,9 +153,12 @@ async function getAuthStatus() {
   const token = await getValidAccessToken();
   if (!token) return { authenticated: false };
   const payload = decodeJwtPayload(token) || {};
+  // Our tokens carry flat `name` and `email` claims. The user_metadata
+  // fallbacks are Supabase's envelope shape, kept only so an extension build
+  // that ships ahead of the backend still renders a name instead of blank.
   const meta = payload.user_metadata || {};
   const email = payload.email || meta.email || null;
-  const name = meta.full_name || meta.name || (email ? email.split("@")[0] : null);
+  const name = payload.name || meta.full_name || meta.name || (email ? email.split("@")[0] : null);
   return { authenticated: true, name, email };
 }
 
@@ -561,7 +596,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "SYNAPSE_SESSION") {
-    if (!msg.access_token || !msg.refresh_token || !msg.supabase_url || !msg.supabase_anon_key) {
+    if (!msg.access_token || !msg.refresh_token || !msg.api_url) {
       sendResponse({ ok: false, error: "Incomplete session payload." });
       return true;
     }
@@ -569,10 +604,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       access_token: msg.access_token,
       refresh_token: msg.refresh_token,
       expires_at: msg.expires_at || null,
-      supabase_url: msg.supabase_url,
-      supabase_anon_key: msg.supabase_anon_key
+      api_url: msg.api_url
     };
-    storageSet({ supabaseSession: session })
+    // The handoff also configures which API to talk to. providerConfig
+    // .backendBaseUrl is read in six places but was never written by anything
+    // — there is no settings UI for it — so every install was falling back to
+    // the localhost default. Taking it from the dashboard fixes that.
+    storageGet("providerConfig")
+      .then(({ providerConfig }) => storageSet({
+        providerConfig: { ...defaultProviderConfig, ...providerConfig, backendBaseUrl: msg.api_url }
+      }))
+      .then(() => storageSet({ [SESSION_KEY]: session }))
       .then(() => fetchAndStoreProfile())
       .then(() => sendResponse({ ok: true }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
@@ -580,7 +622,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "SYNAPSE_LOGOUT") {
-    chrome.storage.local.remove("supabaseSession", () => sendResponse({ ok: true }));
+    // Also drop the cached profile — it belongs to the user signing out, and
+    // previously survived to greet whoever signed in next.
+    chrome.storage.local.remove([SESSION_KEY, "cognitiveProfile"], () => sendResponse({ ok: true }));
     return true;
   }
 
@@ -591,5 +635,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(details => {
   if (details.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+  }
+  if (details.reason === "update") {
+    // Discard any pre-migration Supabase session rather than translating it.
+    // Its access token is unverifiable by our backend and its refresh token is
+    // worthless against us, so the only honest outcome is one sign-out. The
+    // dashboard re-arms the extension on the next visit.
+    chrome.storage.local.remove("supabaseSession");
   }
 });

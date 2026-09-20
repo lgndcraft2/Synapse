@@ -151,7 +151,7 @@ async def _enforce_rate_limit(
     if tracking.lifetime_requests >= settings.FREE_LIFETIME_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Free tier lifetime limit reached.",
+            detail="Free tier lifetime limit reached.",
         )
 
     # Increment lifetime count (atomic update)
@@ -181,16 +181,6 @@ async def _enforce_rate_limit(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Unusual usage pattern detected. Please contact support.",
         )
-
-
-async def get_cache(key: str) -> str | None:
-    """Get a value from Redis cache."""
-    return await redis_client.get(key)
-
-
-async def set_cache(key: str, value: str, ttl: int = 300) -> None:
-    """Set a value in Redis cache with TTL in seconds."""
-    await redis_client.set(key, value, ex=ttl)
 
 
 async def _active_paid_plan(db: AsyncSession, user: User) -> str | None:

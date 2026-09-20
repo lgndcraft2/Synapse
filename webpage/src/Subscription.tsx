@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
+import { requireAuth } from './lib/auth';
 import {
   cancelSubscription,
   changePlan,
@@ -137,14 +137,8 @@ export default function Subscription() {
 
   useEffect(() => {
     async function load() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.href = `/auth?tab=login&next=${next}`;
-        return;
-      }
+      const user = await requireAuth(window.location.pathname);
+      if (!user) return;
       setUser(user);
       setCheckedAuth(true);
 
