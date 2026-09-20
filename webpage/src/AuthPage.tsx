@@ -166,10 +166,17 @@ function AuthPage() {
       };
     }
     if (activeTab === 'verify') {
-      return {
-        title: 'Confirming your email.',
-        body: 'One moment while we finish setting up your account.',
-      };
+      // The heading has to agree with the body below it: without a token there
+      // is nothing to confirm, and promising "one moment" would be a lie.
+      return getParam('token')
+        ? {
+            title: 'Confirming your email.',
+            body: 'One moment while we finish setting up your account.',
+          }
+        : {
+            title: 'That link looks incomplete.',
+            body: 'We could not read a confirmation code from this link.',
+          };
     }
     return {
       title: 'Welcome back.',
@@ -305,17 +312,33 @@ function AuthPage() {
           {successMessage ? (
              <div className="auth-success-state">
                 {pendingEmail && (
-                  <button className="button button-primary w-full" type="button" onClick={handleResend} style={{ marginBottom: 12 }}>
+                  <button className="button button-primary" type="button" onClick={handleResend}>
                     Resend confirmation email
                   </button>
                 )}
-                <button className="button button-secondary w-full" onClick={() => { setSuccessMessage(null); setPendingEmail(null); setActiveTab('login'); }}>
+                <button className="button button-secondary" onClick={() => { setSuccessMessage(null); setPendingEmail(null); setActiveTab('login'); }}>
                   Return to Login
                 </button>
              </div>
           ) : activeTab === 'verify' ? (
             <div className="auth-success-state">
-              <p className="field-hint">Confirming your email address…</p>
+              {getParam('token') ? (
+                // The heading and subtitle above already say what is happening,
+                // so repeating it here was pure duplication.
+                <p className="auth-busy" role="status">Confirming your email address…</p>
+              ) : (
+                // Reachable by editing the URL or following a truncated link.
+                // Previously this sat on "Confirming…" forever, because the
+                // effect that verifies only fires when a token is present.
+                <>
+                  <p className="field-hint">
+                    Sign in to have a new confirmation email sent.
+                  </p>
+                  <button className="button button-secondary" onClick={() => switchTab('login')}>
+                    Return to Login
+                  </button>
+                </>
+              )}
             </div>
           ) : activeTab === 'new-password' ? (
             <form className="auth-form" onSubmit={handleSubmit}>
@@ -450,7 +473,7 @@ function AuthPage() {
             </form>
           )}
 
-          {isTabbed && (
+          {isTabbed && !successMessage && (
             <>
               <div className="auth-divider">
                 <span />

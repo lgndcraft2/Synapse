@@ -54,12 +54,27 @@ function injectStyles() {
   if (document.getElementById('synapse-styles')) return;
   const s = document.createElement('style');
   s.id = 'synapse-styles';
+  // Our own UI roots. `.synapse-section-wrap` is deliberately absent from the
+  // descendant rule below: it wraps the HOST page's own content, so forcing a
+  // box model onto its children would change the layout of the very page we
+  // are trying to leave intact.
+  const OWN_UI = '#synapse-fab,#synapse-panel,#synapse-dock,.synapse-card,.synapse-badge,#synapse-fullpage-bar';
+
   s.textContent = `
 #synapse-fab,#synapse-panel,#synapse-dock,
 .synapse-card,.synapse-badge,.synapse-section-wrap,
 #synapse-fullpage-bar{all:initial;box-sizing:border-box;
 font-family:-apple-system,'Segoe UI',system-ui,sans-serif}
-*,*::before,*::after{box-sizing:inherit}
+
+/* Descendants of our own widgets inherit border-box from the roots above.
+   This selector used to be a bare \`*,*::before,*::after\` — unscoped, so it
+   hit every element on every page we run on, forcing each one to inherit
+   box-sizing from <html> (content-box) and silently discarding whatever
+   border-box the host site had set. Any \`width:100%\` element with padding
+   then overflowed its container by exactly that padding. */
+:is(${OWN_UI}) *,
+:is(${OWN_UI}) *::before,
+:is(${OWN_UI}) *::after{box-sizing:inherit}
 
 /* FAB */
 #synapse-fab{position:fixed!important;bottom:28px!important;right:28px!important;

@@ -1590,8 +1590,11 @@ h2 {
 .auth-shell {
   position: relative;
   z-index: 1;
+  /* 100% resolves against .auth-page's content box, which already excludes its
+     20px side padding AND the scrollbar. The previous `max-width: calc(100vw
+     - 40px)` used 100vw, which on desktop includes the scrollbar width, so it
+     could compute wider than the space actually available. */
   width: min(100%, 620px);
-  max-width: calc(100vw - 40px);
   border: 1px solid var(--tertiary);
   background: var(--surface-low);
 }
@@ -1814,6 +1817,51 @@ h2 {
 .auth-submit .app-icon {
   width: 18px;
   height: 18px;
+}
+
+.auth-success-state {
+  /* This class was referenced by AuthPage but never defined, so the panel's
+     buttons fell back to the .button inline-flex default and sat side by side
+     on desktop. They also carried `w-full`, which is scoped to `.dash` further
+     down this file and therefore does nothing here. Both are fixed by owning
+     the layout instead of relying on a utility class that is out of scope. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.auth-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: color-mix(in srgb, var(--on-surface) 70%, transparent);
+  font-size: 14px;
+}
+
+.auth-busy::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--tertiary) 35%, transparent);
+  border-top-color: var(--primary);
+  animation: auth-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-busy::before { animation-duration: 2.4s; }
+}
+
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+.auth-success-state > .button {
+  width: 100%;
+  min-width: 0;
 }
 
 .auth-divider {

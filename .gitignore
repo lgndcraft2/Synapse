@@ -12,3 +12,5 @@
 /tests/.env.backup
 /tests/*.log
 playwright.config.mjs
+.neon
+.env.local
