@@ -254,7 +254,7 @@ export default function Dashboard() {
             {/* Welcome */}
             <section>
               <h1 className="font-serif font-bold mb-4" style={{ fontSize: 48, lineHeight: 1.1, letterSpacing: "-0.02em", color: "#1b1c1c" }}>
-                Welcome back, {user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Alex'}.
+                Welcome back, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Alex'}.
               </h1>
               <p className="text-lg" style={{ lineHeight: 1.6, color: "#5e5f5b", maxWidth: 600 }}>
                 Here is your cognitive activity summary for this week. We've made a few adjustments to your profile to optimize reading flow.
