@@ -1,5 +1,6 @@
 import logging
 import sys
+import socket
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -160,6 +161,20 @@ async def handle_database_error(request: Request, exc: SQLAlchemyError):
         response["cause"] = cause_name or exc.__class__.__name__
 
     return JSONResponse(status_code=status_code, content=response)
+
+
+@app.exception_handler(socket.gaierror)
+async def handle_dns_resolution_error(request: Request, exc: socket.gaierror):
+    logger = logging.getLogger("synapse")
+    logger.error("Database host resolution failed during %s %s", request.method, request.url.path)
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "code": "database_unavailable",
+            "detail": "The backend database host could not be resolved. Please try again later.",
+        },
+    )
 
 # 15MB limit to allow for larger base64 docs but prevent OOM
 app.add_middleware(RequestSizeLimitMiddleware, max_size=15 * 1024 * 1024)
