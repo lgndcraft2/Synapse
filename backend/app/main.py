@@ -2,8 +2,11 @@ import logging
 import sys
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy.exc import DBAPIError, OperationalError, ProgrammingError, SQLAlchemyError
 from app.core.config import settings
 
 # ── Logging ───────────────────────────────────────────────────────
@@ -51,6 +54,112 @@ app = FastAPI(
     docs_url="/docs" if settings.APP_ENV == "development" else None,
     redoc_url=None,
 )
+
+
+def _friendly_validation_message(error: dict) -> str:
+    location = error.get("loc", [])
+    field = ".".join(str(part) for part in location if part != "body") or "request"
+    error_type = error.get("type", "")
+    context = error.get("ctx") or {}
+    input_value = error.get("input")
+
+    if error_type == "string_too_short":
+        min_length = context.get("min_length")
+        if min_length:
+            return f"{field} must be at least {min_length} characters long."
+        return f"{field} is too short."
+
+    if error_type == "string_too_long":
+        max_length = context.get("max_length")
+        if max_length:
+            return f"{field} must be at most {max_length} characters long."
+        return f"{field} is too long."
+
+    if error_type == "missing":
+        return f"{field} is required."
+
+    if error_type == "value_error.email":
+        return f"{field} must be a valid email address."
+
+    if error_type == "int_parsing":
+        return f"{field} must be a whole number."
+
+    if error_type == "greater_than_equal":
+        minimum = context.get("ge")
+        if minimum is not None:
+            return f"{field} must be greater than or equal to {minimum}."
+
+    if error_type == "less_than_equal":
+        maximum = context.get("le")
+        if maximum is not None:
+            return f"{field} must be less than or equal to {maximum}."
+
+    if input_value is not None:
+        return f"{field} is invalid."
+
+    message = error.get("msg")
+    if message:
+        return f"{field}: {message}"
+    return f"{field} is invalid."
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    messages = [_friendly_validation_message(error) for error in errors]
+    detail = messages[0] if len(messages) == 1 else "; ".join(messages)
+
+    response = {
+        "code": "validation_error",
+        "detail": detail,
+    }
+    if settings.APP_ENV == "development":
+        response["errors"] = errors
+
+    return JSONResponse(status_code=422, content=response)
+
+
+@app.exception_handler(SQLAlchemyError)
+async def handle_database_error(request: Request, exc: SQLAlchemyError):
+    logger = logging.getLogger("synapse")
+
+    code = "database_error"
+    detail = "Something went wrong while reading or writing data."
+    status_code = 500
+
+    cause = exc.__cause__ or getattr(exc, "orig", None)
+    cause_name = cause.__class__.__name__ if cause is not None else ""
+    cause_text = str(cause) if cause is not None else ""
+
+    if isinstance(exc, OperationalError) or "could not connect" in cause_text.lower():
+        code = "database_unavailable"
+        detail = "The backend database is temporarily unavailable. Please try again."
+        status_code = 503
+    elif isinstance(exc, (ProgrammingError, DBAPIError)) and (
+        cause_name == "UndefinedColumnError"
+        or cause_name == "UndefinedTableError"
+        or "does not exist" in cause_text.lower()
+    ):
+        code = "schema_mismatch"
+        detail = (
+            "The backend schema is out of date for this request. "
+            "Please run the latest migrations."
+        )
+        status_code = 503
+    else:
+        detail = "The database request failed. Please try again."
+
+    log_message = f"Database error during {request.method} {request.url.path} ({code})"
+    if settings.APP_ENV == "development":
+        logger.exception(log_message)
+    else:
+        logger.error(log_message)
+
+    response = {"detail": detail, "code": code}
+    if settings.APP_ENV == "development":
+        response["cause"] = cause_name or exc.__class__.__name__
+
+    return JSONResponse(status_code=status_code, content=response)
 
 # 15MB limit to allow for larger base64 docs but prevent OOM
 app.add_middleware(RequestSizeLimitMiddleware, max_size=15 * 1024 * 1024)
