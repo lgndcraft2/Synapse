@@ -1637,6 +1637,7 @@ h2 {
   gap: 18px;
   width: 100%;
   min-width: 0;
+  align-items: stretch;
   padding: 28px 30px 30px;
 }
 
@@ -1664,6 +1665,7 @@ h2 {
   gap: 13px;
   width: 100%;
   min-width: 0;
+  justify-items: stretch;
 }
 
 .auth-form label {
@@ -1672,11 +1674,12 @@ h2 {
   gap: 6px;
   width: 100%;
   min-width: 0;
+  justify-items: stretch;
 }
 
 .auth-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 13px;
   width: 100%;
   min-width: 0;
@@ -1753,10 +1756,11 @@ h2 {
   height: 16px;
 }
 
-.auth-form input {
+.auth-input {
   display: block;
   width: 100%;
-  max-width: 100%;
+  inline-size: 100%;
+  justify-self: stretch;
   min-width: 0;
   border: 1px solid var(--tertiary);
   border-radius: 2px;
@@ -1767,7 +1771,7 @@ h2 {
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.auth-form input:focus {
+.auth-input:focus {
   border-color: var(--primary);
   box-shadow: inset 2px 2px 0 rgba(61, 61, 56, 0.1);
 }
@@ -1779,7 +1783,7 @@ h2 {
   width: 100%;
 }
 
-.auth-input-wrap input {
+.auth-input-wrap > .auth-input {
   grid-area: 1 / 1;
   padding-right: 44px;
 }

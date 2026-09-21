@@ -346,6 +346,7 @@ function AuthPage() {
                 <span>New password</span>
                 <div className="auth-input-wrap">
                   <input
+                    className="auth-input"
                     id="password-new"
                     name="password"
                     type={visiblePasswords.signup ? 'text' : 'password'}
@@ -360,6 +361,7 @@ function AuthPage() {
                 <span>Confirm new password</span>
                 <div className="auth-input-wrap">
                   <input
+                    className="auth-input"
                     id="password-new-confirm"
                     name="passwordConfirm"
                     type={visiblePasswords.confirm ? 'text' : 'password'}
@@ -378,7 +380,7 @@ function AuthPage() {
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 <span>Email Address</span>
-                <input id="email-reset" name="email" type="email" autoComplete="email" placeholder="name@example.com" required />
+                <input className="auth-input" id="email-reset" name="email" type="email" autoComplete="email" placeholder="name@example.com" required />
               </label>
               <button
                 className="button button-primary auth-submit"
@@ -400,17 +402,18 @@ function AuthPage() {
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 <span>Name</span>
-                <input id="name" name="name" type="text" autoComplete="name" required />
+                <input className="auth-input" id="name" name="name" type="text" autoComplete="name" required />
               </label>
               <label>
                 <span>Email</span>
-                <input id="email-signup" name="email" type="email" autoComplete="email" required />
+                <input className="auth-input" id="email-signup" name="email" type="email" autoComplete="email" required />
               </label>
               <div className="auth-field-row">
                 <label>
                   <span>Password</span>
                   <div className="auth-input-wrap">
                     <input
+                      className="auth-input"
                       id="password-signup"
                       name="password"
                       type={visiblePasswords.signup ? 'text' : 'password'}
@@ -424,6 +427,7 @@ function AuthPage() {
                   <span>Confirm Password</span>
                   <div className="auth-input-wrap">
                     <input
+                      className="auth-input"
                       id="password-confirm"
                       name="passwordConfirm"
                       type={visiblePasswords.confirm ? 'text' : 'password'}
@@ -442,7 +446,7 @@ function AuthPage() {
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 <span>Email</span>
-                <input id="email-login" name="email" type="email" autoComplete="email" required />
+                <input className="auth-input" id="email-login" name="email" type="email" autoComplete="email" required />
               </label>
               <label>
                 <span className="auth-label-row">
@@ -453,6 +457,7 @@ function AuthPage() {
                 </span>
                 <div className="auth-input-wrap">
                   <input
+                    className="auth-input"
                     id="password-login"
                     name="password"
                     type={visiblePasswords.login ? 'text' : 'password'}

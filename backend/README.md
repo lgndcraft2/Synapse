@@ -72,6 +72,12 @@ uvicorn app.main:app --reload
 
 Run those commands from the `backend/` directory.
 
+Before starting the app, replace `APP_SECRET_KEY` in `.env` with a freshly generated secret. A quick option is:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
 ## Required Environment
 
 See `.env.example` for the full list. The main groups are:
