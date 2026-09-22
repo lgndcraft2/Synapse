@@ -1586,14 +1586,9 @@ h2 {
   z-index: 1;
 }
 
-/* The lockup is dark green on transparent, so it sits on a light chip. */
+/* The light lockup (white wordmark) sits directly on the green. */
 .auth-aside-brand {
   align-self: flex-start;
-  border: 1px solid var(--tertiary);
-  border-radius: 2px;
-  background: var(--surface-lowest);
-  padding: 10px 14px;
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
 }
 
 .auth-aside-body {

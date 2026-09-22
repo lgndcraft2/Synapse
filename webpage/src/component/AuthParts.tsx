@@ -148,7 +148,7 @@ const PROMISES = ['On-device profile', 'Adaptive layouts', 'No data sold'];
 export function BrandPanel() {
   return (
     <aside className="auth-aside">
-      <BrandLockup href="/" height={30} className="auth-aside-brand" label="Back to Synapse home" />
+      <BrandLockup href="/" height={36} variant="light" className="auth-aside-brand" label="Back to Synapse home" />
 
       <div className="auth-aside-body">
         {/* A styled paragraph, not a heading: it precedes the page's h1 in
