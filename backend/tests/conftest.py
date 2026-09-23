@@ -24,6 +24,10 @@ os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault(
     "GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback"
 )
+# Tests replace the client with FakeRedis below, but settings are constructed
+# during module import and still require syntactically valid placeholders.
+os.environ.setdefault("UPSTASH_REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("UPSTASH_REDIS_TOKEN", "test-redis-token")
 
 import pytest
 import pytest_asyncio

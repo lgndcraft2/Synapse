@@ -126,8 +126,9 @@ Important backend environment values:
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWT_SECRET`
-- `UPSTASH_REDIS_URL`
-- `UPSTASH_REDIS_TOKEN`
+- `UPSTASH_REDIS_URL` (supports the Upstash REST `https://` endpoint)
+- `UPSTASH_REDIS_TOKEN` (the matching Upstash REST token)
+- `ADMIN_EMAILS` (comma-separated emails allowed to access `/observer`)
 - `GEMINI_KEY_1` through `GEMINI_KEY_5`
 - `ANTHROPIC_API_KEY`
 - `STRIPE_SECRET_KEY`

@@ -157,9 +157,9 @@ function App() {
             )}
             <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
-          <button className="icon-button menu-button" aria-label="Open navigation">
+          {/* <button className="icon-button menu-button" aria-label="Open navigation">
             <Icon name="menu" />
-          </button>
+          </button> */}
         </div>
       </header>
 

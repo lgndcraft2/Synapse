@@ -37,9 +37,15 @@ class Settings(BaseSettings):
     # bucket; 0 means "trust request.client.host directly" (local dev).
     TRUSTED_PROXY_COUNT: int = 0
 
-    # Redis
+    # Redis. Accepts either Upstash REST credentials (https:// URL + REST
+    # token) or a native redis:// / rediss:// connection string.
     UPSTASH_REDIS_URL: str
     UPSTASH_REDIS_TOKEN: str
+
+    # Comma-separated email addresses permitted to view the internal observer
+    # panel. Keeping this outside the database means granting access does not
+    # require a schema migration or expose an admin role to regular clients.
+    ADMIN_EMAILS: str = ""
 
     # AI — free tier Gemini pool
     GEMINI_KEY_1: str
@@ -50,9 +56,6 @@ class Settings(BaseSettings):
 
     # AI — premium Claude
     ANTHROPIC_API_KEY: str
-
-    # AI — YarnGPT (optional; reserved for future TTS integration)
-    YARNGPT_API_KEY: str = ""
 
     # Stripe — paid tier price IDs (must match the frontend VITE_STRIPE_* values)
     STRIPE_SECRET_KEY: str
@@ -190,6 +193,14 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+
+    @property
+    def admin_emails(self) -> set[str]:
+        return {
+            email.strip().lower()
+            for email in self.ADMIN_EMAILS.split(",")
+            if email.strip()
+        }
 
     @property
     def allowed_origin_regex(self) -> str | None:

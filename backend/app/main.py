@@ -28,6 +28,7 @@ from app.api.routes.reformat import router as reformat_router
 from app.api.routes.billing import router as billing_router, webhook_router
 from app.api.routes.profile import profile_router, feedback_router, stats_router
 from app.api.routes.support import router as support_router
+from app.api.routes.observer import router as observer_router
 
 # ── Request Size Limit Middleware ─────────────────────────────────
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -172,7 +173,7 @@ async def handle_dns_resolution_error(request: Request, exc: socket.gaierror):
         status_code=503,
         content={
             "code": "database_unavailable",
-            "detail": "The backend database host could not be resolved. Please try again later.",
+            "detail": "Synapse is temporarily unable to reach its data service. Please check your connection and try again shortly.",
         },
     )
 
@@ -204,6 +205,7 @@ app.include_router(webhook_router,   prefix="/api/v1")
 app.include_router(profile_router,   prefix="/api/v1")
 app.include_router(feedback_router,  prefix="/api/v1")
 app.include_router(support_router,   prefix="/api/v1")
+app.include_router(observer_router,  prefix="/api/v1")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os

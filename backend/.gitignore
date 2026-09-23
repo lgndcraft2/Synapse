@@ -3,3 +3,4 @@
 /__pycache__
 /app/__pycache__
 .env.bak-*
+/.pytest_cache

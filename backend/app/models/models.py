@@ -6,6 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from app.core.config import settings
 from app.db.database import Base
 
 
@@ -62,6 +63,11 @@ class User(Base):
         if self.google_id:
             return "google"
         return "password"
+
+    @property
+    def is_observer(self) -> bool:
+        """Whether this account may view the internal aggregate observer."""
+        return self.email.lower() in settings.admin_emails
 
     profile:         Mapped["CognitiveProfile"]  = relationship("CognitiveProfile", back_populates="user", uselist=False)
     profile_history: Mapped[list["ProfileHistory"]] = relationship("ProfileHistory", back_populates="user")

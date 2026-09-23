@@ -1,5 +1,6 @@
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
+import httpx
 from fastapi import HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -12,15 +13,86 @@ import logging
 logger = logging.getLogger("synapse.rate_limit")
 
 # ── Redis client (Upstash) ────────────────────────────────────────
-# The Upstash URL uses the rediss:// scheme, which already negotiates TLS.
-# Do NOT pass ssl=True here: on redis-py 5.x it is forwarded to the connection
-# constructor and raises "AbstractConnection.__init__() got an unexpected
-# keyword argument 'ssl'" on the first command.
-redis_client = aioredis.from_url(
-    settings.UPSTASH_REDIS_URL,
-    password=settings.UPSTASH_REDIS_TOKEN,
-    decode_responses=True,
-)
+class UpstashRestRedis:
+    """The small async Redis surface this app needs over Upstash's HTTPS API.
+
+    Upstash's `https://...upstash.io` endpoint is a REST endpoint, not a
+    `redis://` socket URI. It therefore cannot be passed to redis-py. Sending
+    commands as JSON also keeps JSON OAuth handoff payloads out of a URL path.
+    """
+
+    def __init__(self, url: str, token: str, client: httpx.AsyncClient | None = None):
+        self._client = client or httpx.AsyncClient(
+            base_url=url.rstrip("/") + "/",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=httpx.Timeout(5.0, connect=5.0),
+        )
+        self._owns_client = client is None
+
+    async def _command(self, *parts: object):
+        try:
+            response = await self._client.post("", json=list(parts))
+        except httpx.HTTPError as exc:
+            raise RedisError(f"Upstash REST request failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            raise RedisError(f"Upstash REST returned HTTP {response.status_code}")
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RedisError("Upstash REST returned an invalid response") from exc
+
+        if not isinstance(payload, dict):
+            raise RedisError("Upstash REST returned an unexpected response")
+        if payload.get("error"):
+            raise RedisError(f"Upstash REST error: {payload['error']}")
+        return payload.get("result")
+
+    async def get(self, key: str):
+        return await self._command("GET", key)
+
+    async def incr(self, key: str):
+        return int(await self._command("INCR", key))
+
+    async def expire(self, key: str, seconds: int):
+        return int(await self._command("EXPIRE", key, seconds))
+
+    async def ttl(self, key: str):
+        return int(await self._command("TTL", key))
+
+    async def delete(self, key: str):
+        return int(await self._command("DEL", key))
+
+    async def setex(self, key: str, seconds: int, value: str):
+        return await self._command("SETEX", key, seconds, value)
+
+    async def getdel(self, key: str):
+        return await self._command("GETDEL", key)
+
+    async def aclose(self):
+        if self._owns_client:
+            await self._client.aclose()
+
+
+def _create_redis_client():
+    if settings.UPSTASH_REDIS_URL.startswith(("https://", "http://")):
+        return UpstashRestRedis(settings.UPSTASH_REDIS_URL, settings.UPSTASH_REDIS_TOKEN)
+
+    # Native Redis URLs remain supported for local Redis and deployments that
+    # use Upstash's TCP connection string instead of its REST credentials.
+    return aioredis.from_url(
+        settings.UPSTASH_REDIS_URL,
+        password=settings.UPSTASH_REDIS_TOKEN,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        health_check_interval=30,
+        retry_on_timeout=True,
+    )
+
+
+redis_client = _create_redis_client()
 
 
 async def check_rate_limit(

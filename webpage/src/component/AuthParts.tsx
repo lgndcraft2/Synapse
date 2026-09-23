@@ -11,7 +11,7 @@ type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'id'>;
 
 interface FieldProps extends InputProps {
   label: string;
-  hint?: string;
+  hint?: ReactNode;
   /** Sits on the label row, right-aligned — e.g. the "Forgot?" link. */
   action?: ReactNode;
 }
@@ -85,14 +85,16 @@ export function FormError({ children }: { children: ReactNode }) {
 export function SubmitButton({
   busy,
   busyLabel,
+  disabled = false,
   children,
 }: {
   busy: boolean;
   busyLabel: string;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <button className="button button-primary auth-submit" type="submit" disabled={busy} aria-busy={busy}>
+    <button className="button button-primary auth-submit" type="submit" disabled={busy || disabled} aria-busy={busy}>
       {busy ? busyLabel : children}
     </button>
   );

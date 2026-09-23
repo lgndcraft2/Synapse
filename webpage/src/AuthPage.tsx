@@ -185,24 +185,68 @@ function LoginForm({ go, onResend }: { go: Go; onResend: (email: string) => void
 
 function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
   const { busy, error, run } = useSubmit();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const passwordIsValid = password.length >= PASSWORD_MIN && password.length <= PASSWORD_MAX;
+  const passwordsMatch = password.length > 0 && password === passwordConfirm;
+  const canSubmit = name.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch;
+
+  const passwordHint = (
+    <span className={password.length > 0 && !passwordIsValid ? 'auth-hint auth-hint-error' : 'auth-hint'}>
+      {password.length === 0
+        ? PASSWORD_HINT
+        : passwordIsValid
+          ? 'Password length looks good.'
+          : `${Math.max(PASSWORD_MIN - password.length, 0)} more character${PASSWORD_MIN - password.length === 1 ? '' : 's'} needed.`}
+    </span>
+  );
+
+  const confirmHint = passwordConfirm.length > 0 ? (
+    <span className={passwordsMatch ? 'auth-hint auth-hint-success' : 'auth-hint auth-hint-error'}>
+      {passwordsMatch ? 'Passwords match.' : 'Passwords do not match.'}
+    </span>
+  ) : undefined;
 
   function submit(event: FormEvent<HTMLFormElement>) {
-    const get = fields(event);
-    const email = get('email');
+    event.preventDefault();
+    if (!canSubmit || busy) return;
     run(async () => {
-      if (get('password') !== get('passwordConfirm')) throw new Error('Those passwords do not match.');
       // No session comes back by design: the address has to be confirmed
       // before the account can sign in, so free AI usage cannot be farmed with
       // throwaway addresses.
-      await signUp(email, get('password'), get('name').trim() || undefined);
+      await signUp(email, password, name.trim());
       onCreated(email);
     }, 'Could not create your account. Please try again.');
   }
 
   return (
     <form className="auth-form" onSubmit={submit}>
-      <Field label="Name" name="name" type="text" autoComplete="name" maxLength={80} required disabled={busy} />
-      <Field label="Email" name="email" type="email" autoComplete="email" required disabled={busy} />
+      <Field
+        label="Name"
+        name="name"
+        type="text"
+        autoComplete="name"
+        maxLength={80}
+        required
+        disabled={busy}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <Field
+        label="Email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        disabled={busy}
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        aria-invalid={email.length > 0 && !emailIsValid}
+      />
       <div className="auth-field-row">
         <PasswordField
           label="Password"
@@ -210,9 +254,12 @@ function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
           autoComplete="new-password"
           minLength={PASSWORD_MIN}
           maxLength={PASSWORD_MAX}
-          hint={PASSWORD_HINT}
+          hint={passwordHint}
           required
           disabled={busy}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          aria-invalid={password.length > 0 && !passwordIsValid}
         />
         <PasswordField
           label="Confirm password"
@@ -220,12 +267,16 @@ function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
           autoComplete="new-password"
           minLength={PASSWORD_MIN}
           maxLength={PASSWORD_MAX}
+          hint={confirmHint}
           required
           disabled={busy}
+          value={passwordConfirm}
+          onChange={(event) => setPasswordConfirm(event.target.value)}
+          aria-invalid={passwordConfirm.length > 0 && !passwordsMatch}
         />
       </div>
       {error && <FormError>{error}</FormError>}
-      <SubmitButton busy={busy} busyLabel="Creating account…">
+      <SubmitButton busy={busy} busyLabel="Creating account…" disabled={!canSubmit}>
         Create account
       </SubmitButton>
     </form>

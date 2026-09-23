@@ -84,7 +84,8 @@ See `.env.example` for the full list. The main groups are:
 
 - Database: `DATABASE_URL`
 - Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
-- Redis: `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN`
+- Redis: `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN` (the Upstash REST `https://` URL and REST token are supported)
+- Observer panel: `ADMIN_EMAILS` (comma-separated internal operator email addresses)
 - AI: `GEMINI_KEY_1` through `GEMINI_KEY_5`, `ANTHROPIC_API_KEY`
 - Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_THINKER_LITE_PRICE_ID`, `STRIPE_DEEP_THINKER_PRICE_ID`
 - App/CORS: `APP_ENV`, `FRONTEND_URL`, `ALLOWED_ORIGINS`, `ALLOWED_ORIGIN_REGEX`

@@ -8,6 +8,7 @@ import CheckoutResult from './CheckoutResult';
 import Subscription from './Subscription';
 import Profile from './Profile';
 import Support from './Support';
+import Observer from './Observer';
 import { applyRouteMeta, type RouteMeta } from './lib/seo';
 import './styles.css';
 
@@ -84,6 +85,15 @@ const routes: { test: RegExp; component: ComponentType; meta: RouteMeta }[] = [
     meta: {
       title: 'Dashboard - Synapse',
       description: 'Your reading stats, active profile, and adaptation history.',
+      noindex: true,
+    },
+  },
+  {
+    test: /^\/observer/,
+    component: Observer,
+    meta: {
+      title: 'Observer panel - Synapse',
+      description: 'Internal Synapse operations observer.',
       noindex: true,
     },
   },

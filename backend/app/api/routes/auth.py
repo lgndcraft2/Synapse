@@ -175,7 +175,17 @@ async def _consume_email_token(
     return user
 
 
-async def _send_verification(user: User, db: AsyncSession) -> None:
+async def _queue_verification_email(
+    user: User,
+    db: AsyncSession,
+    background: BackgroundTasks,
+) -> None:
+    """Persist a verification token, then send the email after the response.
+
+    Resend can take up to its request timeout to accept a message. Account
+    creation must not make the person wait on that remote service: the token
+    is safely committed with the account, and only the network send is queued.
+    """
     raw = await _issue_email_token(
         db, user, PURPOSE_VERIFY, settings.EMAIL_VERIFY_TTL_SECONDS
     )
@@ -189,7 +199,9 @@ async def _send_verification(user: User, db: AsyncSession) -> None:
             user.email,
         )
         return
-    await email_service.send_verification_email(user.email, url)
+    # Pass plain values, never the ORM user or request-scoped session. Those
+    # have both been released by the time the background task runs.
+    background.add_task(email_service.send_verification_email, user.email, url)
 
 
 # ── Registration and login ────────────────────────────────────────
@@ -225,7 +237,7 @@ async def register(
         if not existing.email_verified:
             # Most likely the same person signing up twice — resend rather
             # than stranding them.
-            await _send_verification(existing, db)
+            await _queue_verification_email(existing, db, background)
         return generic
 
     pw_hash = await hash_password(payload.password)
@@ -236,7 +248,7 @@ async def register(
         password_hash=pw_hash,
         email_verified=False,
     )
-    await _send_verification(user, db)
+    await _queue_verification_email(user, db, background)
     logger.info("Registered account %s pending verification", user.id)
     return generic
 
@@ -368,6 +380,7 @@ async def confirm_email(
 async def resend_verification(
     payload: ForgotPasswordRequest,
     request: Request,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Always 202 — same enumeration reasoning as /password/forgot."""
@@ -380,7 +393,7 @@ async def resend_verification(
 
     user = await find_by_email(db, payload.email)
     if user is not None and not user.email_verified:
-        await _send_verification(user, db)
+        await _queue_verification_email(user, db, background)
     return {"status": "sent"}
 
 
@@ -390,6 +403,7 @@ async def resend_verification(
 async def forgot_password(
     payload: ForgotPasswordRequest,
     request: Request,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -409,7 +423,7 @@ async def forgot_password(
         )
         url = f"{settings.FRONTEND_URL.rstrip('/')}/auth?tab=new-password&token={raw}"
         if email_service.is_configured():
-            await email_service.send_password_reset_email(user.email, url)
+            background.add_task(email_service.send_password_reset_email, user.email, url)
         else:
             logger.error(
                 "RESEND_API_KEY unset — password reset for %s cannot be delivered.",

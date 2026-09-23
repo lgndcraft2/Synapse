@@ -34,6 +34,7 @@ const ACCOUNT_LINKS = [
   { href: '/dashboard', icon: 'space_dashboard', label: 'Dashboard' },
   { href: '/profile', icon: 'person', label: 'Your profile' },
   { href: '/subscription', icon: 'credit_card', label: 'Subscription' },
+  { href: '/observer', icon: 'monitoring', label: 'Observer panel' },
   { href: '/support', icon: 'help', label: 'Help and support' },
 ];
 
@@ -139,7 +140,7 @@ function UserMenu({ user }: { user: any }) {
             {user?.email && <p className="user-popover-email">{user.email}</p>}
           </div>
 
-          {ACCOUNT_LINKS.map((link, index) => {
+          {ACCOUNT_LINKS.filter((link) => link.href !== '/observer' || user?.is_observer).map((link, index) => {
             const current = path === link.href || path.startsWith(`${link.href}/`);
             return (
               <a
@@ -148,7 +149,7 @@ function UserMenu({ user }: { user: any }) {
                 role="menuitem"
                 tabIndex={-1}
                 ref={(el) => {
-                  itemRefs.current[index] = el;
+              itemRefs.current[index] = el;
                 }}
                 className="user-menu-item"
                 aria-current={current ? 'page' : undefined}
@@ -168,7 +169,7 @@ function UserMenu({ user }: { user: any }) {
             role="menuitem"
             tabIndex={-1}
             ref={(el) => {
-              itemRefs.current[ACCOUNT_LINKS.length] = el;
+              itemRefs.current[ACCOUNT_LINKS.filter((link) => link.href !== '/observer' || user?.is_observer).length] = el;
             }}
             className="user-menu-item"
             onClick={signOut}

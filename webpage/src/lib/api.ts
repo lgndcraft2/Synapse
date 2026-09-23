@@ -243,6 +243,21 @@ export async function getDashboardStats() {
   return response.json();
 }
 
+/** Internal aggregate traffic and account metrics for authorised operators. */
+export async function getObserverOverview() {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/observer/overview`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch observer data' }));
+    throw new Error(error.detail || 'Failed to fetch observer data');
+  }
+
+  return response.json();
+}
+
 /**
  * One page of reading sessions. The aggregate /dashboard/stats payload still
  * carries `recent_sessions` for other callers; the dashboard list reads this.

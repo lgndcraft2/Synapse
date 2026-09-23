@@ -54,6 +54,7 @@ class UserOut(BaseModel):
     # this as a two-state flag.
     auth_provider: Literal["password", "google", "both"] = "password"
     email_verified: bool = False
+    is_observer: bool = False
 
     class Config:
         from_attributes = True

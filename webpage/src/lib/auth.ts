@@ -49,6 +49,7 @@ export interface AuthUser {
   created_at: string;
   auth_provider: 'password' | 'google' | 'both';
   email_verified: boolean;
+  is_observer?: boolean;
 }
 
 export interface Session {
@@ -156,7 +157,9 @@ async function request<T>(
     });
   } catch {
     throw new AuthError(
-      `Backend server unreachable. Please ensure the backend is running at ${BACKEND_URL}`,
+      navigator.onLine === false
+        ? "You're offline. Reconnect to the internet and try again."
+        : "We couldn't reach Synapse. Check your connection and try again.",
       'network',
     );
   }
