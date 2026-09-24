@@ -1,14 +1,18 @@
 import logging
 import sys
 import socket
+import asyncio
+from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, OperationalError, ProgrammingError, SQLAlchemyError
 from app.core.config import settings
+from app.db.database import engine
 
 # ── Logging ───────────────────────────────────────────────────────
 # Nothing configured logging before, so the app's own INFO messages went to
@@ -29,6 +33,7 @@ from app.api.routes.billing import router as billing_router, webhook_router
 from app.api.routes.profile import profile_router, feedback_router, stats_router
 from app.api.routes.support import router as support_router
 from app.api.routes.observer import router as observer_router
+from app.services.observability import measure_request
 
 # ── Request Size Limit Middleware ─────────────────────────────────
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -196,6 +201,59 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+async def _warm_database_connection() -> None:
+    """Populate the SQLAlchemy pool before the service accepts traffic.
+
+    Neon can take noticeably longer to establish the first TLS/database
+    connection after an idle period.  Returning this connection to the pool
+    means the first real API request can reuse it instead of making a visitor
+    wait for that handshake.  A failed warm-up is logged but does not prevent
+    the API from coming online: pool_pre_ping will retry on later requests.
+    """
+    logger = logging.getLogger("synapse")
+    started = perf_counter()
+
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except Exception as exc:
+        logger.warning(
+            "Database warm-up unavailable after %.0f ms (%s); requests will retry normally.",
+            (perf_counter() - started) * 1000,
+            type(exc).__name__,
+        )
+    else:
+        logger.info("Database connection warmed in %.0f ms.", (perf_counter() - started) * 1000)
+
+
+@app.on_event("startup")
+async def warm_database_on_startup() -> None:
+    # Bound startup delay so an unavailable database cannot keep a deployment
+    # from becoming reachable forever.  The observed Neon cold connection is
+    # about 21 seconds, so 30 seconds still leaves room for a normal wake-up.
+    try:
+        await asyncio.wait_for(_warm_database_connection(), timeout=30)
+    except asyncio.TimeoutError:
+        logging.getLogger("synapse").warning(
+            "Database warm-up timed out after 30000 ms; requests will retry normally."
+        )
+
+
+@app.on_event("shutdown")
+async def close_database_pool() -> None:
+    await engine.dispose()
+
+
+class ObserverTelemetryMiddleware(BaseHTTPMiddleware):
+    """Collect bounded request latency and traffic samples for operators."""
+
+    async def dispatch(self, request: Request, call_next):
+        return await measure_request(request, call_next)
+
+
+app.add_middleware(ObserverTelemetryMiddleware)
 
 # ── Routes ────────────────────────────────────────────────────────
 app.include_router(auth_router,      prefix="/api/v1")

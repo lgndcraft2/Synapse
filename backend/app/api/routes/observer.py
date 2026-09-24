@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.models import Billing, ReadingSession, SupportTicket, User
+from app.services.observability import telemetry
 
 router = APIRouter(prefix="/observer", tags=["observer"])
 
@@ -86,4 +87,5 @@ async def overview(
             "open_tickets": int(open_tickets),
         },
         "traffic": traffic,
+        "runtime": telemetry.snapshot(),
     }
