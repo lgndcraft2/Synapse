@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # AI — premium Claude
     ANTHROPIC_API_KEY: str
 
+    # Observer cost estimates. Set these to the contracted USD price per one
+    # million tokens for the exact models in use. They default to zero so the
+    # dashboard never presents a guessed price as a financial fact.
+    GEMINI_INPUT_USD_PER_MILLION: float = 0.0
+    GEMINI_OUTPUT_USD_PER_MILLION: float = 0.0
+    CLAUDE_INPUT_USD_PER_MILLION: float = 0.0
+    CLAUDE_OUTPUT_USD_PER_MILLION: float = 0.0
+
     # Stripe — paid tier price IDs (must match the frontend VITE_STRIPE_* values)
     STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str

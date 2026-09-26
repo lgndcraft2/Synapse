@@ -203,6 +203,49 @@ class UsageTracking(Base):
     )
 
 
+class AIUsageEvent(Base):
+    """A content-free record of one primary reformat provider call.
+
+    The observer needs provider usage and cost trends, but must never turn into
+    a second store of the page a person was reading.  Token counts are estimated
+    from character counts here; provider responses and prompts are not retained.
+    """
+    __tablename__ = "ai_usage_events"
+
+    id:                 Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider:           Mapped[str]       = mapped_column(String, nullable=False)
+    operation:          Mapped[str]       = mapped_column(String, nullable=False, default="reformat")
+    input_characters:   Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    output_characters:  Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    duration_ms:        Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    succeeded:          Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True)
+    created_at:         Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("provider IN ('gemini', 'claude')", name="ai_usage_events_provider_check"),
+        Index("ix_ai_usage_events_created_provider", desc("created_at"), "provider"),
+        Index("ix_ai_usage_events_user_created", "user_id", desc("created_at")),
+    )
+
+
+class AdminAuditLog(Base):
+    """An immutable, content-free trail of sensitive observer actions."""
+    __tablename__ = "admin_audit_log"
+
+    id:              Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_user_id:   Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    target_user_id:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action:          Mapped[str]       = mapped_column(String, nullable=False)
+    metadata_json:   Mapped[dict]      = mapped_column(JSONB, nullable=False, default=dict)
+    created_at:      Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_admin_audit_log_created", desc("created_at")),
+        Index("ix_admin_audit_log_target_created", "target_user_id", desc("created_at")),
+    )
+
+
 class SupportTicket(Base):
     """A ticket filed from the /support page.
 

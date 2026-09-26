@@ -120,6 +120,7 @@ function Icon({ name }: { name: keyof typeof icons | string }) {
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     setIsLoggedIn(Boolean(getSession()));
@@ -157,9 +158,26 @@ function App() {
             )}
             <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
-          {/* <button className="icon-button menu-button" aria-label="Open navigation">
+          <button
+            className="icon-button menu-button"
+            type="button"
+            aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="mobile-navigation"
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
             <Icon name="menu" />
-          </button> */}
+          </button>
+          <nav id="mobile-navigation" className={`mobile-nav ${mobileNavOpen ? 'is-open' : ''}`} aria-label="Mobile navigation">
+            {navItems.map((item) => (
+              <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileNavOpen(false)}>
+                {item}
+              </a>
+            ))}
+            <a className="button button-primary" href="/auth?tab=signup" onClick={() => setMobileNavOpen(false)}>
+              Get Extension
+            </a>
+          </nav>
         </div>
       </header>
 

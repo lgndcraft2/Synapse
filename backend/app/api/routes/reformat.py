@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
 from app.core.dependencies import get_optional_user
-from app.models.models import User, CognitiveProfile, FeedbackLog, ReadingSession, Billing
+from app.models.models import AIUsageEvent, User, CognitiveProfile, FeedbackLog, ReadingSession, Billing
 from app.schemas.schemas import (
     ReformatRequest, ReformatResponse,
     AnalyseSectionsRequest, AnalyseSectionsResponse,
@@ -17,12 +17,36 @@ from app.services.ai import (
 )
 from app.core.config import settings
 from datetime import datetime
+from time import perf_counter
 import asyncio
 import logging
 
 logger = logging.getLogger("synapse.reformat")
 
 router = APIRouter(prefix="/reformat", tags=["reformat"])
+
+
+def _record_ai_usage(
+    db: AsyncSession,
+    *,
+    user: User | None,
+    provider: str,
+    operation: str,
+    input_characters: int,
+    output_characters: int,
+    duration_ms: float,
+    succeeded: bool,
+) -> None:
+    """Store provider telemetry without storing source or generated content."""
+    db.add(AIUsageEvent(
+        user_id=user.id if user else None,
+        provider=provider,
+        operation=operation,
+        input_characters=input_characters,
+        output_characters=output_characters,
+        duration_ms=max(0, round(duration_ms)),
+        succeeded=succeeded,
+    ))
 
 
 async def _validate_input_length(db: AsyncSession, user: User | None, text: str):
@@ -179,10 +203,23 @@ async def reformat_page(
         body.page_text, profile["profile_type"]
     )
 
+    provider = "claude" if is_premium else "gemini"
+    ai_started = perf_counter()
     try:
         html, questions = await asyncio.gather(html_task, questions_task)
     except Exception as e:
+        _record_ai_usage(
+            db, user=user, provider=provider, operation="reformat",
+            input_characters=len(body.page_text), output_characters=0,
+            duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
+        )
         raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+
+    _record_ai_usage(
+        db, user=user, provider=provider, operation="reformat",
+        input_characters=len(body.page_text), output_characters=len(html),
+        duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+    )
 
     # ── 7. Log reading session ────────────────────────────────────
     if user and body.page_url:
@@ -289,6 +326,8 @@ async def reformat_document_route(
     is_premium = await _is_premium_active(user, db)
     
     from app.services.ai import call_document
+    provider = "claude" if is_premium else "gemini"
+    ai_started = perf_counter()
     try:
         html = await call_document(
             body.base64_data,
@@ -298,13 +337,29 @@ async def reformat_document_route(
             use_claude=is_premium
         )
     except HTTPException:
+        _record_ai_usage(
+            db, user=user, provider=provider, operation="document_reformat",
+            input_characters=len(body.base64_data), output_characters=0,
+            duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
+        )
         raise
     except Exception:
         logger.exception("reformat-document failed")
+        _record_ai_usage(
+            db, user=user, provider=provider, operation="document_reformat",
+            input_characters=len(body.base64_data), output_characters=0,
+            duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
+        )
         raise HTTPException(
             status_code=502,
             detail="Document reformatting is temporarily unavailable. Please try again.",
         )
+
+    _record_ai_usage(
+        db, user=user, provider=provider, operation="document_reformat",
+        input_characters=len(body.base64_data), output_characters=len(html),
+        duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+    )
 
     return ReformatResponse(
         html=html,
