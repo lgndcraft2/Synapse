@@ -198,6 +198,22 @@ async def test_me_requires_a_token_and_patch_renames(client, verified_user):
     assert again.json()["name"] == "Renamed Person"
 
 
+async def test_me_accepts_only_catalogue_avatars(client, verified_user):
+    login = await client.post("/api/v1/auth/login", json=verified_user)
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    selected = await client.patch(
+        "/api/v1/auth/me", json={"avatar_id": "juniper"}, headers=headers
+    )
+    assert selected.status_code == 200
+    assert selected.json()["avatar_url"] == "avatar:juniper"
+
+    rejected = await client.patch(
+        "/api/v1/auth/me", json={"avatar_id": "https://untrusted.example/avatar.png"}, headers=headers
+    )
+    assert rejected.status_code == 422
+
+
 async def test_garbage_and_tampered_tokens_are_rejected(client, verified_user):
     login = await client.post("/api/v1/auth/login", json=verified_user)
     good = login.json()["access_token"]

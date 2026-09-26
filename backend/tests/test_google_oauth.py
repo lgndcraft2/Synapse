@@ -207,6 +207,14 @@ async def test_successful_callback_creates_a_user_and_hands_off(
     body = exchanged.json()
     assert body["access_token"] and body["refresh_token"]
     assert body["user"]["email"] == "googler@example.com"
+    assert body["user"]["avatar_url"] == "https://example.com/avatar.png"
+
+    blocked = await client.patch(
+        "/api/v1/auth/me",
+        json={"avatar_id": "aurora"},
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    assert blocked.status_code == 403
 
 
 async def test_handoff_code_is_single_use(client, monkeypatch, fake_redis):

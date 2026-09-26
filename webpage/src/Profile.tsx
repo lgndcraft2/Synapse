@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { requireAuth, clearSession, updateName } from './lib/auth';
+import { requireAuth, clearSession, updateAvatar, updateName } from './lib/auth';
 import {
   deleteAccount,
   getBillingStatus,
@@ -27,9 +27,10 @@ import {
   type ProfileType,
 } from './lib/profile';
 import { PLAN_LABELS, formatDate } from './lib/plans';
-import AppShell, { initialsFor } from './component/AppShell';
+import AppShell from './component/AppShell';
 import { CARD, INSET, Eyebrow, Notice, Pager, Section, Segmented, Skeleton } from './component/ui';
 import { useOffsetPage } from './lib/usePaging';
+import { AVATAR_OPTIONS, Avatar, builtInAvatarId } from './component/Avatar';
 
 interface HistoryEntry {
   changed_at: string;
@@ -91,6 +92,8 @@ export default function Profile() {
 
   const [name, setName] = useState('');
   const [savedName, setSavedName] = useState('');
+  const [avatarId, setAvatarId] = useState<string | null>(null);
+  const [savedAvatarId, setSavedAvatarId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState({ profile: true, billing: true, usage: true });
   const [busy, setBusy] = useState<string | null>(null);
@@ -109,6 +112,9 @@ export default function Profile() {
       const initialName = user.name || '';
       setName(initialName);
       setSavedName(initialName);
+      const initialAvatarId = builtInAvatarId(user.avatar_url);
+      setAvatarId(initialAvatarId);
+      setSavedAvatarId(initialAvatarId);
 
       const done = (key: keyof typeof loading) => setLoading((p) => ({ ...p, [key]: false }));
       const settle = <T,>(p: Promise<T>, key: keyof typeof loading, apply: (v: T) => void) =>
@@ -134,7 +140,8 @@ export default function Profile() {
 
   const dirtyFields = saved && draft ? changedKeys(saved, draft) : [];
   const nameDirty = name.trim() !== savedName.trim();
-  const dirtyCount = dirtyFields.length + (nameDirty ? 1 : 0);
+  const avatarDirty = avatarId !== savedAvatarId;
+  const dirtyCount = dirtyFields.length + (nameDirty ? 1 : 0) + (avatarDirty ? 1 : 0);
   const isDirty = dirtyCount > 0;
 
   function set<K extends keyof ProfileFields>(key: K, value: ProfileFields[K]) {
@@ -145,6 +152,7 @@ export default function Profile() {
   function discard() {
     if (saved) setDraft(saved);
     setName(savedName);
+    setAvatarId(savedAvatarId);
     setError(null);
     setNotice(null);
   }
@@ -173,7 +181,13 @@ export default function Profile() {
       if (nameDirty) {
         const updated = await updateName(name.trim());
         setSavedName(updated.name || '');
-        setUser((u: any) => ({ ...u, name: updated.name }));
+        setUser((u: any) => ({ ...u, ...updated }));
+      }
+
+      if (avatarDirty && avatarId) {
+        const updated = await updateAvatar(avatarId);
+        setSavedAvatarId(builtInAvatarId(updated.avatar_url));
+        setUser((u: any) => ({ ...u, ...updated }));
       }
 
       setNotice('Your profile has been updated.');
@@ -230,7 +244,8 @@ export default function Profile() {
   }
 
   const tier = billing?.plan || 'free';
-  const provider = user?.app_metadata?.provider;
+  const provider = user?.auth_provider;
+  const googleManagedAvatar = provider === 'google' || provider === 'both';
 
   return (
     <AppShell user={user} authChecked={checkedAuth} backTo={{ href: '/dashboard', label: 'Back to dashboard' }}>
@@ -267,13 +282,7 @@ export default function Profile() {
                 <Eyebrow>Account</Eyebrow>
 
                 <div className="flex items-center gap-4 mt-4 mb-6">
-                  <div
-                    className="rounded-full flex items-center justify-center font-semibold shrink-0"
-                    style={{ width: 56, height: 56, backgroundColor: '#1b5e4b', color: '#94d5bd', fontSize: 18 }}
-                    aria-hidden="true"
-                  >
-                    {initialsFor(user)}
-                  </div>
+                  <Avatar avatarUrl={user?.avatar_url} name={user?.name} email={user?.email} size={56} />
                   <div className="truncate">
                     <p className="font-serif font-semibold truncate" style={{ fontSize: 24, color: '#004635' }}>
                       {loading.profile ? <Skeleton style={{ width: 210, height: 30 }} /> : savedName || user?.email?.split('@')[0] || '—'}
@@ -296,6 +305,44 @@ export default function Profile() {
                   />
                 </label>
 
+                {googleManagedAvatar ? (
+                  <div className="avatar-google-note" role="note">
+                    <span className="material-symbols-outlined" aria-hidden="true">account_circle</span>
+                    <span>
+                      Your profile photo comes from Google. Change it in your Google account to update it here.
+                    </span>
+                  </div>
+                ) : (
+                  <fieldset className="avatar-picker">
+                    <legend className="field-label">Choose an avatar</legend>
+                    <p className="field-hint mt-1 mb-3">
+                      Choose from the Synapse collection. Image uploads are not supported.
+                    </p>
+                    <div className="avatar-grid" aria-label="Avatar choices">
+                      {AVATAR_OPTIONS.map(([id, label]) => {
+                        const selected = avatarId === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            className="avatar-choice"
+                            aria-pressed={selected}
+                            aria-label={`${label}${selected ? ', selected' : ''}`}
+                            data-selected={selected}
+                            onClick={() => {
+                              setAvatarId(id);
+                              setNotice(null);
+                            }}
+                          >
+                            <Avatar avatarUrl={`avatar:${id}`} size={44} />
+                            <span className="sr-only">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4" style={{ borderTop: '1px solid #3d3d38' }}>
                   <div>
                     <Eyebrow>Signs in with</Eyebrow>
@@ -303,7 +350,7 @@ export default function Profile() {
                       <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#004635' }}>
                         {provider === 'google' ? 'account_circle' : 'mail'}
                       </span>
-                      {provider === 'google' ? 'Google' : 'Email and password'}
+                      {provider === 'google' ? 'Google' : provider === 'both' ? 'Google and email' : 'Email and password'}
                     </p>
                   </div>
                   <div>

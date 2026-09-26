@@ -316,6 +316,15 @@ export async function updateName(name: string): Promise<AuthUser> {
   return user;
 }
 
+/** Select one of the server-approved first-party profile avatars. */
+export async function updateAvatar(avatarId: string): Promise<AuthUser> {
+  const token = await getAccessToken();
+  const user = await request<AuthUser>('PATCH', '/api/v1/auth/me', { avatar_id: avatarId }, token ?? undefined);
+  const session = read();
+  if (session) write({ ...session, user });
+  return user;
+}
+
 /**
  * Guard for authenticated screens.
  *

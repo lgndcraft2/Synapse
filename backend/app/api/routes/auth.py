@@ -41,6 +41,7 @@ from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.core.request_utils import client_ip
 from app.core.timeutils import is_past
+from app.core.avatars import avatar_url_for
 from app.core.security import (
     hash_opaque_token,
     hash_password,
@@ -494,14 +495,19 @@ async def update_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Rename yourself.
+    """Update the caller's display name or selected first-party avatar."""
+    if payload.avatar_id is not None and current_user.google_id:
+        # Google-linked accounts use the picture returned in the verified ID
+        # token. Do not silently replace it with a local avatar selection.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your profile photo is managed by your Google account.",
+        )
 
-    Previously impossible without a detour through Supabase: users.name was
-    written only by /auth/sync reading the session's user_metadata, so the
-    dashboard updated Supabase and then asked us to re-read it.
-    """
-    current_user.name = payload.name.strip()
+    if payload.name is not None:
+        current_user.name = payload.name.strip()
+    if payload.avatar_id is not None:
+        current_user.avatar_url = avatar_url_for(payload.avatar_id)
     current_user.updated_at = _now()
     await db.flush()
     return current_user

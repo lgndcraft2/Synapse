@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Generic, Optional, Literal, TypeVar
 from datetime import datetime
 import uuid
+
+from app.core.avatars import AVATAR_IDS
 
 
 # ── Pagination ────────────────────────────────────────────────────
@@ -103,13 +105,28 @@ class VerifyEmailRequest(BaseModel):
 
 
 class UpdateMeRequest(BaseModel):
-    """Renaming yourself.
+    """Update a display name and/or choose a first-party avatar.
 
-    Previously impossible without a round trip through Supabase: users.name
-    had no PATCH endpoint and was only writable by /auth/sync reading the
-    Supabase session.
+    Only an allow-listed avatar id is accepted.  The client never sends an
+    image URL or file, so users cannot use this endpoint to host arbitrary
+    images or make other clients load a tracking URL.
     """
-    name: str = Field(min_length=1, max_length=80)
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    avatar_id: Optional[str] = Field(default=None, min_length=1, max_length=32)
+
+    @field_validator("avatar_id")
+    @classmethod
+    def avatar_must_be_from_catalogue(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in AVATAR_IDS:
+            raise ValueError("Choose an avatar from the available collection.")
+        return value
+
+    @model_validator(mode="after")
+    def requires_a_change(self):
+        if self.name is None and self.avatar_id is None:
+            raise ValueError("Provide a display name or avatar selection.")
+        return self
 
 
 class OAuthExchangeRequest(BaseModel):

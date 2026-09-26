@@ -5,6 +5,7 @@ import { pushLogoutToExtension } from '../lib/extensionBridge';
 import ConfigBanner from './ConfigBanner';
 import { Skeleton } from './ui';
 import { BrandLockup } from './Brand';
+import { Avatar } from './Avatar';
 
 /** Initials for the header avatar, matching the dashboard's derivation. */
 export function initialsFor(user: any): string {
@@ -123,9 +124,13 @@ function UserMenu({ user }: { user: any }) {
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={onTriggerKeyDown}
       >
-        <span className="user-avatar" aria-hidden="true">
-          {initialsFor(user)}
-        </span>
+        <Avatar
+          className="user-avatar"
+          avatarUrl={user?.avatar_url}
+          name={user?.name}
+          email={user?.email}
+          size={32}
+        />
         <span className="user-name">{displayName}</span>
         <span className="material-symbols-outlined user-chevron" aria-hidden="true">
           expand_more
