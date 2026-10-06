@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # frontend hides the monthly/annual toggle unless both are configured.
     STRIPE_THINKER_LITE_ANNUAL_PRICE_ID: str = ""   # Thinker Lite ($40/yr) → "lite"
     STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID: str = ""   # Deep Thinker ($80/yr) → "premium"
+    # List prices, for the observer's estimated MRR only. Billing never reads these.
+    LITE_MONTHLY_USD: float = 4.0
+    LITE_ANNUAL_USD: float = 40.0
+    PREMIUM_MONTHLY_USD: float = 8.0
+    PREMIUM_ANNUAL_USD: float = 80.0
     # Deprecated aliases — kept so existing deployments keep working. Both map to premium.
     STRIPE_PREMIUM_PRICE_ID: str = ""
     STRIPE_PREMIUM_ANNUAL_PRICE_ID: str = ""

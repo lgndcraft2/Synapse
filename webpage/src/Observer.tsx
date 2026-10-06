@@ -1,8 +1,10 @@
-import { Activity, Clock3, Gauge, ListTree, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
+import { Activity, BarChart3, Clock3, CreditCard, Gauge, ListTree, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './component/AppShell';
+import { MultiLineChart, ShareBar, Sparkline, StackedColumns } from './component/observer-charts';
 import {
   cancelObserverSubscription,
+  getObserverAnalytics,
   getObserverAuditLog,
   getObserverOverview,
   getObserverUsers,
@@ -55,6 +57,64 @@ type Overview = {
   };
   redis: { queue_status: string; detail: string };
 };
+
+type PlanName = 'free' | 'lite' | 'premium' | 'institutional';
+type FeatureName = 'explain_text' | 'explain_image' | 'pdf' | 'document_reformat' | 'page_reformat';
+
+type Analytics = {
+  generated_at: string;
+  window_days: number;
+  users: {
+    total: number; new_in_window: number; active_24h: number; active_7d: number; active_30d: number;
+    active_window: number; paid: number; paid_share: number;
+  };
+  plans: { plan: PlanName; users: number; active: number; trialing: number; past_due: number; cancel_scheduled: number; monthly: number; annual: number; est_mrr_usd: number }[];
+  signups: { date: string; free: number; paid: number }[];
+  features: { feature: FeatureName; calls: number; users: number; anonymous_calls: number; failures: number; adoption: number }[];
+  pdf_breakdown: { explain_text: number; explain_image: number; document_reformat: number };
+  feature_daily: { date: string; calls: Record<FeatureName, number>; users: Record<FeatureName, number> }[];
+  feature_by_plan: ({ feature: FeatureName } & Record<PlanName, number>)[];
+};
+
+const RANGES = [7, 30, 90] as const;
+
+// Plans are ordered (free → institutional), so they step one hue light → dark;
+// free sits on neutral grey because it carries no revenue.
+const planMeta: Record<PlanName, { label: string; color: string }> = {
+  free: { label: 'Free', color: 'var(--viz-plan-free)' },
+  lite: { label: 'Lite', color: 'var(--viz-plan-lite)' },
+  premium: { label: 'Premium', color: 'var(--viz-plan-premium)' },
+  institutional: { label: 'Institutional', color: 'var(--viz-plan-institutional)' },
+};
+const PLAN_ORDER: PlanName[] = ['free', 'lite', 'premium', 'institutional'];
+
+// Fixed categorical order: a feature keeps its colour in every chart.
+const featureMeta: Record<FeatureName, { label: string; detail: string; color: string }> = {
+  explain_text: { label: 'Highlight explain', detail: 'Selected text on web pages', color: 'var(--viz-1)' },
+  explain_image: { label: 'Circle explain', detail: 'Circled areas on web pages', color: 'var(--viz-2)' },
+  pdf: { label: 'PDF viewer', detail: 'Explains and reformats of PDFs', color: 'var(--viz-3)' },
+  document_reformat: { label: 'Document reformatter', detail: 'Text, CSV and Markdown files', color: 'var(--viz-4)' },
+  page_reformat: { label: 'Page reformat', detail: 'Whole-page and section rebuilds', color: 'var(--viz-5)' },
+};
+const FEATURE_ORDER: FeatureName[] = ['explain_text', 'explain_image', 'pdf', 'document_reformat', 'page_reformat'];
+
+function percent(value: number) {
+  return `${(value * 100).toFixed(value > 0 && value < 0.1 ? 1 : 0)}%`;
+}
+
+function usd(value: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+}
+
+function RangePicker({ value, onChange, disabled }: { value: number; onChange: (days: number) => void; disabled: boolean }) {
+  return (
+    <div className="observer-range" role="group" aria-label="Time range">
+      {RANGES.map((days) => (
+        <button key={days} type="button" aria-pressed={value === days} disabled={disabled} onClick={() => onChange(days)}>{days}d</button>
+      ))}
+    </div>
+  );
+}
 
 type ObserverUser = {
   id: string; email: string; name: string | null; plan: string; signup_at: string; last_login_at: string | null;
@@ -143,6 +203,26 @@ export default function Observer() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [rangeDays, setRangeDays] = useState(30);
+  const [usageMeasure, setUsageMeasure] = useState<'calls' | 'users'>('calls');
+  const [hiddenFeatures, setHiddenFeatures] = useState<Set<FeatureName>>(() => new Set());
+
+  const loadAnalytics = useCallback(async (days: number) => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    try {
+      setAnalytics(await getObserverAnalytics(days));
+    } catch (err) {
+      setAnalyticsError(err instanceof Error ? err.message : 'Could not load user and feature analytics.');
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadAnalytics(rangeDays); }, [loadAnalytics, rangeDays]);
 
   const loadUsers = useCallback(async (search = userSearch) => {
     setUsersLoading(true);
@@ -213,6 +293,29 @@ export default function Observer() {
     }
   };
 
+  const dates = analytics?.signups.map((day) => day.date) ?? [];
+  const planTotals = analytics?.plans.reduce((sum, row) => ({
+    users: sum.users + row.users, active: sum.active + (row.plan === 'free' ? 0 : row.active), trialing: sum.trialing + row.trialing,
+    past_due: sum.past_due + row.past_due, cancel_scheduled: sum.cancel_scheduled + row.cancel_scheduled,
+    monthly: sum.monthly + row.monthly, annual: sum.annual + row.annual, est_mrr_usd: sum.est_mrr_usd + row.est_mrr_usd,
+  }), { users: 0, active: 0, trialing: 0, past_due: 0, cancel_scheduled: 0, monthly: 0, annual: 0, est_mrr_usd: 0 });
+  const featureLines = FEATURE_ORDER.filter((name) => !hiddenFeatures.has(name)).map((name) => ({
+    key: name, label: featureMeta[name].label, color: featureMeta[name].color,
+    values: analytics?.feature_daily.map((day) => day[usageMeasure][name]) ?? [],
+  }));
+  const heatMax = Math.max(1, ...(analytics?.feature_by_plan.flatMap((row) => PLAN_ORDER.map((plan) => row[plan])) ?? []));
+  const toggleFeature = (name: FeatureName) => setHiddenFeatures((current) => {
+    const next = new Set(current);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+  const userCards = analytics ? [
+    { label: 'Total users', value: number(analytics.users.total), detail: `${number(analytics.users.new_in_window)} joined in the last ${analytics.window_days} days` },
+    { label: 'Paid users', value: number(analytics.users.paid), detail: `${percent(analytics.users.paid_share)} of all accounts have paid access` },
+    { label: 'Active today', value: number(analytics.users.active_24h), detail: 'Signed-in users with AI or reading activity, 24h' },
+    { label: 'Active 7 / 30 days', value: `${number(analytics.users.active_7d)} / ${number(analytics.users.active_30d)}`, detail: 'Weekly and monthly active users' },
+  ] : [];
+
   return (
     <AppShell user={user} authChecked backTo={{ href: '/dashboard', label: 'Dashboard' }}>
       <main className="observer-page">
@@ -222,7 +325,7 @@ export default function Observer() {
             <h1 id="observer-title">Observer panel</h1>
             <p>Aggregate account and reading traffic. Refreshes every 30 seconds.</p>
           </div>
-          <button className="button button-secondary observer-refresh" type="button" onClick={() => void load()} disabled={loading}>
+          <button className="button button-secondary observer-refresh" type="button" onClick={() => { void load(); void loadAnalytics(rangeDays); }} disabled={loading}>
             <RefreshCw className={loading ? 'observer-spin' : ''} aria-hidden="true" />
             Refresh
           </button>
@@ -245,6 +348,145 @@ export default function Observer() {
               ))}
             </section>
 
+            <section className="observer-table-card" aria-labelledby="plans-title" aria-busy={analyticsLoading}>
+              <div className="observer-section-head">
+                <div>
+                  <span className="observer-eyebrow"><CreditCard aria-hidden="true" /> Users and plans</span>
+                  <h2 id="plans-title">Who uses Synapse, and who pays</h2>
+                </div>
+                <RangePicker value={rangeDays} onChange={setRangeDays} disabled={analyticsLoading} />
+              </div>
+              {analyticsError ? <p className="observer-inline-notice" role="alert">{analyticsError}</p> : (
+                <>
+                  <div className="observer-metrics observer-metrics-compact">
+                    {(userCards.length ? userCards : Array.from({ length: 4 }, () => null)).map((card, index) => (
+                      <article className="observer-card" key={card?.label || index}>
+                        <span>{card?.label || 'Loading'}</span>
+                        <strong>{card?.value || '—'}</strong>
+                        <p>{card?.detail || 'Collecting account data…'}</p>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="observer-split">
+                    <div>
+                      <h3 className="observer-subhead">Plan distribution</h3>
+                      <ShareBar
+                        label="Accounts by plan"
+                        segments={PLAN_ORDER.map((plan) => ({ key: plan, label: planMeta[plan].label, color: planMeta[plan].color, value: analytics?.plans.find((row) => row.plan === plan)?.users ?? 0 }))}
+                      />
+                    </div>
+                    <div>
+                      <h3 className="observer-subhead">New signups per day</h3>
+                      <StackedColumns
+                        label={`New signups, last ${rangeDays} days`}
+                        dates={dates}
+                        values={analytics?.signups ?? []}
+                        series={[{ key: 'free', label: 'Free', color: 'var(--viz-plan-free)' }, { key: 'paid', label: 'Paid now', color: 'var(--viz-plan-premium)' }]}
+                      />
+                      <ul className="viz-legend viz-legend-inline">
+                        <li><span className="viz-swatch" style={{ background: 'var(--viz-plan-free)' }} aria-hidden="true" />Free</li>
+                        <li><span className="viz-swatch" style={{ background: 'var(--viz-plan-premium)' }} aria-hidden="true" />Paid now</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="observer-table-scroll">
+                    <table className="observer-plan-table">
+                      <thead><tr><th>Plan</th><th>Accounts</th><th>Paid access</th><th>Trialing</th><th>Payment issue</th><th>Cancels at renewal</th><th>Monthly / annual</th><th>Est. MRR</th></tr></thead>
+                      <tbody>
+                        {analytics?.plans.map((row) => (
+                          <tr key={row.plan}>
+                            <td><span className="viz-swatch" style={{ background: planMeta[row.plan]?.color }} aria-hidden="true" /><strong>{planMeta[row.plan]?.label ?? row.plan}</strong></td>
+                            <td>{number(row.users)}</td>
+                            <td>{row.plan === 'free' ? '—' : number(row.active)}</td>
+                            <td>{number(row.trialing)}</td>
+                            <td>{number(row.past_due)}</td>
+                            <td>{number(row.cancel_scheduled)}</td>
+                            <td>{row.plan === 'lite' || row.plan === 'premium' ? `${number(row.monthly)} / ${number(row.annual)}` : '—'}</td>
+                            <td>{row.plan === 'lite' || row.plan === 'premium' ? usd(row.est_mrr_usd) : '—'}</td>
+                          </tr>
+                        )) ?? <tr><td colSpan={8} className="observer-empty">Loading plans…</td></tr>}
+                      </tbody>
+                      {planTotals && (
+                        <tfoot><tr><th>Total</th><td>{number(planTotals.users)}</td><td>{number(planTotals.active)}</td><td>{number(planTotals.trialing)}</td><td>{number(planTotals.past_due)}</td><td>{number(planTotals.cancel_scheduled)}</td><td>{`${number(planTotals.monthly)} / ${number(planTotals.annual)}`}</td><td>{usd(planTotals.est_mrr_usd)}</td></tr></tfoot>
+                      )}
+                    </table>
+                  </div>
+                  <p className="observer-footnote">Paid access means institutional, or Lite/Premium with an active or trialing, unexpired subscription. Est. MRR uses list prices (annual ÷ 12) and leaves out institutional contracts. It is an estimate, not Stripe revenue.</p>
+                </>
+              )}
+            </section>
+
+            <section className="observer-table-card" aria-labelledby="features-title" aria-busy={analyticsLoading}>
+              <div className="observer-section-head">
+                <div>
+                  <span className="observer-eyebrow"><BarChart3 aria-hidden="true" /> Feature usage</span>
+                  <h2 id="features-title">Explains, circles, PDFs and documents</h2>
+                </div>
+                <RangePicker value={rangeDays} onChange={setRangeDays} disabled={analyticsLoading} />
+              </div>
+              {!analyticsError && (
+                <>
+                  <div className="observer-feature-grid">
+                    {FEATURE_ORDER.map((name) => {
+                      const row = analytics?.features.find((item) => item.feature === name);
+                      return (
+                        <article className="observer-feature-tile" key={name}>
+                          <span><i className="viz-swatch" style={{ background: featureMeta[name].color }} aria-hidden="true" />{featureMeta[name].label}</span>
+                          <strong>{row ? number(row.users) : '—'}<small> users</small></strong>
+                          <p>{row ? `${number(row.calls)} uses · ${percent(row.adoption)} of active users` : featureMeta[name].detail}</p>
+                          {row && (row.anonymous_calls > 0 || row.failures > 0) && (
+                            <p className="observer-feature-meta">{[row.anonymous_calls ? `${number(row.anonymous_calls)} signed out` : '', row.failures ? `${number(row.failures)} failed` : ''].filter(Boolean).join(' · ')}</p>
+                          )}
+                          {name === 'pdf' && analytics && (
+                            <p className="observer-feature-meta">{number(analytics.pdf_breakdown.explain_text)} highlights · {number(analytics.pdf_breakdown.explain_image)} circles · {number(analytics.pdf_breakdown.document_reformat)} reformats</p>
+                          )}
+                          <Sparkline values={analytics?.feature_daily.map((day) => day.calls[name]) ?? []} color={featureMeta[name].color} />
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <div className="observer-trend-head">
+                    <div><h3>Daily usage</h3><p>{usageMeasure === 'calls' ? 'Uses per day, including signed-out visitors.' : 'Distinct signed-in users per day.'}</p></div>
+                    <div className="observer-range" role="group" aria-label="Measure">
+                      <button type="button" aria-pressed={usageMeasure === 'calls'} onClick={() => setUsageMeasure('calls')}>Uses</button>
+                      <button type="button" aria-pressed={usageMeasure === 'users'} onClick={() => setUsageMeasure('users')}>Users</button>
+                    </div>
+                  </div>
+                  <MultiLineChart label={`Daily ${usageMeasure === 'calls' ? 'uses' : 'users'} per feature, last ${rangeDays} days`} dates={dates} series={featureLines} />
+                  <ul className="viz-legend viz-legend-inline" aria-label="Show or hide features">
+                    {FEATURE_ORDER.map((name) => (
+                      <li key={name}>
+                        <button type="button" className="viz-legend-toggle" aria-pressed={!hiddenFeatures.has(name)} onClick={() => toggleFeature(name)}>
+                          <span className="viz-swatch" style={{ background: featureMeta[name].color }} aria-hidden="true" />{featureMeta[name].label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <h3 className="observer-subhead">Users per feature, by plan</h3>
+                  <div className="observer-table-scroll">
+                    <table className="observer-heat-table">
+                      <thead><tr><th>Feature</th>{PLAN_ORDER.map((plan) => <th key={plan}>{planMeta[plan].label}</th>)}</tr></thead>
+                      <tbody>
+                        {analytics?.feature_by_plan.map((row) => (
+                          <tr key={row.feature}>
+                            <td><span className="viz-swatch" style={{ background: featureMeta[row.feature].color }} aria-hidden="true" /><strong>{featureMeta[row.feature].label}</strong></td>
+                            {PLAN_ORDER.map((plan) => (
+                              <td key={plan} style={{ background: row[plan] ? `color-mix(in srgb, var(--primary-fixed) ${Math.round(15 + (row[plan] / heatMax) * 85)}%, transparent)` : undefined }}>{number(row[plan])}</td>
+                            ))}
+                          </tr>
+                        )) ?? <tr><td colSpan={5} className="observer-empty">Loading feature usage…</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="observer-footnote">PDF, document and web-page tagging starts with this release. Earlier explains count as web-page use, and earlier document reformats count under the document reformatter. Users are distinct signed-in accounts; signed-out uses are counted but never as people.</p>
+                </>
+              )}
+            </section>
+
             <section className="observer-traffic" aria-labelledby="traffic-title">
               <div className="observer-section-head">
                 <div>
@@ -257,7 +499,7 @@ export default function Observer() {
                 {(overview?.traffic ?? Array.from({ length: 7 }, () => ({ date: '', sessions: 0 }))).map((point, index) => (
                   <div className="observer-bar-group" key={point.date || index}>
                     <span className="observer-bar-value">{overview ? number(point.sessions) : ''}</span>
-                    <div className="observer-bar-track"><i style={{ height: `${overview ? (point.sessions / maxSessions) * 100 : 0}%` }} /></div>
+                    <div className="observer-bar-track"><i style={{ transform: `scaleY(${overview ? Math.max(point.sessions / maxSessions, 0.01) : 0})` }} /></div>
                     <span className="observer-bar-label">{point.date ? new Date(`${point.date}T00:00:00`).toLocaleDateString([], { weekday: 'short' }) : '—'}</span>
                   </div>
                 ))}
@@ -390,7 +632,7 @@ export default function Observer() {
                   const count = runtime?.traffic.status_counts_5m[group] || 0;
                   const percentage = totalStatus ? (count / totalStatus) * 100 : 0;
                   return <div className={`observer-status observer-status-${group}`} key={group}>
-                    <span>{group}</span><strong>{number(count)}</strong><i><b style={{ width: `${percentage}%` }} /></i>
+                    <span>{group}</span><strong>{number(count)}</strong><i><b style={{ transform: `scaleX(${percentage / 100})` }} /></i>
                   </div>;
                 })}
               </div>

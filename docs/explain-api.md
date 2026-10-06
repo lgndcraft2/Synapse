@@ -119,6 +119,7 @@ Two optional request fields:
 |---|---|
 | `context` | Optional. `local` and `page` are each optional. Every string field is trimmed and capped: `heading_path` max 8 items of 200 chars, `surrounding_text` 2,000 chars, `element` string fields 300 chars, `form.fields` max 20 items, `outline` max 40 items of 200 chars, `main_text` 8,000 chars. Serialized `context` over 24 KB: 400 `INVALID_REQUEST` |
 | `context_id` | Optional. A document context from `POST /explain/context`, owned by the same caller. Unknown, expired or someone else's: 400 `CONTEXT_EXPIRED`, so the extension re-uploads and retries |
+| `source` | Optional. `page`, `pdf` (Synapse PDF viewer) or `document` (text, CSV, Markdown, reader). Stored on the `ai_usage_events` row for the observer's feature counts only. Missing: `document` when `context_id` is set, else `page` |
 
 Charging (replaces the text rule above):
 

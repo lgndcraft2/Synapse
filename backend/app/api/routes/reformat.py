@@ -38,12 +38,14 @@ def _record_ai_usage(
     output_characters: int,
     duration_ms: float,
     succeeded: bool,
+    source: str | None = None,
 ) -> None:
     """Store provider telemetry without storing source or generated content."""
     db.add(AIUsageEvent(
         user_id=user.id if user else None,
         provider=provider,
         operation=operation,
+        source=source,
         input_characters=input_characters,
         output_characters=output_characters,
         duration_ms=max(0, round(duration_ms)),
@@ -163,14 +165,14 @@ async def reformat_page(
         html, questions = await asyncio.gather(html_task, questions_task)
     except Exception as e:
         _record_ai_usage(
-            db, user=user, provider=provider, operation="reformat",
+            db, user=user, provider=provider, operation="reformat", source="page",
             input_characters=len(body.page_text), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
         )
         raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
 
     _record_ai_usage(
-        db, user=user, provider=provider, operation="reformat",
+        db, user=user, provider=provider, operation="reformat", source="page",
         input_characters=len(body.page_text), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
     )
@@ -242,6 +244,7 @@ async def reformat_document_route(
     
     from app.services.ai import call_document
     provider = "claude" if is_premium else "gemini"
+    source = "pdf" if body.media_type == "application/pdf" else "document"
     ai_started = perf_counter()
     try:
         html = await call_document(
@@ -253,7 +256,7 @@ async def reformat_document_route(
         )
     except HTTPException:
         _record_ai_usage(
-            db, user=user, provider=provider, operation="document_reformat",
+            db, user=user, provider=provider, operation="document_reformat", source=source,
             input_characters=len(body.base64_data), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
         )
@@ -261,7 +264,7 @@ async def reformat_document_route(
     except Exception:
         logger.exception("reformat-document failed")
         _record_ai_usage(
-            db, user=user, provider=provider, operation="document_reformat",
+            db, user=user, provider=provider, operation="document_reformat", source=source,
             input_characters=len(body.base64_data), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
         )
@@ -271,7 +274,7 @@ async def reformat_document_route(
         )
 
     _record_ai_usage(
-        db, user=user, provider=provider, operation="document_reformat",
+        db, user=user, provider=provider, operation="document_reformat", source=source,
         input_characters=len(body.base64_data), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
     )

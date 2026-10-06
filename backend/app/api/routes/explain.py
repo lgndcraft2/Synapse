@@ -252,6 +252,8 @@ async def explain(
     is_premium = await _is_premium_active(user, db)
     provider = "claude" if is_premium else "gemini"
     operation = f"explain_{body.kind}"
+    # Older extensions don't send a source; a document context implies one.
+    source = body.source or ("document" if body.context_id else "page")
     input_characters = len(text) + len(context_text) + len(document_text)
     ai_started = perf_counter()
     try:
@@ -271,7 +273,7 @@ async def explain(
         if image_usage is not None:
             await refund_image_capture(image_usage)
         _record_ai_usage(
-            db, user=user, provider=provider, operation=operation,
+            db, user=user, provider=provider, operation=operation, source=source,
             input_characters=input_characters, output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
         )
@@ -287,7 +289,7 @@ async def explain(
         )
 
     _record_ai_usage(
-        db, user=user, provider=provider, operation=operation,
+        db, user=user, provider=provider, operation=operation, source=source,
         input_characters=input_characters, output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
     )
