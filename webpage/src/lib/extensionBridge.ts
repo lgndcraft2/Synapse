@@ -60,8 +60,26 @@ export function pushSessionToExtension(session: Session | null): Promise<void> {
   return handoffInFlight;
 }
 
+// Chrome puts an idle extension's service worker to sleep. Waking it while the
+// dashboard is busy loading can take seconds, and a message sent mid-wake can
+// fail outright, so one short ping would read a sleeping extension as "not
+// installed" and the handoff would silently never happen.
+const HANDOFF_PING_ATTEMPTS = 3;
+const HANDOFF_PING_TIMEOUT_MS = 4000;
+const HANDOFF_RETRY_DELAY_MS = 1000;
+
+async function pingForHandoff(): Promise<ExtensionInfo> {
+  let info: ExtensionInfo = { installed: false };
+  for (let attempt = 0; attempt < HANDOFF_PING_ATTEMPTS; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, HANDOFF_RETRY_DELAY_MS));
+    info = await pingExtension(HANDOFF_PING_TIMEOUT_MS);
+    if (info.installed) return info;
+  }
+  return info;
+}
+
 async function handOff(userId: string): Promise<void> {
-  const info = await pingExtension();
+  const info = await pingForHandoff();
   if (!info.installed || info.userId === userId) return;
 
   const token = await getAccessToken();

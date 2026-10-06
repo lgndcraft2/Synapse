@@ -240,6 +240,7 @@ async function patchBackendProfile(profile, token) {
 }
 
 const FEEDBACK_REACTIONS = new Set(["clearer", "complex", "simple", "off-topic"]);
+const REEXPLAIN_MODES = new Set(["simpler", "more_detail", "specific"]);
 
 // Clamped to the backend schema: these entries also ride along on anonymous
 // explain/reformat calls, where one out-of-range legacy value would 422 the
@@ -255,6 +256,10 @@ function toBackendFeedbackEntry(entry) {
     session_difficulty: String(entry.sessionDifficulty || entry.session_difficulty || "normal").slice(0, 20),
     section_title: entry.sectionTitle || entry.section_title
       ? String(entry.sectionTitle || entry.section_title).slice(0, 200)
+      : null,
+    // The re-explains behind a "Clearer" on a later version, oldest first.
+    reexplain_path: Array.isArray(entry.reexplainPath) && entry.reexplainPath.length
+      ? entry.reexplainPath.filter(m => REEXPLAIN_MODES.has(m)).slice(-20)
       : null
   };
 }
@@ -733,8 +738,107 @@ function takeCapture(id, tabId) {
   });
 }
 
+// ── Re-look crops: a circled crop is kept for an hour after its explain ──
+// so "Simpler", "More detail" or a specific request can look at the image
+// again. Same storage as pending captures (chrome.storage.session: in memory,
+// cleared when the browser closes, never written to disk or sent anywhere
+// until a re-explain sends it). Keyed by the history entry id. Deleting the
+// entry drops its crop.
+const RELOOK_TTL_MS = 60 * 60 * 1000;
+const MAX_RELOOK_CROPS = 3;
+const RELOOK_KEY_PREFIX = "relookCrop:";
+const relookMem = new Map(); // id -> { crop, hostname, createdAt, expiresAt }
+
+function relookKey(id) {
+  return RELOOK_KEY_PREFIX + id;
+}
+
+/** Live stored re-look crops as [{ id, rec }], oldest first. Expired ones are removed. */
+async function pruneRelooks() {
+  const now = Date.now();
+  for (const [id, rec] of relookMem) if (rec.expiresAt <= now) relookMem.delete(id);
+  const area = sessionArea();
+  if (!area) return [];
+  let all = {};
+  try { all = (await area.get(null)) || {}; } catch { return []; }
+  const stored = Object.keys(all)
+    .filter(k => k.startsWith(RELOOK_KEY_PREFIX) && all[k])
+    .map(k => ({ id: k.slice(RELOOK_KEY_PREFIX.length), rec: all[k] }))
+    .sort((a, b) => (a.rec.createdAt || 0) - (b.rec.createdAt || 0));
+  const expired = stored.filter(s => !(s.rec.expiresAt > now)).map(s => relookKey(s.id));
+  if (expired.length) { try { await area.remove(expired); } catch { /* best effort */ } }
+  return stored.filter(s => s.rec.expiresAt > now);
+}
+
+async function removeRelooks(ids) {
+  if (!ids.length) return;
+  for (const id of ids) relookMem.delete(id);
+  const area = sessionArea();
+  if (!area) return;
+  try { await area.remove(ids.map(relookKey)); } catch { /* best effort */ }
+}
+
+/** Keeps `crop` for an hour under `id`. At most MAX_RELOOK_CROPS, oldest dropped. */
+function keepRelookCrop(id, crop, hostname) {
+  return withCaptureStore(async () => {
+    const live = await pruneRelooks();
+    const now = Date.now();
+    const { thumbDataUrl, thumbBase64, ...slim } = crop;
+    const rec = { crop: slim, hostname: hostname || null, createdAt: now, expiresAt: now + RELOOK_TTL_MS };
+
+    const older = live.map(s => s.id).filter(x => x !== id);
+    for (const memId of relookMem.keys()) if (memId !== id && !older.includes(memId)) older.push(memId);
+    while (older.length >= MAX_RELOOK_CROPS) await removeRelooks([older.shift()]);
+
+    relookMem.set(id, rec);
+    const area = sessionArea();
+    if (!area) return;
+    for (;;) {
+      try {
+        await area.set({ [relookKey(id)]: rec });
+        return;
+      } catch (err) {
+        if (!isQuotaError(err) || !older.length) return; // memory-only fallback
+        await removeRelooks([older.shift()]);
+      }
+    }
+  });
+}
+
+/** The kept crop for `id`, without consuming it, or null when it expired or is gone. */
+function getRelookCrop(id) {
+  return withCaptureStore(async () => {
+    if (!id) return null;
+    let rec = relookMem.get(id) || null;
+    if (!rec) {
+      const area = sessionArea();
+      if (area) {
+        try { rec = (await area.get(relookKey(id)))?.[relookKey(id)] || null; } catch { rec = null; }
+      }
+    }
+    if (!rec || !(rec.expiresAt > Date.now())) {
+      await removeRelooks([id]);
+      return null;
+    }
+    return { ...rec.crop };
+  });
+}
+
+/** Drops re-look crops by entry id, or every one for a hostname. */
+function dropRelookCrops({ id, hostname } = {}) {
+  return withCaptureStore(async () => {
+    if (id) return removeRelooks([id]);
+    if (!hostname) return;
+    const live = await pruneRelooks();
+    const ids = live.filter(s => s.rec.hostname === hostname).map(s => s.id);
+    for (const [memId, rec] of relookMem) if (rec.hostname === hostname && !ids.includes(memId)) ids.push(memId);
+    await removeRelooks(ids);
+  });
+}
+
 // A restarted worker clears what expired while it was suspended.
 pruneCaptures().catch(() => {});
+pruneRelooks().catch(() => {});
 
 async function handleCaptureRegion(msg, sender) {
   if (!sender.tab) return { ok: true, captureId: null, hasImage: false };
@@ -1030,8 +1134,28 @@ async function handleExplain(msg, sender) {
   const text = String(msg.text || "").trim();
   let kind = "text";
   let crop = null;
+  // { mode, request?, previousHtml, entryId?, entrySource?, relookId? }
+  const reexplain = msg.reexplain || null;
+  let relookId = null;
 
-  if (msg.captureId) {
+  if (reexplain) {
+    // Never a new capture. A circle re-looks at the crop kept for an hour;
+    // once that is gone it falls back to the text found in the circle.
+    if (msg.kind === "image") {
+      relookId = reexplain.relookId || null;
+      crop = await getRelookCrop(relookId);
+      if (crop) kind = "image";
+      else if (!text) {
+        return {
+          ok: false,
+          code: "RELOOK_EXPIRED",
+          error: "The circled image is only kept for an hour. Circle it again to re-explain it."
+        };
+      }
+    } else if (!text) {
+      return { ok: false, code: "EMPTY_TEXT", error: "There's nothing to re-explain." };
+    }
+  } else if (msg.captureId) {
     // Confirmed circle: use the crop taken before the confirm bar. Never recapture.
     crop = await takeCapture(msg.captureId, sender.tab?.id);
     if (!crop) {
@@ -1081,7 +1205,8 @@ async function handleExplain(msg, sender) {
     text: kind === "image" ? G.truncate(text, 20000) : text,
     image_base64: crop ? crop.base64 : null,
     image_media_type: crop ? crop.mediaType : null,
-    thumbnail_base64: crop ? crop.thumbBase64 : null,
+    // A re-explain adds a version to an entry that already has its thumbnail.
+    thumbnail_base64: crop && !reexplain ? crop.thumbBase64 : null,
     anchor: msg.anchor || null,
     page_url: msg.pageUrl || "",
     page_title: msg.pageTitle || "",
@@ -1093,7 +1218,16 @@ async function handleExplain(msg, sender) {
     fingerprint,
     // Same rule as /reformat: signed-in users use their server profile and feedback.
     profile: token ? null : profile,
-    recent_feedback: token ? null : await recentFeedbackForBackend()
+    recent_feedback: token ? null : await recentFeedbackForBackend(),
+    reexplain: reexplain
+      ? {
+          mode: reexplain.mode,
+          request: reexplain.request || null,
+          previous_html: String(reexplain.previousHtml || "").slice(0, 40000),
+          // Server entries get the version appended; local ones are updated below.
+          parent_entry_id: reexplain.entrySource === "server" ? reexplain.entryId || null : null
+        }
+      : null
   };
 
   let { response, data, networkError } = await postExplain(baseUrl, headers, body);
@@ -1134,7 +1268,24 @@ async function handleExplain(msg, sender) {
   // Local files count as one site ("local-files") like any other; other
   // non-web pages (no hostname) save no history, only show the result.
   const savesHistory = /^(https?|file):/i.test(msg.pageUrl || "") && !!hostname;
-  if (!historyEntry && savesHistory) {
+  if (reexplain) {
+    // A new version of an existing entry, never a new entry.
+    if (!historyEntry && reexplain.entryId && reexplain.entrySource !== "server") {
+      const version = {
+        mode: reexplain.mode,
+        request: reexplain.request || null,
+        result_html: data.html,
+        created_at: new Date().toISOString()
+      };
+      let updated = null;
+      await updateLocalHistory(list => list.map(e => {
+        if (e.id !== reexplain.entryId) return e;
+        updated = { ...e, versions: [...(Array.isArray(e.versions) ? e.versions : []), version].slice(-10) };
+        return updated;
+      }));
+      if (updated) localEntry = { ...updated, source: "local" };
+    }
+  } else if (!historyEntry && savesHistory) {
     localEntry = {
       id: newId("local"),
       hostname,
@@ -1154,6 +1305,12 @@ async function handleExplain(msg, sender) {
 
   if (historyEntry || localEntry) broadcastHistoryEntry(hostname, historyEntry || localEntry);
 
+  // Keep a fresh circle's crop for an hour so it can be re-explained with the image.
+  if (kind === "image" && crop && !reexplain) {
+    relookId = (historyEntry || localEntry)?.id || newId("relook");
+    await keepRelookCrop(relookId, crop, hostname).catch(() => {});
+  }
+
   return {
     ok: true,
     html: data.html,
@@ -1163,6 +1320,8 @@ async function handleExplain(msg, sender) {
     usage: data.usage || null,
     contextUsed: contextId ? "document" : (context?.page ? "page" : "local"),
     contextNote,
+    relookId,
+    reexplain: data.reexplain || null,
     ...(localEntry ? { localEntry } : {})
   };
 }
@@ -1196,6 +1355,7 @@ async function handleDeleteExplainHistory(msg) {
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : null;
 
   if (msg.id) {
+    await dropRelookCrops({ id: msg.id }).catch(() => {});
     const isLocal = msg.source === "local" || String(msg.id).startsWith("local-");
     if (isLocal) {
       await updateLocalHistory(list => list.filter(e => e.id !== msg.id));
@@ -1218,6 +1378,7 @@ async function handleDeleteExplainHistory(msg) {
   }
 
   if (msg.hostname) {
+    await dropRelookCrops({ hostname: msg.hostname }).catch(() => {});
     await updateLocalHistory(list => list.filter(e => e.hostname !== msg.hostname));
     if (authHeaders && baseUrl) {
       try {

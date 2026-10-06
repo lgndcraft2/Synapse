@@ -37,6 +37,7 @@ const ctxUploads = [];   // POST /explain/context bodies
 const docReads = [];     // POST /reformat/reformat-document bodies
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
+let reexplainsServed = 0;
 let ctxCounter = 0;
 
 const ARTICLE = `<!doctype html><html><head><meta charset="utf-8"><title>Cells 101</title>
@@ -124,14 +125,19 @@ function startServer() {
       if (req.method === 'POST' && url.pathname === '/api/v1/explain') {
         const body = await readBody(req);
         requests.push(body);
+        const re = body.reexplain;
+        if (re) reexplainsServed += 1;
         const reply = explainQueue.shift() || {
           status: 200,
           body: {
-            html: `<p>Mock explanation for ${body.kind}</p>`,
+            html: re
+              ? `<p>Mock ${re.mode} version for ${body.kind}</p>`
+              : `<p>Mock explanation for ${body.kind}</p>`,
             kind: body.kind,
             model_used: 'mock',
             history_entry: null,
             usage: null,
+            reexplain: re ? { free: true, free_remaining: Math.max(0, 10 - reexplainsServed), free_limit: 10 } : null,
           },
         };
         setTimeout(() => json(res, reply.status, reply.body), 150);
@@ -1154,6 +1160,172 @@ test('local PDF (file://): FAB prompt; "Read this document" opens the viewer and
   const up = ctxUploads.find((u) => u.source_url === localPdf);
   expect(up).toBeTruthy();
   expect(Buffer.from(up.document_base64, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-');
+});
+
+// Last of the request-sending tests: they add explain requests, and the
+// tests above count requests by absolute index.
+test('"Clearer": one rating per explanation, kept after reopening; anonymous explains carry it', async () => {
+  await openArticle();
+  await writeStorage(worker(), { feedbackLog: [], explainFeedbackGiven: [] });
+  await setContextSettings({ usePageContext: true, siteOverrides: {} });
+
+  const panel = page.locator('#synapse-explain-panel');
+  const before = requests.length;
+  await selectAndExplain('#p2');
+  await waitForRequests(before + 1);
+  await expect(panel.locator('.sxp-result')).toContainText('Mock explanation for text');
+
+  // "Too complex", "Too simple" and "Missed the point" are gone: re-explain replaced them.
+  await expect(panel.locator('.sc-feedback')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /Missed the point|Too complex|Too simple/ })).toHaveCount(0);
+
+  await panel.locator('.sxp-clearer').click();
+  await expect(panel.locator('.sxp-thanks')).toBeVisible();
+  await expect(panel.locator('.sxp-clearer')).toHaveCount(0);
+
+  await expect.poll(async () => (await readStorage(worker(), 'feedbackLog')).feedbackLog.length).toBe(1);
+  const { feedbackLog } = await readStorage(worker(), 'feedbackLog');
+  expect(feedbackLog[0]).toMatchObject({
+    reaction: 'clearer', sectionTitle: 'Explain', readProgress: null, reexplainPath: [], synced: false,
+  });
+
+  // Reopening the same entry (green highlight, no API call) offers no second rating.
+  await panel.locator('.sxp-close').click();
+  await expect(panel).not.toHaveClass(/s-visible/);
+  const reopenBefore = requests.length;
+  const box = await page.locator('#p2').boundingBox();
+  await page.mouse.click(box.x + 40, box.y + 12);
+  await expect(panel).toHaveClass(/s-visible/);
+  await expect(panel.locator('.sxp-result')).toContainText('Mock explanation for text');
+  await expect(panel.locator('.sxp-clearer')).toHaveCount(0);
+  await expect(panel.locator('.sxp-thanks')).toBeVisible();
+  expect(requests.length).toBe(reopenBefore);
+
+  // Signed out, the next explain carries the local log so it can still adapt.
+  await page.reload();
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  await selectAndExplain('#p3');
+  const req = await waitForRequests(reopenBefore + 1);
+  expect(req.recent_feedback).toEqual([
+    expect.objectContaining({ reaction: 'clearer', read_progress: null, section_title: 'Explain', reexplain_path: null }),
+  ]);
+  expect(req.profile).toBeTruthy();
+});
+
+test('re-explain: Simpler then a specific request stack as versions of one entry; only "Clearer" is logged', async () => {
+  await openArticle();
+  await writeStorage(worker(), { feedbackLog: [], explainFeedbackGiven: [] });
+  const panel = page.locator('#synapse-explain-panel');
+  const historyBefore = (await readStorage(worker(), 'explainHistoryLocal')).explainHistoryLocal.length;
+
+  const before = requests.length;
+  await selectAndExplain('#p1');
+  const first = await waitForRequests(before + 1);
+  await expect(panel.locator('.sxp-result')).toContainText('Mock explanation for text');
+  await expect(panel.locator('.sxp-versions')).toBeHidden();
+
+  // Simpler: same source and context, the version on screen, no history parent (local entry).
+  await panel.getByRole('button', { name: 'Simpler' }).click();
+  const simpler = await waitForRequests(before + 2);
+  expect(simpler.reexplain).toEqual({
+    mode: 'simpler', request: null,
+    previous_html: expect.stringContaining('Mock explanation for text'),
+    parent_entry_id: null,
+  });
+  expect(simpler.text).toBe(first.text);
+  expect(simpler.context).toEqual(first.context);
+  expect(simpler.thumbnail_base64).toBeNull();
+  await expect(panel.locator('.sxp-result')).toContainText('Mock simpler version for text');
+  await expect(panel.locator('.sxp-ver')).toHaveText(['Original', '2 · Simpler']);
+  await expect(panel.locator('.sxp-ver[aria-pressed="true"]')).toHaveText('2 · Simpler');
+  await expect(panel.locator('.sxp-note')).toContainText('free re-explains left today');
+
+  // A specific request, relative to the simpler version now on screen.
+  await panel.getByRole('button', { name: 'Ask something specific' }).click();
+  const input = panel.locator('.sxp-ask-input');
+  await expect(input).toBeFocused();
+  await input.fill('Use a cooking analogy');
+  await input.press('Enter');
+  const specific = await waitForRequests(before + 3);
+  expect(specific.reexplain).toMatchObject({
+    mode: 'specific', request: 'Use a cooking analogy',
+    previous_html: expect.stringContaining('Mock simpler version'),
+  });
+  await expect(panel.locator('.sxp-ver')).toHaveText(['Original', '2 · Simpler', '3 · Your request']);
+  await expect(panel.locator('.sxp-result')).toContainText('Mock specific version');
+
+  // Flip back to the original without a request.
+  await panel.locator('.sxp-ver', { hasText: 'Original' }).click();
+  await expect(panel.locator('.sxp-result')).toContainText('Mock explanation for text');
+  expect(requests.length).toBe(before + 3);
+
+  // One entry with two extra versions, not three entries; the list says so.
+  const { explainHistoryLocal } = await readStorage(worker(), 'explainHistoryLocal');
+  expect(explainHistoryLocal.length).toBe(Math.min(10, historyBefore + 1));
+  const entry = explainHistoryLocal.find((e) => (e.versions || []).length);
+  expect(entry.versions.map((v) => [v.mode, v.request])).toEqual([['simpler', null], ['specific', 'Use a cooking analogy']]);
+  await expect(panel.locator('.sxp-item-meta').first()).toContainText('3 versions');
+
+  // Re-explains are not feedback. "Clearer" on version 3 records how it got there.
+  expect((await readStorage(worker(), 'feedbackLog')).feedbackLog).toEqual([]);
+  await panel.locator('.sxp-ver', { hasText: '3 · Your request' }).click();
+  await panel.locator('.sxp-clearer').click();
+  await expect.poll(async () => (await readStorage(worker(), 'feedbackLog')).feedbackLog.length).toBe(1);
+  const { feedbackLog } = await readStorage(worker(), 'feedbackLog');
+  expect(feedbackLog[0]).toMatchObject({ reaction: 'clearer', reexplainPath: ['simpler', 'specific'] });
+
+  // When the free allowance is spent, the note says the re-explain was charged.
+  explainQueue.push({
+    status: 200,
+    body: {
+      html: '<p>Paid version</p>', kind: 'text', model_used: 'mock', history_entry: null, usage: null,
+      reexplain: { free: false, free_remaining: 0, free_limit: 10 },
+    },
+  });
+  await panel.getByRole('button', { name: 'More detail' }).click();
+  await waitForRequests(before + 4);
+  await expect(panel.locator('.sxp-note')).toContainText('counted as a normal explain');
+});
+
+test('re-explain a circle: re-looks at the crop kept for an hour; after that it says so', async () => {
+  await openArticle();
+  const panel = page.locator('#synapse-explain-panel');
+  const before = requests.length;
+  await fabAround(page.locator('#chart'));
+  await page.locator('#synapse-confirm-bar').getByRole('button', { name: /Confirm/ }).click();
+  const original = await waitForRequests(before + 1);
+  await expect(panel.locator('.sxp-result')).toContainText('Mock explanation for image');
+
+  // The crop is kept in session storage under the entry, for an hour.
+  const relook = await worker().evaluate(async () => {
+    const all = await chrome.storage.session.get(null);
+    return Object.entries(all).filter(([k]) => k.startsWith('relookCrop:')).map(([k, v]) => ({ k, ttl: v.expiresAt - v.createdAt }));
+  });
+  expect(relook.length).toBeGreaterThanOrEqual(1);
+  expect(relook[relook.length - 1].ttl).toBe(60 * 60 * 1000);
+
+  await panel.getByRole('button', { name: 'More detail' }).click();
+  const again = await waitForRequests(before + 2);
+  expect(again.kind).toBe('image');
+  expect(again.image_base64).toBe(original.image_base64); // the same crop, no new screenshot
+  expect(again.thumbnail_base64).toBeNull();
+  expect(again.reexplain.mode).toBe('more_detail');
+  await expect(panel.locator('.sxp-result')).toContainText('Mock more_detail version for image');
+
+  // Past the hour, the crop is gone. The chart has no text to fall back on,
+  // so the panel explains why instead of sending anything.
+  await worker().evaluate(async () => {
+    const all = await chrome.storage.session.get(null);
+    const expired = {};
+    for (const [k, v] of Object.entries(all)) if (k.startsWith('relookCrop:')) expired[k] = { ...v, expiresAt: Date.now() - 1 };
+    await chrome.storage.session.set(expired);
+  });
+  // The worker's in-memory copy goes when the worker restarts.
+  await stopServiceWorker();
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Simpler' }).click();
+  await expect(panel.locator('.sxp-note.s-error')).toContainText('only kept for an hour');
+  expect(requests.length).toBe(before + 2);
 });
 
 test('viewer: no page errors', async () => {

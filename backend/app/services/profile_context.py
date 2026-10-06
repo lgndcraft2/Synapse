@@ -77,6 +77,7 @@ async def load_feedback_summary(
                 "read_progress": r.read_progress,
                 "session_difficulty": r.session_difficulty,
                 "section_title": r.section_title,
+                "reexplain_path": r.reexplain_path,
             }
             for r in result.scalars().all()
         ]

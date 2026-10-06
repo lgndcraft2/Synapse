@@ -178,9 +178,17 @@ class CognitiveProfileSchema(BaseModel):
 # Defined ahead of the request models: anonymous callers send their local
 # feedback log inline as `recent_feedback`, since they have no server log.
 
+ReexplainMode = Literal["simpler", "more_detail", "specific"]
+
+
 class FeedbackEntry(BaseModel):
     session_id: Optional[uuid.UUID] = None
+    # "complex", "simple" and "off-topic" are no longer offered (re-explain
+    # replaced them) but stay accepted for older extension builds and rows.
     reaction: Optional[Literal["clearer", "complex", "simple", "off-topic"]] = None
+    # For "clearer" on a re-explained answer: the re-explains that led to the
+    # version the user accepted, oldest first, e.g. ["simpler", "simpler"].
+    reexplain_path: Optional[list[ReexplainMode]] = Field(None, max_length=20)
     note: Optional[str] = Field("", max_length=500)
     time_spent_seconds: Optional[int] = Field(None, ge=0, le=86400)
     read_progress: Optional[int] = Field(None, ge=0, le=100)
@@ -365,6 +373,21 @@ class ExplainContext(BaseModel):
     page: Optional[ExplainPageContext] = None
 
 
+class ExplainReexplain(BaseModel):
+    """Asks for another version of an explanation the user already has.
+
+    Affects only this generation: re-explains are never written to the
+    feedback log, so they don't move the long-term profile.
+    """
+    mode: ReexplainMode
+    # The user's own words for mode "specific" (required there, checked in the route).
+    request: Optional[str] = Field(None, max_length=500)
+    # The version on screen when the user asked, so "simpler" is relative to it.
+    previous_html: str = Field(..., min_length=1, max_length=40_000)
+    # Paid history entry the new version is appended to.
+    parent_entry_id: Optional[uuid.UUID] = None
+
+
 class ExplainRequest(BaseModel):
     """A highlighted passage (`kind="text"`) or a circled area (`"image"`).
 
@@ -392,6 +415,7 @@ class ExplainRequest(BaseModel):
     # From POST /explain/context. Format is checked in the route so that a
     # malformed id answers 400 CONTEXT_EXPIRED like any other unusable one.
     context_id: Optional[str] = Field(None, max_length=200)
+    reexplain: Optional[ExplainReexplain] = None
     # Where the explain happened, for aggregate feature telemetry only.
     source: Optional[Literal["page", "pdf", "document"]] = None
 
@@ -438,12 +462,24 @@ class ExplanationHistoryOut(BaseModel):
     result_html: str
     thumbnail_url: Optional[str] = None
     created_at: datetime
+    # Re-explained versions after the original (`result_html`), oldest first:
+    # [{mode, request, result_html, created_at}].
+    versions: list[dict] = Field(default_factory=list)
+
+
+class ExplainReexplainStatus(BaseModel):
+    """Today's free re-explains. `free` says whether this one cost nothing;
+    `free_remaining` is null when the counter was unavailable."""
+    free: bool
+    free_remaining: Optional[int]
+    free_limit: int
 
 
 class ExplainResponse(BaseModel):
     html: str
     kind: Literal["text", "image"]
     model_used: str
+    reexplain: Optional[ExplainReexplainStatus] = None
     history_entry: Optional[ExplanationHistoryOut] = None
     usage: Optional[ExplainUsage] = None
 

@@ -37,12 +37,13 @@ from app.db.database import get_db
 from app.models.models import ExplanationHistory, User
 from app.schemas.schemas import (
     ExplainContextUploadRequest, ExplainContextUploadResponse,
-    ExplainRequest, ExplainResponse, ExplainUsage,
+    ExplainReexplainStatus, ExplainRequest, ExplainResponse, ExplainUsage,
     ExplanationHistoryDeleted, ExplanationHistoryOut, ExplanationHistoryPage,
 )
 from app.services import ai, explain_context, explain_storage
 from app.services.explain_limits import (
-    _caller_identity, check_explain_burst, refund_image_capture, reserve_image_capture,
+    _caller_identity, check_explain_burst, refund_free_reexplain, refund_image_capture,
+    reserve_image_capture, take_free_reexplain,
 )
 from app.services.profile_context import (
     apply_session_difficulty, load_feedback_summary, load_profile,
@@ -61,6 +62,7 @@ _MAX_ANCHOR_BYTES = 4 * 1024
 # non-Latin text is not penalised by its UTF-8 width.
 _MAX_CONTEXT_CHARS = 24 * 1024
 _CONTEXT_UNITS = 4              # reformat units for a text explain with page/document context
+_MAX_VERSIONS = 10              # re-explained versions kept per history entry (the original is extra)
 
 _DOCUMENT_TEXT_TYPES = {"text/plain", "text/csv", "text/markdown"}
 _MAX_PDF_BYTES = 20 * 1024 * 1024
@@ -158,6 +160,7 @@ async def _entry_out(row: ExplanationHistory) -> ExplanationHistoryOut:
             row.thumbnail_key, row.thumbnail_expires_at
         ),
         created_at=as_aware(row.created_at),
+        versions=list(row.versions or []),
     )
 
 
@@ -197,6 +200,10 @@ async def explain(
                 raise _invalid("thumbnail_base64 must be a WebP image.")
         text = text[:_IMAGE_TEXT_LIMIT]
 
+    reexplain = body.reexplain
+    if reexplain and reexplain.mode == "specific" and not (reexplain.request or "").strip():
+        raise _invalid("Say what you'd like changed for a specific re-explain.")
+
     anchor = body.anchor or {}
     if len(json.dumps(anchor, separators=(",", ":"))) > _MAX_ANCHOR_BYTES:
         raise _invalid("anchor is too large.")
@@ -234,14 +241,18 @@ async def explain(
 
     # ── 3. Quotas: burst for everyone, then text or image quota ───
     await check_explain_burst(user, body.fingerprint, request)
+    # A re-explain is free while today's allowance lasts; after that it is
+    # charged exactly like a normal explain, below.
+    free_reexplain = await take_free_reexplain(user, body.fingerprint, request) if reexplain else None
     image_usage = None
-    if body.kind == "text":
-        # Page or document context makes the call several times larger, so it
-        # costs several reformats. All-or-nothing; see check_rate_limit.
-        units = _CONTEXT_UNITS if (has_page_context or document_text) else 1
-        await check_rate_limit(db, user, body.fingerprint, request, units=units)
-    else:
-        image_usage = await reserve_image_capture(db, user, body.fingerprint, request)
+    if free_reexplain is None:
+        if body.kind == "text":
+            # Page or document context makes the call several times larger, so
+            # it costs several reformats. All-or-nothing; see check_rate_limit.
+            units = _CONTEXT_UNITS if (has_page_context or document_text) else 1
+            await check_rate_limit(db, user, body.fingerprint, request, units=units)
+        else:
+            image_usage = await reserve_image_capture(db, user, body.fingerprint, request)
 
     # ── 4. Prompt context ─────────────────────────────────────────
     profile = await load_profile(db, user, body.profile)
@@ -266,12 +277,15 @@ async def explain(
             use_claude=is_premium,
             context_text=context_text,
             document_text=document_text,
+            reexplain=reexplain.model_dump(include={"mode", "request", "previous_html"}) if reexplain else None,
         )
     except Exception:
         # The traceback may name the provider endpoint; it stays server-side.
         logger.exception("explain (%s) provider call failed", body.kind)
         if image_usage is not None:
             await refund_image_capture(image_usage)
+        if free_reexplain is not None:
+            await refund_free_reexplain(free_reexplain)
         _record_ai_usage(
             db, user=user, provider=provider, operation=operation, source=source,
             input_characters=input_characters, output_characters=0,
@@ -297,7 +311,29 @@ async def explain(
     # ── 6. Paid history ───────────────────────────────────────────
     history_entry = None
     hostname = _hostname_for(body.page_url)
-    if user and hostname and await _active_paid_plan(db, user):
+    paid = bool(user and hostname and await _active_paid_plan(db, user))
+    parent = None
+    if paid and reexplain and reexplain.parent_entry_id:
+        # Owner-filtered like every history query: someone else's id is
+        # treated as missing, and the version becomes a new entry instead.
+        parent = await db.scalar(
+            select(ExplanationHistory).where(
+                ExplanationHistory.id == reexplain.parent_entry_id,
+                ExplanationHistory.user_id == user.id,
+            )
+        )
+    if parent is not None:
+        version = {
+            "mode": reexplain.mode,
+            "request": (reexplain.request or "").strip() or None,
+            "result_html": html,
+            "created_at": utc_now().isoformat(),
+        }
+        # Reassigned, not appended in place, so the JSONB change is saved.
+        parent.versions = (list(parent.versions or []) + [version])[-_MAX_VERSIONS:]
+        await db.flush()
+        history_entry = await _entry_out(parent)
+    elif paid:
         created_at = utc_now()
         row = ExplanationHistory(
             id=uuid.uuid4(),
@@ -328,12 +364,21 @@ async def explain(
             image_period=image_usage.period,
         )
 
+    reexplain_status = None
+    if reexplain:
+        reexplain_status = ExplainReexplainStatus(
+            free=free_reexplain is not None,
+            free_remaining=free_reexplain.remaining if free_reexplain is not None else 0,
+            free_limit=settings.EXPLAIN_FREE_REEXPLAINS_PER_DAY,
+        )
+
     return ExplainResponse(
         html=html,
         kind=body.kind,
         model_used="claude-sonnet" if is_premium else "gemini-flash",
         history_entry=history_entry,
         usage=usage,
+        reexplain=reexplain_status,
     )
 
 

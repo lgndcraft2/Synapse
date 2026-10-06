@@ -192,10 +192,11 @@ export default function Dashboard() {
   }
 
   const feedbackItems: FeedbackItem[] = stats ? [
-    { label: "Clearer",      pct: stats.feedback_breakdown["clearer"] || 0, barColor: "#004635" },
-    { label: "Too Complex",  pct: stats.feedback_breakdown["complex"] || 0, barColor: "#707974" },
-    { label: "Too Simple",   pct: stats.feedback_breakdown["simple"] || 0, barColor: "#707974" },
-    { label: "Missed Point", pct: stats.feedback_breakdown["off-topic"] || 0, barColor: "#ba1a1a" },
+    // "complex"/"simple" include explanations that only became clear after a
+    // "Simpler"/"More detail" re-explain (the server maps them).
+    { label: "Clear first time",   pct: stats.feedback_breakdown["clearer"] || 0, barColor: "#004635" },
+    { label: "Needed simpler",     pct: stats.feedback_breakdown["complex"] || 0, barColor: "#707974" },
+    { label: "Needed more detail", pct: stats.feedback_breakdown["simple"] || 0, barColor: "#707974" },
   ] : [];
 
   // Calculate percentages
@@ -373,7 +374,7 @@ export default function Dashboard() {
             {/* Feedback Insights */}
             <section className="p-6 rounded-lg" style={{ backgroundColor: "#fcf9f8", border: "1px solid #3d3d38" }}>
               <h3 className="font-serif font-semibold text-2xl mb-2" style={{ color: "#1b1c1c" }}>Feedback Insights</h3>
-              <p className="text-sm mb-6" style={{ color: "#5e5f5b" }}>Based on your interactions with reformatted cards.</p>
+              <p className="text-sm mb-6" style={{ color: "#5e5f5b" }}>Based on the explanations you marked as clearer.</p>
               <div className="space-y-3">
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, i) => (
