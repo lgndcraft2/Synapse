@@ -12,7 +12,7 @@ import { EXTENSION_DIR } from './paths.mjs';
  * --load-extension in official builds, so `channel: 'chrome'` silently starts
  * a browser with no extension at all.
  */
-export async function launchExtension() {
+export async function launchExtension({ args = [] } = {}) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'synapse-ext-'));
 
   const context = await chromium.launchPersistentContext(userDataDir, {
@@ -22,6 +22,7 @@ export async function launchExtension() {
       `--load-extension=${EXTENSION_DIR}`,
       '--no-first-run',
       '--no-default-browser-check',
+      ...args,
     ],
   });
 

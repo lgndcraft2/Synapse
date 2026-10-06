@@ -360,6 +360,29 @@ export async function updateProfile(update: Record<string, unknown>) {
 }
 
 /** Permanently deletes the account: Stripe subscription, local rows, auth user. */
+/**
+ * Deletes every explanation saved to the account, across all sites.
+ *
+ * History on free plans lives only in the extension's local storage, so this
+ * reaches synced (paid) history alone. Returns how many entries were removed.
+ */
+export async function clearExplainHistory(): Promise<number> {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/explain/history${query({ all: 'true' })}`, {
+    method: 'DELETE',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to clear explanation history' }));
+    const detail = error.detail;
+    throw new Error(typeof detail === 'string' ? detail : detail?.message || 'Failed to clear explanation history');
+  }
+
+  const { deleted } = await response.json();
+  return deleted ?? 0;
+}
+
 export async function deleteAccount() {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(`${BACKEND_URL}/api/v1/auth/account`, {

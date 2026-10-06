@@ -1,0 +1,286 @@
+/* ================================================================
+   Synapse PDF viewer
+   ================================================================ */
+:root {
+  --green: #1D9E75;
+  --green-dark: #0F6E56;
+  --green-deep: #085041;
+  --green-light: #E1F5EE;
+  --green-mid: #9FE1CB;
+  --ink: #16201c;
+  --ink-2: #4a5550;
+  --ink-3: #5f6a66;
+  --line: #dfe5e2;
+  --chrome: #ffffff;
+  --canvas-bg: #e9eeeb;
+  --page-shadow: 0 1px 3px rgba(17, 32, 26, .12), 0 6px 18px rgba(17, 32, 26, .08);
+  --toolbar-h: 52px;
+  --font: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8eeeb;
+    --ink-2: #b9c4bf;
+    --ink-3: #8c9893;
+    --line: #34403b;
+    --chrome: #1b2420;
+    --canvas-bg: #111816;
+    --green-light: #173a2f;
+    --page-shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 6px 18px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scroll-padding-top: calc(var(--toolbar-h) + 12px);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--canvas-bg);
+  color: var(--ink);
+  font: 14px/1.45 var(--font);
+  padding-top: var(--toolbar-h);
+}
+
+.vw-sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+.vw-skip {
+  position: fixed; left: 12px; top: -48px; z-index: 30;
+  background: var(--green); color: #fff; padding: 8px 12px; border-radius: 8px;
+  font-weight: 600; text-decoration: none;
+}
+.vw-skip:focus { top: 8px; }
+
+/* ── Toolbar ───────────────────────────────────────────────────── */
+.vw-toolbar {
+  position: fixed; inset: 0 0 auto 0; z-index: 20;
+  min-height: var(--toolbar-h);
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .02);
+}
+
+.vw-group { display: flex; align-items: center; gap: 6px; }
+.vw-titlegroup { flex: 1 1 180px; min-width: 0; gap: 9px; }
+.vw-logo { flex: none; border-radius: 6px; }
+.vw-title {
+  margin: 0; font-size: 14px; font-weight: 650; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.vw-muted { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+.vw-synapse { margin-left: auto; }
+
+.vw-btn {
+  appearance: none; border: 1px solid var(--line); background: var(--chrome); color: var(--ink);
+  font: 600 13px/1 var(--font); padding: 8px 11px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none; white-space: nowrap;
+  min-height: 34px;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.vw-btn:hover:not(:disabled) { background: var(--green-light); border-color: var(--green-mid); }
+.vw-btn:disabled, .vw-btn[aria-disabled="true"] { opacity: .45; cursor: default; }
+.vw-btn[aria-pressed="true"], .vw-btn[aria-expanded="true"] {
+  background: var(--green-light); border-color: var(--green); color: var(--green-deep);
+}
+.vw-primary { background: var(--green); border-color: var(--green); color: #fff; }
+.vw-primary:hover:not(:disabled) { background: var(--green-dark); border-color: var(--green-dark); }
+.vw-icon { width: 34px; justify-content: center; padding: 0; font-size: 18px; }
+.vw-link { font-weight: 500; color: var(--ink-2); }
+
+.vw-btn:focus-visible, .vw-page-input:focus-visible, .vw-input:focus-visible, .vw-skip:focus-visible,
+.synapse-reader-close:focus-visible {
+  outline: 3px solid var(--green-mid); outline-offset: 2px;
+}
+
+.vw-page-input {
+  width: 58px; height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--chrome); color: var(--ink); font: 600 13px var(--font); text-align: center;
+  -moz-appearance: textfield;
+}
+.vw-page-input::-webkit-inner-spin-button, .vw-page-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.vw-zoom { min-width: 46px; text-align: center; font: 600 13px var(--font); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ── Main area: loading, password, errors ─────────────────────── */
+.vw-main { padding: 0 0 48px; }
+
+.vw-note {
+  position: fixed; left: 16px; bottom: 16px; z-index: 15;
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 8px 9px 14px; border-radius: 12px;
+  background: var(--chrome); border: 1px solid var(--line); box-shadow: var(--page-shadow);
+  color: var(--ink-2); font-size: 13px;
+}
+.vw-note[hidden] { display: none; }
+.vw-note-close {
+  appearance: none; flex: none; width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--ink-3); cursor: pointer; font-size: 12px;
+}
+.vw-note-close:hover { background: var(--canvas-bg); }
+.vw-note-close:focus-visible { outline: 3px solid var(--green-mid); outline-offset: 1px; }
+
+.vw-center {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 18vh 16px 0; color: var(--ink-2);
+}
+.vw-center[hidden] { display: none; }
+
+.vw-spinner {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 3px solid var(--green-light); border-top-color: var(--green);
+  animation: vw-spin .75s linear infinite;
+}
+@keyframes vw-spin { to { transform: rotate(360deg); } }
+
+.vw-card {
+  max-width: 440px; margin: 14vh auto 0; padding: 24px; border-radius: 16px;
+  background: var(--chrome); border: 1px solid var(--line); box-shadow: var(--page-shadow);
+}
+.vw-card[hidden] { display: none; }
+.vw-card-title { margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+.vw-card-text { margin: 0 0 16px; color: var(--ink-2); }
+.vw-card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.vw-label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.vw-input {
+  width: 100%; height: 40px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--chrome); color: var(--ink); font: 15px var(--font);
+}
+.vw-input[aria-invalid="true"] { border-color: #c4321f; }
+.vw-field-error { min-height: 20px; margin: 6px 0 8px; color: #c4321f; font-size: 13px; }
+.vw-steps { margin: 0 0 16px; padding-left: 20px; color: var(--ink-2); }
+.vw-steps li { margin: 3px 0; }
+
+/* ── Pages ─────────────────────────────────────────────────────── */
+.vw-pages { padding: 8px 24px 0; }
+
+.vw-page {
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  position: relative;
+  margin: 16px auto 0;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  overflow: visible;
+}
+
+.vw-canvas { position: absolute; inset: 0; overflow: hidden; }
+.vw-canvas canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Scanned / image-only pages: a quiet marker in the gap above the page.
+   Generated content, so it never enters text extraction or selections. */
+.vw-page.s-no-text::before {
+  content: "No selectable text on this page \00B7  circle it to explain";
+  position: absolute; right: 0; bottom: 100%; margin-bottom: 2px;
+  font: 500 11px/14px var(--font); color: var(--ink-3);
+  pointer-events: none; user-select: none;
+}
+
+/* ── pdf.js text layer ──────────────────────────────────────────
+   Adapted from pdfjs-dist 5.7.284 web/pdf_viewer.css (Apache-2.0). */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { user-select: none; cursor: default; }
+.textLayer ::selection {
+  background: rgba(0 0 255 / .25);
+  background: color-mix(in srgb, AccentColor, transparent 75%);
+}
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent {
+  display: block; position: absolute; inset: 100% 0 0; z-index: 0;
+  cursor: default; user-select: none;
+}
+.textLayer.selecting .endOfContent { top: 0; }
+
+/* ── Document reader overlay ("Read with Synapse") ─────────────── */
+#synapse-reader-overlay {
+  position: fixed; inset: var(--toolbar-h) 0 0 0; z-index: 25;
+  background: rgba(17, 32, 26, .28);
+  display: flex; justify-content: center; padding: 18px;
+  opacity: 0; transition: opacity .2s ease;
+}
+#synapse-reader-overlay.s-visible { opacity: 1; }
+.synapse-reader-panel {
+  position: relative; width: min(760px, 100%); max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--chrome); color: var(--ink); border-radius: 16px; border: 1px solid var(--line);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .2); overflow: hidden;
+}
+.synapse-reader-topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+.synapse-reader-title { font-weight: 700; color: var(--green-deep); }
+@media (prefers-color-scheme: dark) { .synapse-reader-title { color: var(--green-mid); } }
+.synapse-reader-close {
+  appearance: none; border: 0; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--canvas-bg); color: var(--ink-2); cursor: pointer; font-size: 14px;
+}
+.synapse-reader-loading {
+  display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 16px; color: var(--ink-2);
+}
+.synapse-reader-content {
+  overflow-y: auto; padding: 20px 28px 28px; font-size: 16px; line-height: 1.65;
+}
+.synapse-reader-content[hidden] { display: none; }
+.synapse-reader-content h1, .synapse-reader-content h2, .synapse-reader-content h3 { line-height: 1.3; }
+.synapse-reader-error { color: #c4321f; }
+
+/* ── Small screens ─────────────────────────────────────────────── */
+@media (max-width: 760px) {
+  :root { --toolbar-h: 96px; }
+  .vw-titlegroup { flex-basis: 100%; }
+  .vw-synapse { margin-left: 0; }
+  .vw-pages { padding: 8px 8px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vw-spinner { animation-duration: 2.4s; }
+  #synapse-reader-overlay, .vw-btn { transition: none; }
+}
+
+#viewer:focus { outline: none; }

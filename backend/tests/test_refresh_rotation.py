@@ -230,3 +230,36 @@ async def test_refresh_token_is_never_stored_in_plaintext(
         for row in rows:
             assert row.token_hash != raw
             assert len(row.token_hash) == 64  # sha256 hex
+
+
+async def test_extension_session_is_a_separate_family(client, verified_user, session_factory):
+    """
+    The dashboard and the extension refresh independently. Sharing one family
+    made the second refresh look like a replay and signed both out.
+    """
+    from app.models.models import RefreshToken
+
+    web = await _login(client, verified_user)
+    resp = await client.post(
+        "/api/v1/auth/extension-session",
+        headers={"Authorization": f"Bearer {web['access_token']}"},
+    )
+    assert resp.status_code == 200, resp.text
+    ext = resp.json()
+    assert ext["refresh_token"] != web["refresh_token"]
+
+    # Both sides rotate, in either order, and both stay signed in.
+    web_next = await client.post("/api/v1/auth/refresh", json={"refresh_token": web["refresh_token"]})
+    ext_next = await client.post("/api/v1/auth/refresh", json={"refresh_token": ext["refresh_token"]})
+    assert web_next.status_code == 200
+    assert ext_next.status_code == 200
+
+    async with session_factory() as db:
+        rows = (await db.scalars(select(RefreshToken))).all()
+    assert {r.client for r in rows} == {"web", "extension"}
+    assert len({r.family_id for r in rows}) == 2
+
+
+async def test_extension_session_requires_a_signed_in_user(client):
+    resp = await client.post("/api/v1/auth/extension-session")
+    assert resp.status_code in (401, 403)

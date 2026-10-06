@@ -3,17 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
 from app.core.dependencies import get_optional_user
-from app.models.models import AIUsageEvent, User, CognitiveProfile, FeedbackLog, ReadingSession, Billing
+from app.models.models import AIUsageEvent, User, ReadingSession, Billing
 from app.schemas.schemas import (
     ReformatRequest, ReformatResponse,
     AnalyseSectionsRequest, AnalyseSectionsResponse,
-    DocumentReformatRequest, CognitiveProfileSchema
+    DocumentReformatRequest,
 )
 from app.services.rate_limit import check_rate_limit
 from app.services.ai import (
     call_gemini, call_claude,
     generate_sq4r_questions,
-    build_feedback_summary
+)
+from app.services.profile_context import (
+    load_profile, load_feedback_summary, apply_session_difficulty,
 )
 from app.core.config import settings
 from datetime import datetime
@@ -135,61 +137,13 @@ async def reformat_page(
     await check_rate_limit(db, user, body.fingerprint, request)
 
     # ── 3. Load cognitive profile ─────────────────────────────────
-    # For authenticated users the server-side profile is the source of truth
-    # (edited from the dashboard), so it takes precedence over any inline profile
-    # the client sends. Anonymous callers fall back to the inline profile.
-    if user:
-        result = await db.execute(
-            select(CognitiveProfile).where(CognitiveProfile.user_id == user.id)
-        )
-        profile_row = result.scalar_one_or_none()
-        if profile_row is None and body.profile:
-            profile = body.profile.model_dump()
-        else:
-            profile = {
-                "profile_type":         profile_row.profile_type if profile_row else "load-reducer",
-                "preferred_format":     profile_row.preferred_format if profile_row else "bullet points",
-                "chunk_size":           profile_row.chunk_size if profile_row else "short",
-                "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
-                "simplify_vocab":       profile_row.simplify_vocab if profile_row else False,
-                "max_nesting_depth":    profile_row.max_nesting_depth if profile_row else 2,
-                "use_headers":          profile_row.use_headers if profile_row else True,
-                "notes":                profile_row.notes if profile_row else "",
-            }
-    elif body.profile:
-        # Anonymous user provided a profile in the request
-        profile = body.profile.model_dump()
-    else:
-        # Fallback default
-        profile = CognitiveProfileSchema().model_dump()
+    profile = await load_profile(db, user, body.profile)
 
     # ── 4. Load recent feedback for prompt context ────────────────
-    feedback_entries = []
-    if user:
-        result = await db.execute(
-            select(FeedbackLog)
-            .where(FeedbackLog.user_id == user.id)
-            .order_by(FeedbackLog.created_at.desc())
-            .limit(20)
-        )
-        rows = result.scalars().all()
-        feedback_entries = [
-            {
-                "reaction": r.reaction,
-                "time_spent_seconds": r.time_spent_seconds,
-                "read_progress": r.read_progress,
-                "session_difficulty": r.session_difficulty,
-            }
-            for r in rows
-        ]
-
-    feedback_summary = build_feedback_summary(feedback_entries)
+    feedback_summary = await load_feedback_summary(db, user, body.recent_feedback)
 
     # ── 5. Apply session difficulty override ──────────────────────
-    if body.session_difficulty == "hard":
-        profile["chunk_size"] = "short"
-        profile["simplify_vocab"] = True
-        feedback_summary += "\nUser reported a hard reading day. Simplify aggressively."
+    feedback_summary = apply_session_difficulty(profile, feedback_summary, body.session_difficulty)
 
     # ── 6. Call AI + SQ4R in parallel ────────────────────────────
     is_premium = await _is_premium_active(user, db)
@@ -279,49 +233,10 @@ async def reformat_document_route(
     await _validate_input_length(db, user, body.base64_data)
     await check_rate_limit(db, user, body.fingerprint, request)
     
-    # ── Load profile ─────────────────────────────────────────────
-    # Authenticated users always use their server-side (dashboard) profile.
-    if user:
-        result = await db.execute(select(CognitiveProfile).where(CognitiveProfile.user_id == user.id))
-        profile_row = result.scalar_one_or_none()
-        if profile_row is None and body.profile:
-            profile = body.profile.model_dump()
-        else:
-            profile = {
-                "profile_type": profile_row.profile_type if profile_row else "load-reducer",
-                "preferred_format": profile_row.preferred_format if profile_row else "bullet points",
-                "chunk_size": profile_row.chunk_size if profile_row else "short",
-                "needs_examples_first": profile_row.needs_examples_first if profile_row else True,
-                "simplify_vocab": profile_row.simplify_vocab if profile_row else False,
-                "max_nesting_depth": profile_row.max_nesting_depth if profile_row else 2,
-                "use_headers": profile_row.use_headers if profile_row else True,
-                "notes": profile_row.notes if profile_row else "",
-            }
-    elif body.profile:
-        profile = body.profile.model_dump()
-    else:
-        profile = CognitiveProfileSchema().model_dump()
-
-    # ── Load feedback ────────────────────────────────────────────
-    feedback_entries = []
-    if user:
-        result = await db.execute(
-            select(FeedbackLog)
-            .where(FeedbackLog.user_id == user.id)
-            .order_by(FeedbackLog.created_at.desc())
-            .limit(20)
-        )
-        feedback_entries = [
-            {"reaction": r.reaction, "time_spent_seconds": r.time_spent_seconds, "read_progress": r.read_progress, "session_difficulty": r.session_difficulty}
-            for r in result.scalars().all()
-        ]
-
-    feedback_summary = build_feedback_summary(feedback_entries)
-    
-    if body.session_difficulty == "hard":
-        profile["chunk_size"] = "short"
-        profile["simplify_vocab"] = True
-        feedback_summary += "\nUser reported a hard reading day. Simplify aggressively."
+    # ── Load profile and feedback ────────────────────────────────
+    profile = await load_profile(db, user, body.profile)
+    feedback_summary = await load_feedback_summary(db, user, body.recent_feedback)
+    feedback_summary = apply_session_difficulty(profile, feedback_summary, body.session_difficulty)
 
     is_premium = await _is_premium_active(user, db)
     

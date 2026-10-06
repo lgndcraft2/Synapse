@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { requireAuth, clearSession, updateAvatar, updateName } from './lib/auth';
 import {
+  clearExplainHistory,
   deleteAccount,
   getBillingStatus,
   getProfile,
@@ -102,6 +103,7 @@ export default function Profile() {
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [confirmingClearHistory, setConfirmingClearHistory] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -226,6 +228,23 @@ export default function Profile() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setNotice('Your profile has been downloaded.');
+  }
+
+  async function handleClearHistory() {
+    if (busy) return;
+    setBusy('clear-history');
+    setError(null);
+    try {
+      const deleted = await clearExplainHistory();
+      setNotice(
+        deleted === 1 ? '1 saved explanation was deleted.' : `${deleted} saved explanations were deleted.`,
+      );
+      setConfirmingClearHistory(false);
+    } catch (err: any) {
+      setError(err?.message || 'We could not clear your explanation history.');
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function handleDelete() {
@@ -641,6 +660,46 @@ export default function Profile() {
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>download</span>
                 Export as JSON
               </button>
+
+              <div className="mt-6 pt-4" style={{ borderTop: '1px solid #e4e2e1' }}>
+                <p className="text-sm mb-3" style={{ color: '#5e5f5b', lineHeight: 1.6 }}>
+                  Explanations you save on paid plans sync across your devices. Thumbnails of
+                  circled areas are deleted automatically after 30 days.
+                </p>
+                {!confirmingClearHistory ? (
+                  <button
+                    className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80 flex items-center justify-center gap-2"
+                    style={{ ...PROFILE_ACTION, display: 'flex' }}
+                    onClick={() => setConfirmingClearHistory(true)}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete_sweep</span>
+                    Clear explanation history
+                  </button>
+                ) : (
+                  <div className="rounded-lg p-4" style={{ border: '1px solid #3d3d38', backgroundColor: '#fcf9f8' }}>
+                    <p className="text-sm mb-3" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
+                      Delete every saved explanation on every site? This cannot be undone.
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                        style={{ backgroundColor: '#ba1a1a', color: '#fff', border: '1px solid #ba1a1a' }}
+                        onClick={handleClearHistory}
+                        disabled={busy === 'clear-history'}
+                      >
+                        {busy === 'clear-history' ? 'Clearing…' : 'Delete all explanations'}
+                      </button>
+                      <button
+                        className="w-full rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80"
+                        style={PROFILE_ACTION}
+                        onClick={() => setConfirmingClearHistory(false)}
+                      >
+                        Keep them
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="mt-6 pt-4" style={{ borderTop: '1px solid #e4e2e1' }}>
                 {!confirmingDelete ? (

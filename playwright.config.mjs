@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  // The suite signs up a real Supabase account and waits on two dev servers.
+  // The suite seeds an isolated SQLite account and waits on two dev servers.
   timeout: 180_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

@@ -104,6 +104,28 @@ class Settings(BaseSettings):
     TRIAL_TEXT_LIMIT: int = 100000
     PREMIUM_TEXT_LIMIT: int = 500000
 
+    # ── Explain (highlight / circle) ──────────────────────────────
+    # Text explains share the reformat quota above. Circled screenshots are
+    # costlier, so they get their own counter. Premium and institutional are
+    # unlimited, but everyone is held to the per-minute burst cap.
+    FREE_IMAGE_DAILY_LIMIT: int = 5      # free and anonymous, per UTC day
+    LITE_IMAGE_MONTHLY_LIMIT: int = 100  # Thinker Lite, per calendar month
+    EXPLAIN_BURST_PER_MINUTE: int = 10
+    # Decoded byte ceilings. The crop goes to the model and is never stored;
+    # the thumbnail is what paid history keeps.
+    EXPLAIN_MAX_IMAGE_BYTES: int = 4 * 1024 * 1024
+    EXPLAIN_MAX_THUMBNAIL_BYTES: int = 200 * 1024
+    EXPLAIN_THUMBNAIL_RETENTION_DAYS: int = 30
+
+    # S3-compatible object storage for history thumbnails. Leave any of the
+    # required values blank and thumbnails are simply not stored; explaining
+    # and text history keep working. REGION is optional for most providers.
+    EXPLAIN_STORAGE_ENDPOINT: str = ""
+    EXPLAIN_STORAGE_BUCKET: str = ""
+    EXPLAIN_STORAGE_ACCESS_KEY_ID: str = ""
+    EXPLAIN_STORAGE_SECRET_ACCESS_KEY: str = ""
+    EXPLAIN_STORAGE_REGION: str = ""
+
     @field_validator("APP_SECRET_KEY")
     @classmethod
     def _secret_key_is_strong(cls, v: str) -> str:
@@ -127,6 +149,15 @@ class Settings(BaseSettings):
             self.GOOGLE_CLIENT_ID
             and self.GOOGLE_CLIENT_SECRET
             and self.GOOGLE_REDIRECT_URI
+        )
+
+    @property
+    def explain_storage_configured(self) -> bool:
+        return bool(
+            self.EXPLAIN_STORAGE_ENDPOINT
+            and self.EXPLAIN_STORAGE_BUCKET
+            and self.EXPLAIN_STORAGE_ACCESS_KEY_ID
+            and self.EXPLAIN_STORAGE_SECRET_ACCESS_KEY
         )
 
     @property
