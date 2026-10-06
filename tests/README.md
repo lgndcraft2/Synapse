@@ -8,7 +8,7 @@ npx playwright test --config=playwright.config.mjs
 
 Nothing needs to be running first. `global-setup.mjs` handles the test environment:
 
-1. Boots Chromium once to discover the unpacked extension ID. Chrome derives it from the install path, so it can only be read at runtime.
+1. Boots Chromium once to discover the unpacked extension ID from `extension/`. Chrome derives it from the install path, so it can only be read at runtime.
 2. Writes that ID into `webpage/.env` as `VITE_EXTENSION_ID`, because Vite reads it at serve time and the dashboard cannot hand off a session without it. The original file is backed up and restored in teardown.
 3. Creates `tests/.e2e.db`, a throwaway SQLite database, and seeds one already-verified account.
 4. Starts `uvicorn` on port 8000 and Vite on port **3000**, then waits for both.

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     String, Boolean, Integer, Text, ForeignKey, DateTime,
-    CheckConstraint, Index, func, desc,
+    CheckConstraint, Index, func, desc, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -203,6 +203,49 @@ class UsageTracking(Base):
     )
 
 
+class AIUsageEvent(Base):
+    """A content-free record of one primary reformat provider call.
+
+    The observer needs provider usage and cost trends, but must never turn into
+    a second store of the page a person was reading.  Token counts are estimated
+    from character counts here; provider responses and prompts are not retained.
+    """
+    __tablename__ = "ai_usage_events"
+
+    id:                 Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider:           Mapped[str]       = mapped_column(String, nullable=False)
+    operation:          Mapped[str]       = mapped_column(String, nullable=False, default="reformat")
+    input_characters:   Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    output_characters:  Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    duration_ms:        Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    succeeded:          Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True)
+    created_at:         Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("provider IN ('gemini', 'claude')", name="ai_usage_events_provider_check"),
+        Index("ix_ai_usage_events_created_provider", desc("created_at"), "provider"),
+        Index("ix_ai_usage_events_user_created", "user_id", desc("created_at")),
+    )
+
+
+class AdminAuditLog(Base):
+    """An immutable, content-free trail of sensitive observer actions."""
+    __tablename__ = "admin_audit_log"
+
+    id:              Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_user_id:   Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    target_user_id:  Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action:          Mapped[str]       = mapped_column(String, nullable=False)
+    metadata_json:   Mapped[dict]      = mapped_column(JSONB, nullable=False, default=dict)
+    created_at:      Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_admin_audit_log_created", desc("created_at")),
+        Index("ix_admin_audit_log_target_created", "target_user_id", desc("created_at")),
+    )
+
+
 class SupportTicket(Base):
     """A ticket filed from the /support page.
 
@@ -320,5 +363,41 @@ class EmailToken(Base):
         CheckConstraint(
             "purpose IN ('email_verify', 'password_reset')",
             name="email_tokens_purpose_check",
+        ),
+    )
+
+
+class ExplanationHistory(Base):
+    """One saved explanation, for paid accounts' per-site history.
+
+    Only the explained text (capped at 2,000 chars), the result and a small
+    WebP thumbnail reference are kept. The full-size crop sent to the model is
+    never stored. Thumbnails live in object storage, not here, and are purged
+    after EXPLAIN_THUMBNAIL_RETENTION_DAYS; the text result outlives them.
+    """
+    __tablename__ = "explanation_history"
+
+    id:                   Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id:              Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    hostname:             Mapped[str]       = mapped_column(String, nullable=False)
+    url:                  Mapped[str]       = mapped_column(Text, nullable=True)
+    page_title:           Mapped[str]       = mapped_column(Text, nullable=True)
+    kind:                 Mapped[str]       = mapped_column(String, nullable=False)
+    source_text:          Mapped[str]       = mapped_column(Text, nullable=True)
+    anchor:               Mapped[dict]      = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    result_html:          Mapped[str]       = mapped_column(Text, nullable=False)
+    thumbnail_key:        Mapped[str]       = mapped_column(String, nullable=True)
+    thumbnail_expires_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at:           Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('text', 'image')", name="explanation_history_kind_check"),
+        # The panel reads one user's entries for one site, newest first.
+        Index("ix_explanation_history_user_host_created", "user_id", "hostname", desc("created_at")),
+        # The purge only ever looks at rows that still hold a thumbnail.
+        Index(
+            "ix_explanation_history_thumbnail_expires",
+            "thumbnail_expires_at",
+            postgresql_where=text("thumbnail_key IS NOT NULL"),
         ),
     )

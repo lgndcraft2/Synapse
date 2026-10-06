@@ -109,9 +109,12 @@ test('signing in on the dashboard hands the session to the extension', async () 
   const page = await context.newPage();
   await page.goto(`${FRONTEND_URL}/auth?tab=login`);
 
-  await page.fill('#email-login', testEmail);
-  await page.fill('#password-login', testPassword);
-  await page.click('button[type="submit"]');
+  // Auth fields deliberately use React-generated IDs so their labels stay
+  // correctly associated. Test the same accessible contract a user relies on
+  // instead of coupling this flow to an implementation-specific ID.
+  await page.getByLabel('Email').fill(testEmail);
+  await page.getByLabel('Password').fill(testPassword);
+  await page.getByRole('button', { name: 'Log in' }).click();
 
   await page.waitForURL('**/dashboard', { timeout: 45_000 });
 

@@ -1,7 +1,15 @@
 import { Activity, Clock3, Gauge, ListTree, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './component/AppShell';
-import { getObserverOverview } from './lib/api';
+import {
+  cancelObserverSubscription,
+  getObserverAuditLog,
+  getObserverOverview,
+  getObserverUsers,
+  refundObserverPayment,
+  resetObserverUserProfile,
+  updateObserverUserTier,
+} from './lib/api';
 import { getSession, requireAuth, subscribeAuth } from './lib/auth';
 
 type Overview = {
@@ -13,6 +21,7 @@ type Overview = {
     total_sessions: number;
     sessions_24h: number;
     active_subscriptions: number;
+    failed_payments: number;
     open_tickets: number;
   };
   traffic: { date: string; sessions: number }[];
@@ -32,7 +41,29 @@ type Overview = {
     recent_requests: { at: string; method: string; path: string; status: number; duration_ms: number }[];
     timeline: { at: string; requests: number; avg_ms: number; p95_ms: number; server_errors: number }[];
   };
+  product_insights: {
+    profile_distribution: { profile_type: string; users: number }[];
+    feedback_reactions: { reaction: string; count: number }[];
+    profiles_changed_30d: number;
+    content_qa: { retention: string; detail: string };
+  };
+  ai_usage: {
+    window: string;
+    scope: string;
+    costs_configured: boolean;
+    providers: { provider: string; calls: number; estimated_input_tokens: number; estimated_output_tokens: number; estimated_cost_usd: number; average_duration_ms: number; failures: number }[];
+  };
+  redis: { queue_status: string; detail: string };
 };
+
+type ObserverUser = {
+  id: string; email: string; name: string | null; plan: string; signup_at: string; last_login_at: string | null;
+  profile_status: string; profile_type: string | null; lifetime_requests: number; rate_limit_status: string;
+  ai_usage_24h: Record<string, number>;
+  billing: { plan: string; status: string; renews_at: string | null; cancel_at_period_end: boolean; has_stripe_subscription: boolean } | null;
+};
+
+type AuditEntry = { id: string; at: string; action: string; actor_user_id: string | null; target_user_id: string | null; metadata: Record<string, unknown> };
 
 const metricCards: { key: keyof Overview['metrics']; label: string; detail: string }[] = [
   { key: 'total_users', label: 'Total users', detail: 'All registered accounts' },
@@ -41,6 +72,7 @@ const metricCards: { key: keyof Overview['metrics']; label: string; detail: stri
   { key: 'sessions_24h', label: 'Traffic today', detail: 'Reading sessions in the last 24 hours' },
   { key: 'total_sessions', label: 'All sessions', detail: 'Lifetime reading sessions' },
   { key: 'active_subscriptions', label: 'Paid access', detail: 'Active or trial subscriptions' },
+  { key: 'failed_payments', label: 'Payment attention', detail: 'Past due, unpaid or incomplete' },
   { key: 'open_tickets', label: 'Open support', detail: 'Tickets awaiting a reply' },
 ];
 
@@ -105,6 +137,25 @@ export default function Observer() {
   const [logQuery, setLogQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [observerUsers, setObserverUsers] = useState<ObserverUser[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+
+  const loadUsers = useCallback(async (search = userSearch) => {
+    setUsersLoading(true);
+    try {
+      const [users, audit] = await Promise.all([getObserverUsers(search), getObserverAuditLog()]);
+      setObserverUsers(users.data || []);
+      setAuditEntries(audit.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load observer users.');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [userSearch]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -120,6 +171,7 @@ export default function Observer() {
   useEffect(() => {
     requireAuth('/observer');
     void load();
+    void loadUsers('');
     const refresh = window.setInterval(() => void load(), 30_000);
     return () => window.clearInterval(refresh);
   }, [load]);
@@ -142,6 +194,24 @@ export default function Observer() {
     { label: 'Server errors', value: number(runtime.traffic.status_counts_5m['5xx']), detail: '5xx responses over five minutes', icon: Server },
     { label: 'Requests', value: number(runtime.traffic.requests_1m), detail: `${number(runtime.traffic.requests_5m)} requests over five minutes`, icon: Activity },
   ] : [];
+  const submitUserSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void loadUsers();
+  };
+  const runAction = async (action: () => Promise<unknown>, success: string) => {
+    if (actionPending) return;
+    setActionPending(true);
+    setActionMessage(null);
+    try {
+      await action();
+      setActionMessage(success);
+      await loadUsers();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'The observer action failed.');
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   return (
     <AppShell user={user} authChecked backTo={{ href: '/dashboard', label: 'Dashboard' }}>
@@ -192,6 +262,104 @@ export default function Observer() {
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section className="observer-table-card" aria-labelledby="ai-usage-title">
+              <div className="observer-section-head">
+                <div>
+                  <span className="observer-eyebrow"><Activity aria-hidden="true" /> Provider usage</span>
+                  <h2 id="ai-usage-title">Gemini and Claude usage</h2>
+                </div>
+                <span className="observer-updated">{overview?.ai_usage.window || 'Loading…'}</span>
+              </div>
+              <p className="observer-section-copy">{overview?.ai_usage.scope || 'Provider telemetry is loading.'}</p>
+              {!overview?.ai_usage.costs_configured && <p className="observer-inline-notice">Cost estimates are off until the four provider-rate environment variables are configured.</p>}
+              <div className="observer-table-scroll">
+                <table>
+                  <thead><tr><th>Provider</th><th>Calls</th><th>Input tokens*</th><th>Output tokens*</th><th>Avg. provider time</th><th>Failures</th><th>Estimated cost</th></tr></thead>
+                  <tbody>
+                    {overview?.ai_usage.providers.length ? overview.ai_usage.providers.map((provider) => (
+                      <tr key={provider.provider}>
+                        <td><strong>{provider.provider}</strong></td><td>{number(provider.calls)}</td><td>{number(provider.estimated_input_tokens)}</td><td>{number(provider.estimated_output_tokens)}</td><td>{duration(provider.average_duration_ms)}</td><td>{number(provider.failures)}</td><td>{overview.ai_usage.costs_configured ? `$${provider.estimated_cost_usd.toFixed(4)}` : 'Configure rates'}</td>
+                      </tr>
+                    )) : <tr><td colSpan={7} className="observer-empty">No primary reformat calls have been recorded since this deployment.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <p className="observer-footnote">* Token counts are a privacy-safe character-based estimate. Prompts, pages and generated cards are never retained.</p>
+            </section>
+
+            <section className="observer-insight-grid" aria-label="Product and service insights">
+              <article className="observer-table-card">
+                <span className="observer-eyebrow"><Users aria-hidden="true" /> Cognitive profiles</span>
+                <h2>Adaptation distribution</h2>
+                <div className="observer-breakdown">
+                  {overview?.product_insights.profile_distribution.length ? overview.product_insights.profile_distribution.map((item) => <div key={item.profile_type}><span>{item.profile_type}</span><strong>{number(item.users)}</strong></div>) : <p>No profile data yet.</p>}
+                </div>
+                <p className="observer-footnote">{number(overview?.product_insights.profiles_changed_30d || 0)} users adjusted their profile in the last 30 days.</p>
+              </article>
+              <article className="observer-table-card">
+                <span className="observer-eyebrow"><Activity aria-hidden="true" /> Feedback loop</span>
+                <h2>Aggregated reactions</h2>
+                <div className="observer-breakdown">
+                  {overview?.product_insights.feedback_reactions.length ? overview.product_insights.feedback_reactions.map((item) => <div key={item.reaction}><span>{item.reaction}</span><strong>{number(item.count)}</strong></div>) : <p>No feedback data yet.</p>}
+                </div>
+                <p className="observer-footnote">{overview?.product_insights.content_qa.detail}</p>
+              </article>
+              <article className="observer-table-card">
+                <span className="observer-eyebrow"><Server aria-hidden="true" /> Redis / jobs</span>
+                <h2>{overview?.redis.queue_status === 'not_configured' ? 'No queue configured' : 'Queue health'}</h2>
+                <p className="observer-section-copy">{overview?.redis.detail || 'Loading Redis status.'}</p>
+              </article>
+            </section>
+
+            <section className="observer-table-card" aria-labelledby="users-title">
+              <div className="observer-section-head">
+                <div>
+                  <span className="observer-eyebrow"><Users aria-hidden="true" /> Account operations</span>
+                  <h2 id="users-title">Users, access and subscriptions</h2>
+                </div>
+              </div>
+              <form className="observer-user-search" onSubmit={submitUserSearch}>
+                <label htmlFor="observer-user-search">Search by email or user ID</label>
+                <input id="observer-user-search" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="name@example.com or UUID" />
+                <button className="button button-secondary" type="submit" disabled={usersLoading}>Search</button>
+              </form>
+              {actionMessage && <p className="observer-action-message" role="status">{actionMessage}</p>}
+              <div className="observer-table-scroll">
+                <table className="observer-users-table">
+                  <thead><tr><th>User</th><th>Tier / billing</th><th>Profile / usage</th><th>Joined</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {observerUsers.length ? observerUsers.map((account) => (
+                      <tr key={account.id}>
+                        <td><strong>{account.name || account.email}</strong><small>{account.name ? account.email : account.id}</small></td>
+                        <td><span className="observer-plan">{account.plan}</span><small>{account.billing ? `${account.billing.status}${account.billing.cancel_at_period_end ? ' · cancels at renewal' : ''}` : 'No billing record'}</small></td>
+                        <td><span>{account.profile_status}{account.profile_type ? ` · ${account.profile_type}` : ''}</span><small>{number(account.lifetime_requests)} lifetime requests · Gemini {number(account.ai_usage_24h.gemini || 0)} / Claude {number(account.ai_usage_24h.claude || 0)} today · {account.rate_limit_status}</small></td>
+                        <td>{new Date(account.signup_at).toLocaleDateString()}</td>
+                        <td>
+                          <div className="observer-row-actions">
+                            <label className="sr-only" htmlFor={`tier-${account.id}`}>Set tier for {account.email}</label>
+                            <select id={`tier-${account.id}`} defaultValue={account.plan} disabled={actionPending} onChange={(event) => void runAction(() => updateObserverUserTier(account.id, event.target.value), `${account.email} is now ${event.target.value}.`)}>
+                              <option value="free">Free</option><option value="lite">Lite</option><option value="premium">Premium</option><option value="institutional">Institutional</option>
+                            </select>
+                            <button className="button button-secondary" type="button" disabled={actionPending} onClick={() => { if (window.confirm(`Reset ${account.email}'s cognitive profile?`)) void runAction(() => resetObserverUserProfile(account.id), 'Cognitive profile reset.'); }}>Reset profile</button>
+                            {account.billing?.has_stripe_subscription && <button className="button button-danger" type="button" disabled={actionPending} onClick={() => { if (window.confirm(`Schedule cancellation for ${account.email}'s Stripe subscription at the period end?`)) void runAction(() => cancelObserverSubscription(account.id), 'Stripe cancellation scheduled.'); }}>Cancel Stripe</button>}
+                            {account.billing?.has_stripe_subscription && <button className="button button-secondary" type="button" disabled={actionPending} onClick={() => { const paymentIntent = window.prompt('Paste the Stripe PaymentIntent ID to refund. This creates a real refund.'); if (paymentIntent && window.confirm(`Create a Stripe refund for ${paymentIntent}?`)) void runAction(() => refundObserverPayment(account.id, paymentIntent), 'Stripe refund created.'); }}>Refund</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    )) : <tr><td colSpan={5} className="observer-empty">{usersLoading ? 'Loading accounts…' : 'No accounts match this search.'}</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <p className="observer-footnote">Tier changes are local entitlements and do not edit Stripe. Cancellation and refund controls explicitly call Stripe and are written to the audit log.</p>
+            </section>
+
+            <section className="observer-table-card" aria-labelledby="audit-title">
+              <div className="observer-section-head"><div><span className="observer-eyebrow"><ShieldCheck aria-hidden="true" /> Audit trail</span><h2 id="audit-title">Recent admin actions</h2></div></div>
+              <div className="observer-table-scroll"><table><thead><tr><th>Time</th><th>Action</th><th>Target user ID</th><th>Details</th></tr></thead><tbody>
+                {auditEntries.length ? auditEntries.map((entry) => <tr key={entry.id}><td>{new Date(entry.at).toLocaleString()}</td><td>{entry.action}</td><td><code>{entry.target_user_id || '—'}</code></td><td><code>{JSON.stringify(entry.metadata)}</code></td></tr>) : <tr><td colSpan={4} className="observer-empty">No observer actions have been recorded yet.</td></tr>}
+              </tbody></table></div>
             </section>
 
             <section className="observer-runtime" aria-labelledby="runtime-title">

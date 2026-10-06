@@ -352,7 +352,11 @@ async def test_no_api_route_takes_a_path_parameter():
     """
     from app.main import app
 
-    allowed: set[str] = set()
+    allowed: set[str] = {
+        # Filters on the caller's id as well; cross-account 404 is proven in
+        # test_explain.py::test_delete_entry_of_another_user_is_404.
+        "/api/v1/explain/history/{entry_id}",
+    }
 
     offenders = [
         route.path

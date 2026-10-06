@@ -174,6 +174,20 @@ class CognitiveProfileSchema(BaseModel):
     notes: str = Field("", max_length=1000)
 
 
+# ── Feedback entry ───────────────────────────────────────────────
+# Defined ahead of the request models: anonymous callers send their local
+# feedback log inline as `recent_feedback`, since they have no server log.
+
+class FeedbackEntry(BaseModel):
+    session_id: Optional[uuid.UUID] = None
+    reaction: Optional[Literal["clearer", "complex", "simple", "off-topic"]] = None
+    note: Optional[str] = Field("", max_length=500)
+    time_spent_seconds: Optional[int] = Field(None, ge=0, le=86400)
+    read_progress: Optional[int] = Field(None, ge=0, le=100)
+    session_difficulty: str = "normal"
+    section_title: Optional[str] = Field(None, max_length=200)
+
+
 # ── Reformat ─────────────────────────────────────────────────────
 
 class ReformatRequest(BaseModel):
@@ -184,6 +198,8 @@ class ReformatRequest(BaseModel):
     mode: Literal["cards", "fullpage", "document"] = "cards"
     fingerprint: Optional[str] = Field(None, max_length=100)   # for anonymous/free users
     profile: Optional[CognitiveProfileSchema] = None
+    # Anonymous callers only; ignored when signed in (the server log wins).
+    recent_feedback: Optional[list[FeedbackEntry]] = Field(None, max_length=20)
 
 
 class ReformatResponse(BaseModel):
@@ -218,19 +234,228 @@ class DocumentReformatRequest(BaseModel):
     session_difficulty: Literal["hard", "normal", "easy"] = "normal"
     fingerprint: Optional[str] = Field(None, max_length=100)
     profile: Optional[CognitiveProfileSchema] = None
+    # Anonymous callers only; ignored when signed in (the server log wins).
+    recent_feedback: Optional[list[FeedbackEntry]] = Field(None, max_length=20)
+
+
+# ── Explain ──────────────────────────────────────────────────────
+
+def _cap_text(value: Optional[str], limit: int) -> Optional[str]:
+    """Trim and truncate a context string; blank becomes None."""
+    if value is None:
+        return None
+    value = value.strip()[:limit].strip()
+    return value or None
+
+
+def _cap_list(values: Optional[list[str]], max_items: int, item_limit: int) -> list[str]:
+    """Trim and truncate each item, drop blanks, keep the first `max_items`."""
+    capped = [_cap_text(v, item_limit) for v in (values or [])]
+    return [v for v in capped if v][:max_items]
+
+
+class ExplainContextForm(BaseModel):
+    """The form an explained control sits in: its heading and field names."""
+    heading: Optional[str] = None
+    fields: list[str] = Field(default_factory=list)
+
+    @field_validator("heading")
+    @classmethod
+    def _cap_heading(cls, v):
+        return _cap_text(v, 300)
+
+    @field_validator("fields", mode="before")
+    @classmethod
+    def _none_fields(cls, v):
+        return v or []
+
+    @field_validator("fields")
+    @classmethod
+    def _cap_fields(cls, v):
+        return _cap_list(v, 20, 300)
+
+
+class ExplainContextElement(BaseModel):
+    """Accessible description of the button, link or input that was explained."""
+    tag: Optional[str] = None
+    role: Optional[str] = None
+    name: Optional[str] = None
+    aria_label: Optional[str] = None
+    title: Optional[str] = None
+    label: Optional[str] = None
+    href: Optional[str] = None
+    form: Optional[ExplainContextForm] = None
+    container: Optional[str] = None
+
+    @field_validator("tag", "role", "name", "aria_label", "title", "label", "href", "container")
+    @classmethod
+    def _cap_strings(cls, v):
+        return _cap_text(v, 300)
+
+
+class ExplainLocalContext(BaseModel):
+    heading_path: list[str] = Field(default_factory=list)
+    surrounding_text: Optional[str] = None
+    element: Optional[ExplainContextElement] = None
+
+    @field_validator("heading_path", mode="before")
+    @classmethod
+    def _none_path(cls, v):
+        return v or []
+
+    @field_validator("heading_path")
+    @classmethod
+    def _cap_path(cls, v):
+        return _cap_list(v, 8, 200)
+
+    @field_validator("surrounding_text")
+    @classmethod
+    def _cap_surrounding(cls, v):
+        return _cap_text(v, 2_000)
+
+
+class ExplainPageContext(BaseModel):
+    # title / site_name / description have no cap in the contract; these keep
+    # them proportionate to the other fields.
+    title: Optional[str] = None
+    site_name: Optional[str] = None
+    description: Optional[str] = None
+    outline: list[str] = Field(default_factory=list)
+    main_text: Optional[str] = None
+
+    @field_validator("title")
+    @classmethod
+    def _cap_title(cls, v):
+        return _cap_text(v, 300)
+
+    @field_validator("site_name")
+    @classmethod
+    def _cap_site(cls, v):
+        return _cap_text(v, 200)
+
+    @field_validator("description")
+    @classmethod
+    def _cap_description(cls, v):
+        return _cap_text(v, 1_000)
+
+    @field_validator("outline", mode="before")
+    @classmethod
+    def _none_outline(cls, v):
+        return v or []
+
+    @field_validator("outline")
+    @classmethod
+    def _cap_outline(cls, v):
+        return _cap_list(v, 40, 200)
+
+    @field_validator("main_text")
+    @classmethod
+    def _cap_main(cls, v):
+        return _cap_text(v, 8_000)
+
+    def has_content(self) -> bool:
+        return bool(self.title or self.site_name or self.description or self.outline or self.main_text)
+
+
+class ExplainContext(BaseModel):
+    """Where the selection sits. Every string is trimmed and capped here, so
+    over-long fields are truncated rather than rejected; only the serialized
+    total (24 KB, checked in the route) is a hard error."""
+    local: Optional[ExplainLocalContext] = None
+    page: Optional[ExplainPageContext] = None
+
+
+class ExplainRequest(BaseModel):
+    """A highlighted passage (`kind="text"`) or a circled area (`"image"`).
+
+    Only shapes and hard ceilings are checked here. The cross-field rules
+    (kind vs image, decoded sizes, media type) are checked in the route so they
+    can answer 400 INVALID_REQUEST, which the extension branches on, rather
+    than a generic 422.
+    """
+    kind: Literal["text", "image"]
+    text: Optional[str] = Field(None, max_length=500000)
+    # Raw base64, no data: prefix. The real 4 MB decoded cap is enforced in the
+    # route; this ceiling only keeps absurd bodies out of the validator.
+    image_base64: Optional[str] = Field(None, max_length=8_000_000)
+    image_media_type: Optional[str] = Field(None, max_length=50)
+    thumbnail_base64: Optional[str] = Field(None, max_length=400_000)
+    anchor: Optional[dict] = None
+    page_url: Optional[str] = Field(None, max_length=2000)
+    page_title: Optional[str] = Field(None, max_length=500)
+    session_difficulty: Literal["hard", "normal", "easy"] = "normal"
+    fingerprint: Optional[str] = Field(None, max_length=100)
+    profile: Optional[CognitiveProfileSchema] = None
+    # Anonymous callers only; ignored when signed in (the server log wins).
+    recent_feedback: Optional[list[FeedbackEntry]] = Field(None, max_length=20)
+    context: Optional[ExplainContext] = None
+    # From POST /explain/context. Format is checked in the route so that a
+    # malformed id answers 400 CONTEXT_EXPIRED like any other unusable one.
+    context_id: Optional[str] = Field(None, max_length=200)
+
+
+class ExplainContextUploadRequest(BaseModel):
+    """A document to keep as context for later explains.
+
+    Exactly one of `document_base64` (PDF) or `document_text` is required. The
+    real limits (20 MB decoded, 2,000,000 chars) are enforced in the route so
+    they answer 400 INVALID_REQUEST; these ceilings only keep absurd bodies out
+    of the validator.
+    """
+    media_type: str = Field(..., max_length=100)
+    document_base64: Optional[str] = Field(None, max_length=30_000_000)
+    document_text: Optional[str] = Field(None, max_length=4_000_000)
+    source_url: Optional[str] = Field(None, max_length=2000)
+    fingerprint: Optional[str] = Field(None, max_length=100)
+
+
+class ExplainContextUploadResponse(BaseModel):
+    context_id: str
+    chars: int
+    truncated: bool
+    expires_in: int
+
+
+class ExplainUsage(BaseModel):
+    """Image-capture quota after this request. Limit and period are null for
+    unlimited plans; `image_captures_used` is null if the counter was
+    unavailable and the request was allowed uncounted."""
+    image_captures_used: Optional[int]
+    image_captures_limit: Optional[int]
+    image_period: Optional[Literal["day", "month"]]
+
+
+class ExplanationHistoryOut(BaseModel):
+    id: uuid.UUID
+    hostname: str
+    url: Optional[str]
+    page_title: Optional[str]
+    kind: Literal["text", "image"]
+    source_text: Optional[str]
+    anchor: dict
+    result_html: str
+    thumbnail_url: Optional[str] = None
+    created_at: datetime
+
+
+class ExplainResponse(BaseModel):
+    html: str
+    kind: Literal["text", "image"]
+    model_used: str
+    history_entry: Optional[ExplanationHistoryOut] = None
+    usage: Optional[ExplainUsage] = None
+
+
+class ExplanationHistoryPage(BaseModel):
+    entries: list[ExplanationHistoryOut]
+    next_before: Optional[datetime] = None
+
+
+class ExplanationHistoryDeleted(BaseModel):
+    deleted: int
 
 
 # ── Feedback ─────────────────────────────────────────────────────
-
-class FeedbackEntry(BaseModel):
-    session_id: Optional[uuid.UUID] = None
-    reaction: Optional[Literal["clearer", "complex", "simple", "off-topic"]] = None
-    note: Optional[str] = Field("", max_length=500)
-    time_spent_seconds: Optional[int] = Field(None, ge=0, le=86400)
-    read_progress: Optional[int] = Field(None, ge=0, le=100)
-    session_difficulty: str = "normal"
-    section_title: Optional[str] = Field(None, max_length=200)
-
 
 class FeedbackBatch(BaseModel):
     """Extension sends the last N interactions in one batch."""

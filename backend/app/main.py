@@ -33,6 +33,7 @@ from app.api.routes.billing import router as billing_router, webhook_router
 from app.api.routes.profile import profile_router, feedback_router, stats_router
 from app.api.routes.support import router as support_router
 from app.api.routes.observer import router as observer_router
+from app.api.routes.explain import router as explain_router
 from app.services.observability import measure_request
 
 # ── Request Size Limit Middleware ─────────────────────────────────
@@ -241,6 +242,31 @@ async def warm_database_on_startup() -> None:
         )
 
 
+_thumbnail_purge_task: asyncio.Task | None = None
+
+
+@app.on_event("startup")
+async def start_thumbnail_purge() -> None:
+    # Explanation thumbnails expire after EXPLAIN_THUMBNAIL_RETENTION_DAYS. The
+    # loop only exists when object storage is configured, so deployments (and
+    # the test suite) without it never start a background task at all.
+    global _thumbnail_purge_task
+    from app.services import explain_storage
+
+    if explain_storage.is_configured():
+        _thumbnail_purge_task = asyncio.create_task(explain_storage.run_purge_loop())
+
+
+@app.on_event("shutdown")
+async def stop_thumbnail_purge() -> None:
+    if _thumbnail_purge_task is not None:
+        _thumbnail_purge_task.cancel()
+        try:
+            await _thumbnail_purge_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
 @app.on_event("shutdown")
 async def close_database_pool() -> None:
     await engine.dispose()
@@ -264,6 +290,7 @@ app.include_router(profile_router,   prefix="/api/v1")
 app.include_router(feedback_router,  prefix="/api/v1")
 app.include_router(support_router,   prefix="/api/v1")
 app.include_router(observer_router,  prefix="/api/v1")
+app.include_router(explain_router,   prefix="/api/v1")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
@@ -312,6 +339,10 @@ if os.path.exists(static_path):
 # POST /api/v1/auth/sync              — upsert user after Google OAuth
 # GET  /api/v1/auth/me                — get current user
 # POST /api/v1/reformat               — core AI proxy (extension calls this)
+# POST /api/v1/explain                — explain a highlight or circled area
+# GET  /api/v1/explain/history        — paid per-site explanation history
+# DELETE /api/v1/explain/history/{id} — delete one history entry
+# DELETE /api/v1/explain/history      — delete by ?domain= or ?all=true
 # GET  /api/v1/profile                — get cognitive profile
 # PATCH /api/v1/profile               — update cognitive profile
 # GET  /api/v1/profile/history        — profile change log

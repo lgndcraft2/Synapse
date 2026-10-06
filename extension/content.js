@@ -2,7 +2,17 @@
 // SYNAPSE 2.0 — COMPLETE CONTENT SCRIPT
 // Modes: Section Cards (AI-detected) | Full Page Reformat
 // Features: Floating cards, dock navigation, feedback loop
+//
+// Article mode (section cards + full-page reformat) is parked behind
+// FEATURES.articleMode; the explain flow (highlight / circle) lives in
+// explain/*.js, loaded after this file. See docs/explain-plan.md.
 // ================================================================
+
+// ── Feature flags ────────────────────────────────────────────────
+// articleMode: the old whole-page rebuild entry points (mode toggle,
+// "Activate on this page" / "Reformat full page", deactivate, Focus).
+// The code stays in place but is unreachable while this is false.
+const FEATURES = { articleMode: false };
 
 // ── State ────────────────────────────────────────────────────────
 const S = {
@@ -24,10 +34,13 @@ const S = {
 };
 
 const Z = {
-  dock:  2147483641,
-  card:  2147483642,
-  panel: 2147483643,
-  fab:   2147483644,
+  dock:    2147483641,
+  card:    2147483642,
+  panel:   2147483643,
+  fab:     2147483644,
+  menu:    2147483645, // FAB prompt + history button
+  bubble:  2147483645, // highlight-to-explain bubble
+  overlay: 2147483646, // circle trace overlay + its tooltip
 };
 
 const C = {
@@ -269,6 +282,9 @@ fill:white!important;display:block!important}
 .sc-feedback-thanks{font-size:11px!important;color:${C.green}!important;
 font-weight:600!important;text-align:center!important;padding:4px 0!important;
 display:none!important;line-height:1!important;animation:synapse-fadein .3s ease!important}
+.sc-feedback.s-done .sc-feedback-label,.sc-feedback.s-done .sc-feedback-reactions,
+.sc-feedback.s-done .sc-feedback-input-row{display:none!important}
+.sc-feedback.s-done .sc-feedback-thanks{display:block!important}
 @keyframes synapse-fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
 /* DOCK */
@@ -900,6 +916,7 @@ function updateProgressRing(sec) {
 // ================================================================
 function injectFeedbackStrip(card, sec) {
   card.querySelector('.sc-feedback')?.remove();
+  if (sec.feedbackGiven) return;
   const strip = document.createElement('div');
   strip.className = 'sc-feedback';
   strip.innerHTML = `
@@ -925,9 +942,7 @@ function injectFeedbackStrip(card, sec) {
 
   strip.querySelectorAll('.sc-reaction').forEach(btn => {
     btn.addEventListener('click', () => {
-      strip.querySelectorAll('.sc-reaction').forEach(b =>
-        b.classList.remove('s-selected-good','s-selected-bad','s-selected-neutral')
-      );
+      if (strip.classList.contains('s-done')) return;
       selected = btn.dataset.val;
       if (selected === 'clearer') btn.classList.add('s-selected-good');
       else if (selected === 'complex') btn.classList.add('s-selected-bad');
@@ -949,24 +964,29 @@ function injectFeedbackStrip(card, sec) {
   });
 }
 
+// One opinion per card: the strip locks after the first submission.
 function submitFeedback(sec, reaction, note, openTime, strip) {
+  if (strip.classList.contains('s-done')) return;
+  strip.classList.add('s-done');
+  strip.querySelectorAll('button, input').forEach(c => { c.disabled = true; });
+  sec.feedbackGiven = true;
+
   const entry = {
     ts: Date.now(),
     sectionTitle: sec.title,
     reaction,
     note: note || '',
     timeSpentSeconds: Math.round((Date.now() - openTime) / 1000),
-    readProgress: Math.round(sec.readProgress * 100),
+    // null when there is nothing to scroll (explain panel); the backend leaves
+    // those out of the scroll-depth rule.
+    readProgress: sec.readProgress == null ? null : Math.round(sec.readProgress * 100),
     sessionDifficulty: S.sessionDifficulty,
   };
 
   chrome.runtime.sendMessage({ type: 'FEEDBACK', entry });
-
-  // Show thanks in strip
-  strip.querySelector('.sc-feedback-reactions').style.display = 'none';
-  strip.querySelector('.sc-feedback-input-row').style.display = 'none';
-  strip.querySelector('.sc-feedback-label').style.display = 'none';
-  strip.querySelector('.sc-feedback-thanks').style.display = 'block';
+  // The .s-done styles swap the controls for the thanks line. Inline
+  // display:none can't do it: the strip's stylesheet rules are !important.
+  sec.onFeedback?.(reaction);
 }
 
 // ================================================================
@@ -1298,6 +1318,17 @@ function hideFullPageBar() {
 // ================================================================
 function activateDocumentMode() {
   if (S.analysing) return;
+  const isLocal = location.protocol === 'file:';
+  if (isLocal && S.documentType.mime === 'application/pdf') {
+    // Chrome's PDF viewer gives this page no bytes and the worker can't read
+    // file://, so local PDFs are read inside the Synapse viewer instead.
+    chrome.runtime.sendMessage({ type: 'OPEN_PDF_VIEWER', url: location.href, read: true }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) {
+        globalThis.SynapseExplain?.showTip(res?.error || "Couldn't open the Synapse viewer.", { message: true, duration: 3200 });
+      }
+    });
+    return;
+  }
   S.analysing = true;
 
   const btn = document.getElementById('sp-main-btn');
@@ -1337,7 +1368,9 @@ function activateDocumentMode() {
     { 
       type: 'ANALYSE_DOCUMENT', 
       url: window.location.href, 
-      mediaType: S.documentType.mime 
+      mediaType: S.documentType.mime,
+      // Local text files: the worker can't read file://, so send what Chrome rendered.
+      ...(isLocal ? { text: (document.querySelector('body > pre') || document.body).textContent } : {})
     },
     (res) => {
       S.analysing = false;
@@ -1390,6 +1423,14 @@ function buildFloatingUI() {
         1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
     </svg>
     <span class="s-dot"></span>`;
+
+  if (!FEATURES.articleMode) {
+    // Explain flow: explain/main.js wires this button (circle mode, or the
+    // document prompt on PDF/text/CSV/Markdown pages). The Article-mode panel
+    // below — mode toggle, activate/deactivate, Focus — is parked.
+    document.body.appendChild(fab);
+    return;
+  }
 
   const panel = document.createElement('div');
   panel.id = 'synapse-panel';

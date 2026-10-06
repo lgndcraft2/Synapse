@@ -15,7 +15,8 @@
     "https://api.usesynapse.cv/*",
     "http://localhost:8000/*",
     "http://*/*",
-    "https://*/*"
+    "https://*/*",
+    "<all_urls>"
   ],
 
   "background": {
@@ -41,13 +42,24 @@
   },
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["purify.min.js", "content.js"],
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
+      "js": [
+        "purify.min.js",
+        "lib/geometry.js",
+        "content.js",
+        "explain/host.js",
+        "explain/core.js",
+        "explain/context.js",
+        "explain/panel.js",
+        "explain/highlight.js",
+        "explain/circle.js",
+        "explain/main.js"
+      ],
       "run_at": "document_idle"
     }
   ]

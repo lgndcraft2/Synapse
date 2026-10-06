@@ -84,6 +84,11 @@ def _summarise_changes(previous: dict, new: dict) -> str:
     return "; ".join(parts) + "."
 
 
+def _profile_state(profile: CognitiveProfile) -> dict:
+    """The fields recorded in profile history, before and after a change."""
+    return {field: getattr(profile, field) for field in _FIELD_LABELS}
+
+
 @profile_router.patch("", response_model=ProfileOut)
 async def update_profile(
     body: ProfileUpdate,
@@ -98,16 +103,7 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="Profile not found.")
 
     # Snapshot before update for history
-    previous_state = {
-        "profile_type": profile.profile_type,
-        "preferred_format": profile.preferred_format,
-        "chunk_size": profile.chunk_size,
-        "needs_examples_first": profile.needs_examples_first,
-        "simplify_vocab": profile.simplify_vocab,
-        "max_nesting_depth": profile.max_nesting_depth,
-        "use_headers": profile.use_headers,
-        "notes": profile.notes,
-    }
+    previous_state = _profile_state(profile)
 
     # Apply updates
     update_data = body.model_dump(exclude_unset=True)
@@ -115,16 +111,7 @@ async def update_profile(
         setattr(profile, field, value)
     profile.updated_at = datetime.utcnow()
 
-    new_state = {
-        "profile_type": profile.profile_type,
-        "preferred_format": profile.preferred_format,
-        "chunk_size": profile.chunk_size,
-        "needs_examples_first": profile.needs_examples_first,
-        "simplify_vocab": profile.simplify_vocab,
-        "max_nesting_depth": profile.max_nesting_depth,
-        "use_headers": profile.use_headers,
-        "notes": profile.notes,
-    }
+    new_state = _profile_state(profile)
 
     # Log the change
     history = ProfileHistory(
@@ -210,7 +197,92 @@ async def submit_feedback(
         db.add(log)
 
     await db.flush()
-    return {"ok": True, "logged": len(body.entries)}
+    profile_update = await _adapt_profile(db, current_user)
+    return {"ok": True, "logged": len(body.entries), "profile_update": profile_update}
+
+
+# Consistent feedback nudges the saved profile one step. Only reactions given
+# since the last profile change count, so each change (manual or automatic)
+# starts a fresh window and one streak can't move the profile twice.
+ADAPT_WINDOW = 10
+ADAPT_MIN_REACTIONS = 4
+ADAPT_SHARE = 0.6
+
+_CHUNK_SIMPLER = {"long": "medium", "medium": "short"}
+_CHUNK_RICHER = {"short": "medium", "medium": "long"}
+
+
+def _step_simpler(profile: CognitiveProfile) -> None:
+    if profile.chunk_size in _CHUNK_SIMPLER:
+        profile.chunk_size = _CHUNK_SIMPLER[profile.chunk_size]
+    elif not profile.simplify_vocab:
+        profile.simplify_vocab = True
+    elif profile.max_nesting_depth > 1:
+        profile.max_nesting_depth -= 1
+
+
+def _step_richer(profile: CognitiveProfile) -> None:
+    if profile.simplify_vocab:
+        profile.simplify_vocab = False
+    elif profile.chunk_size in _CHUNK_RICHER:
+        profile.chunk_size = _CHUNK_RICHER[profile.chunk_size]
+    elif profile.max_nesting_depth < 3:
+        profile.max_nesting_depth += 1
+
+
+async def _adapt_profile(db: AsyncSession, user: User) -> dict | None:
+    """Move the profile one step when recent reactions clearly point one way.
+
+    Returns {"message", "profile"} when it changed something, else None.
+    """
+    since = await db.scalar(
+        select(func.max(ProfileHistory.changed_at)).where(ProfileHistory.user_id == user.id)
+    )
+    query = (
+        select(FeedbackLog.reaction)
+        .where(FeedbackLog.user_id == user.id, FeedbackLog.reaction.is_not(None))
+        .order_by(FeedbackLog.created_at.desc())
+        .limit(ADAPT_WINDOW)
+    )
+    if since is not None:
+        query = query.where(FeedbackLog.created_at > since)
+    reactions = list((await db.scalars(query)).all())
+    if len(reactions) < ADAPT_MIN_REACTIONS:
+        return None
+
+    share = lambda r: reactions.count(r) / len(reactions)  # noqa: E731
+    if share("complex") >= ADAPT_SHARE:
+        step, direction = _step_simpler, "simpler"
+    elif share("simple") >= ADAPT_SHARE:
+        step, direction = _step_richer, "more detailed"
+    else:
+        return None
+
+    profile = await db.scalar(
+        select(CognitiveProfile).where(CognitiveProfile.user_id == user.id)
+    )
+    if profile is None:
+        return None
+
+    previous_state = _profile_state(profile)
+    step(profile)
+    new_state = _profile_state(profile)
+    if new_state == previous_state:
+        return None  # already at the end of the scale
+    profile.updated_at = datetime.utcnow()
+
+    summary = "Adjusted from your feedback: " + _summarise_changes(previous_state, new_state)
+    db.add(ProfileHistory(
+        user_id=user.id,
+        change_summary=summary,
+        previous_state=previous_state,
+        new_state=new_state,
+    ))
+    await db.flush()
+    return {
+        "message": f"Your recent feedback said explanations should be {direction}. {summary}",
+        "profile": new_state,
+    }
 
 
 # ── Dashboard stats ───────────────────────────────────────────────

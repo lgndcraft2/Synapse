@@ -26,6 +26,7 @@ async def test_observer_requires_an_configured_admin(client, verified_user, monk
         "total_sessions",
         "sessions_24h",
         "active_subscriptions",
+        "failed_payments",
         "open_tickets",
     }
     assert len(body["traffic"]) == 7

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synapse PDF viewer</title>
+  <link rel="icon" href="../icons/icon16.png">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <a class="vw-skip" href="#viewer">Skip to document</a>
+
+  <header id="toolbar" class="vw-toolbar">
+    <div class="vw-group vw-titlegroup">
+      <img class="vw-logo" src="../icons/icon48.png" alt="" width="22" height="22">
+      <h1 id="docTitle" class="vw-title">Opening PDF…</h1>
+    </div>
+
+    <div class="vw-group" role="group" aria-label="Page navigation">
+      <label class="vw-sr" for="pageNumber">Page number</label>
+      <input id="pageNumber" class="vw-page-input" type="number" min="1" value="1" inputmode="numeric"
+             autocomplete="off" disabled aria-describedby="pageCount">
+      <span id="pageCount" class="vw-muted">of –</span>
+    </div>
+
+    <div class="vw-group" role="group" aria-label="Zoom">
+      <button id="zoomOut" class="vw-btn vw-icon" type="button" aria-label="Zoom out" title="Zoom out (Ctrl -)" disabled>−</button>
+      <output id="zoomLevel" class="vw-zoom" aria-live="polite" aria-label="Zoom level">100%</output>
+      <button id="zoomIn" class="vw-btn vw-icon" type="button" aria-label="Zoom in" title="Zoom in (Ctrl +)" disabled>+</button>
+      <button id="fitWidth" class="vw-btn" type="button" aria-pressed="true" title="Fit page width (Ctrl 0)" disabled>Fit width</button>
+    </div>
+
+    <div class="vw-group vw-synapse" role="group" aria-label="Synapse">
+      <button id="circleBtn" class="vw-btn vw-primary" type="button"
+              title="Circle something to explain it (or hold Alt+S)" aria-keyshortcuts="Alt+S">
+        <span aria-hidden="true">◎</span> Circle
+      </button>
+      <button id="panelBtn" class="vw-btn" type="button" aria-expanded="false"
+              title="Explanations for this document">Explanations</button>
+      <button id="readBtn" class="vw-btn" type="button" aria-pressed="false"
+              title="Rebuild this PDF for your brain">Read with Synapse</button>
+      <a id="openOriginal" class="vw-btn vw-link" href="#" title="Open the original PDF in Chrome's viewer">Open original</a>
+    </div>
+  </header>
+
+  <main id="main" class="vw-main">
+    <!-- Fixed, so it never shifts the pages under the pointer or a selection. -->
+    <div id="docNote" class="vw-note" role="status" aria-live="polite" hidden>
+      <span id="docNoteText"></span>
+      <button id="docNoteClose" class="vw-note-close" type="button" aria-label="Dismiss note">✕</button>
+    </div>
+
+    <div id="loading" class="vw-center" role="status" aria-live="polite">
+      <div class="vw-spinner" aria-hidden="true"></div>
+      <span id="loadingText">Opening PDF…</span>
+    </div>
+
+    <form id="passwordForm" class="vw-card" hidden novalidate>
+      <h2 class="vw-card-title">This PDF is password protected</h2>
+      <p id="passwordHint" class="vw-card-text">Enter the password to open it. It stays on this device.</p>
+      <label for="passwordInput" class="vw-label">Password</label>
+      <input id="passwordInput" class="vw-input" type="password" autocomplete="current-password"
+             aria-describedby="passwordError passwordHint" required>
+      <p id="passwordError" class="vw-field-error" role="alert"></p>
+      <div class="vw-card-actions">
+        <button class="vw-btn vw-primary" type="submit">Open PDF</button>
+        <button id="passwordCancel" class="vw-btn" type="button">Cancel</button>
+      </div>
+    </form>
+
+    <section id="errorBox" class="vw-card" role="alert" hidden>
+      <h2 id="errorTitle" class="vw-card-title">Couldn't open this PDF</h2>
+      <p id="errorText" class="vw-card-text"></p>
+      <ol id="fileAccessSteps" class="vw-steps" hidden>
+        <li>Open Chrome's extension settings for Synapse.</li>
+        <li>Turn on <strong>Allow access to file URLs</strong>.</li>
+        <li>Come back here and reload this page.</li>
+      </ol>
+      <div class="vw-card-actions">
+        <button id="openExtSettings" class="vw-btn vw-primary" type="button" hidden>Open Synapse settings</button>
+        <button id="retryLoad" class="vw-btn" type="button" hidden>Reload</button>
+        <a id="errorOpenOriginal" class="vw-btn" href="#">Open original</a>
+      </div>
+    </section>
+
+    <div id="viewer" class="vw-pages" aria-label="Document pages" tabindex="-1"></div>
+  </main>
+
+  <!-- Explain scripts, as documented at the bottom of explain/host.js (no content.js here). -->
+  <script src="../purify.min.js"></script>
+  <script src="../lib/geometry.js"></script>
+  <script src="../explain/host.js"></script>
+  <script src="../explain/core.js"></script>
+  <script src="../explain/context.js"></script>
+  <script src="../explain/panel.js"></script>
+  <script src="../explain/highlight.js"></script>
+  <script src="../explain/circle.js"></script>
+  <script src="../explain/main.js"></script>
+  <script src="viewer-init.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

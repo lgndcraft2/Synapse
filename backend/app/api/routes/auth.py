@@ -346,6 +346,25 @@ async def logout_all(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/extension-session", response_model=TokenResponse)
+async def extension_session(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mint a separate session for the browser extension.
+
+    The dashboard used to hand the extension its own refresh token. Both then
+    rotated the same family, so whichever refreshed second looked like a replay
+    and signed both out. The extension gets its own `extension` family instead.
+    """
+    access, refresh, exp = await auth_tokens.issue_pair(
+        db, current_user, client=auth_tokens.EXTENSION, request=request
+    )
+    return _token_response(access, refresh, exp, current_user)
+
+
 # ── Email verification ────────────────────────────────────────────
 
 @router.post("/verify-email/confirm", response_model=TokenResponse)
@@ -547,6 +566,19 @@ async def delete_account(
 
     user_id = current_user.id
 
+    # The cascade removes explanation_history rows, but their thumbnails live
+    # in object storage, which the database cannot reach. Collect the keys
+    # first so the objects go too (best effort, after the rows are deleted).
+    from app.models.models import ExplanationHistory
+    from app.services import explain_storage
+
+    thumbnail_keys = list((await db.execute(
+        select(ExplanationHistory.thumbnail_key).where(
+            ExplanationHistory.user_id == user_id,
+            ExplanationHistory.thumbnail_key.isnot(None),
+        )
+    )).scalars().all())
+
     # Core DELETE on purpose. db.delete(user) would make the ORM de-associate
     # children by nulling their user_id first, which the NOT NULL constraints
     # reject, because the relationships do not set passive_deletes. Issuing the
@@ -554,6 +586,7 @@ async def delete_account(
     # declares — which now also covers refresh_tokens and email_tokens.
     await db.execute(delete(User).where(User.id == user_id))
     await db.flush()
+    await explain_storage.delete_thumbnails(thumbnail_keys)
     logger.info("Deleted account %s", user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

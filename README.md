@@ -1,192 +1,117 @@
 # Synapse
 
-Synapse is a cognitive accessibility Chrome extension and web app that reformats webpages and documents around a user's cognitive profile.
+Synapse is a cognitive-accessibility product: a Chrome extension reshapes web content around a person's reading profile, while a React dashboard and FastAPI API handle identity, profiles, billing, support, and operations.
 
-The project is organized around a backend-first architecture: the extension and dashboard authenticate through Supabase, then call a FastAPI backend that owns AI provider credentials, rate limits, billing state, prompt construction, and persistence.
+## What is included
 
-## Current Features
+- AI-assisted section, full-page, and document reformatting; SQ4R questions; bionic reading; focus mode; and adaptive feedback.
+- Three reading profiles: Load Reducer, Comprehension Gap, and Hyperfocus Reader.
+- First-party account flows: password registration, email verification, password recovery, Google OAuth, short-lived access tokens, and rotating refresh tokens with reuse detection.
+- Dashboard management for profiles, validated preset avatars, usage, billing, invoices, payment methods, support tickets, and subscription changes.
+- Stripe Checkout, customer portal, cancellation, resumption, plan changes, and signed webhook handling.
+- An access-controlled Observer panel with privacy-safe request telemetry, AI provider usage/cost estimates, user actions, and an audit log.
+- Gemini and Claude calls kept server-side, with tier-aware rate limits and usage caps backed by Redis or Upstash REST.
 
-- Section cards: AI-detected page sections with clickable reformats.
-- Full-page reformat: Replaces the main page content with profile-matched output.
-- Document reader: Processes PDF, TXT, CSV, and Markdown uploads through the backend.
-- Cognitive profiles: Load Reducer, Comprehension Gap, and Hyperfocus Reader.
-- Adaptive feedback: Tracks reactions, time spent, read progress, and section-level notes.
-- SQ4R questions: Generates focus questions for profile-aware reading.
-- Bionic reading and focus mode: Session-level controls for deeper reading.
-- Auth handoff: The dashboard can pass a Supabase session to the installed extension.
-- Billing: Stripe checkout, customer portal, subscription confirmation, and webhook handling.
-
-## Repository Map
+## Repository layout
 
 ```text
 .
-|-- manifest.json              # Chrome Manifest V3 configuration
-|-- background.js              # Extension service worker and backend bridge
-|-- content.js                 # Injected page UI, extraction, reformat modes, feedback
-|-- popup.html/css/js          # Extension popup and profile/billing controls
-|-- onboarding.html/css/js     # Extension onboarding flow
-|-- purify.min.js              # DOMPurify bundled for extension sanitization
-|-- backend/
-|   |-- app/main.py            # FastAPI app, middleware, CORS, route registration
-|   |-- app/api/routes/        # Auth, reformat, profile/feedback/stats, billing/webhooks
-|   |-- app/core/              # Settings, JWT verification, FastAPI dependencies
-|   |-- app/db/                # Async SQLAlchemy database setup
-|   |-- app/models/            # SQLAlchemy ORM models
-|   |-- app/schemas/           # Pydantic request/response models
-|   |-- app/services/          # AI provider calls, prompt building, rate limits/cache
-|   |-- migrations/            # SQL migrations
-|   |-- requirements.txt
-|   `-- Dockerfile
-|-- webpage/
-|   |-- src/App.tsx            # Marketing/pricing page
-|   |-- src/AuthPage.tsx       # Supabase sign-in/sign-up page
-|   |-- src/Dashboard.tsx      # User dashboard/profile/billing UI
-|   |-- src/lib/api.ts         # Backend API client
-|   |-- src/lib/supabase.ts    # Supabase browser client
+|-- extension/                 # Self-contained unpacked Chrome Manifest V3 bundle
+|   |-- manifest.json
+|   |-- background.js          # Session refresh, API bridge, and extension storage
+|   |-- content.js             # In-page reader UI and reformat interactions
+|   |-- popup.*                # Profile, account, billing, and feedback controls
+|   |-- onboarding.*           # First-run cognitive profile setup
+|   |-- icons/
+|   `-- purify.min.js          # Bundled DOM sanitiser for extension output
+|-- webpage/                   # Vite + React dashboard and marketing site
+|   |-- src/lib/auth.ts        # First-party browser session client
+|   |-- src/lib/api.ts         # Authenticated backend client
 |   |-- src/lib/extensionBridge.ts
-|   |-- package.json
-|   `-- vite.config.ts
-`-- tests/
-    |-- auth-sync.spec.mjs     # Dashboard to extension auth/sync e2e test
-    |-- global-setup.mjs       # Starts backend/Vite and discovers extension ID
-    |-- global-teardown.mjs
-    `-- README.md
+|   `-- src/Observer.tsx       # Operator-only observability view
+|-- backend/                   # FastAPI application and Alembic migrations
+|   |-- app/api/routes/        # Auth, profile, reformat, billing, support, observer
+|   |-- app/services/          # AI, email, auth, rate limiting, telemetry
+|   |-- alembic/versions/
+|   `-- tests/
+|-- tests/                     # Playwright dashboard-to-extension contract tests
+|-- Dockerfile                 # Builds the web app and serves it with the API
+`-- playwright.config.mjs
 ```
+
+`extension/` is deliberately an independent loadable directory. It contains every asset referenced by `manifest.json`; the web app and backend remain in their own folders. The dashboard's small `extensionBridge.ts` is an intentional cross-product contract: it can hand an authenticated session to an installed extension, but safely becomes a no-op when none is installed.
 
 ## Architecture
 
-### Chrome Extension
+```text
+Chrome extension <--> FastAPI API <--> PostgreSQL
+       ^                    |              |
+       |                    +--> Redis / Upstash
+React dashboard ------------+--> Gemini / Claude / Stripe / Resend
+```
 
-The extension is a Manifest V3 extension loaded from the repository root.
+The dashboard authenticates against the API and passes its session to the extension through Chrome's externally-connectable messaging. The extension refreshes its own token family and calls the API; it does not contain AI-provider credentials or a standalone sign-in flow. The API owns prompt construction, input limits, persistence, billing, email, and access control.
 
-- `content.js` extracts page text, renders the floating Synapse UI, opens section cards, handles full-page/document modes, applies bionic reading/focus mode, and submits feedback.
-- `background.js` stores user profile/provider config, refreshes Supabase sessions, calls backend endpoints, tracks local usage, and receives dashboard session handoff messages.
-- `popup.js` lets users manage cognitive profile settings, see auth/billing state, refresh profile data, and clear local feedback.
+## Local setup
 
-### Backend
-
-The backend is a FastAPI app under `backend/app`.
-
-Active API groups:
-
-- `POST /api/v1/auth/sync`
-- `GET /api/v1/auth/me`
-- `POST /api/v1/reformat`
-- `POST /api/v1/reformat/analyse-sections`
-- `POST /api/v1/reformat/reformat-document`
-- `GET /api/v1/profile`
-- `PATCH /api/v1/profile`
-- `GET /api/v1/profile/history`
-- `POST /api/v1/feedback`
-- `GET /api/v1/dashboard/stats`
-- `GET /api/v1/billing/status`
-- `POST /api/v1/billing/checkout`
-- `POST /api/v1/billing/confirm`
-- `POST /api/v1/billing/portal`
-- `POST /api/v1/webhooks/stripe`
-- `GET /health`
-
-The backend owns:
-
-- Supabase JWT verification.
-- User/profile/billing/session/feedback persistence.
-- Gemini and Claude API calls.
-- Prompt isolation using escaped source content.
-- Request size limits.
-- Free/lite/premium rate limits and monthly caps.
-- Stripe checkout, billing portal, subscription confirmation, and webhook updates.
-
-### Web App
-
-The web app is a Vite React app under `webpage`.
-
-Routing is selected in `webpage/src/main.tsx`:
-
-- `/` renders the marketing and pricing app.
-- `/auth...` renders the auth page.
-- `/dashboard...` renders the dashboard.
-
-The dashboard uses Supabase for browser auth, calls the backend through `src/lib/api.ts`, and optionally sends the active Supabase session to the extension through `src/lib/extensionBridge.ts`.
-
-## Setup
-
-### Backend
+### 1. Backend
 
 ```bash
 cd backend
-cp .env.example .env
+Copy-Item .env.example .env
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+alembic upgrade head
+python -m uvicorn app.main:app --reload
 ```
 
-Important backend environment values:
+Set the values in `backend/.env` before starting. At minimum, configure `DATABASE_URL`, a strong `APP_SECRET_KEY`, Redis/Upstash credentials, Gemini keys, the Anthropic key, Stripe credentials, frontend/CORS origins, and the plan price IDs. `GOOGLE_CLIENT_*` values enable Google OAuth; `RESEND_API_KEY` enables support-email delivery; `ADMIN_EMAILS` grants access to `/observer`. The template documents optional annual pricing, provider cost estimates, and production migration configuration.
 
-- `DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET`
-- `UPSTASH_REDIS_URL` (supports the Upstash REST `https://` endpoint)
-- `UPSTASH_REDIS_TOKEN` (the matching Upstash REST token)
-- `ADMIN_EMAILS` (comma-separated emails allowed to access `/observer`)
-- `GEMINI_KEY_1` through `GEMINI_KEY_5`
-- `ANTHROPIC_API_KEY`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_THINKER_LITE_PRICE_ID`
-- `STRIPE_DEEP_THINKER_PRICE_ID`
-- `FRONTEND_URL`
-- `ALLOWED_ORIGINS`
-- `ALLOWED_ORIGIN_REGEX`
-
-### Web App
+### 2. Web app
 
 ```bash
 cd webpage
+Copy-Item .env.example .env
 npm install
 npm run dev
 ```
 
-Create `webpage/.env` from `webpage/.env.example`.
+Set `VITE_BACKEND_URL`; add matching Stripe price IDs and `VITE_SUPPORT_EMAIL` as needed. `VITE_EXTENSION_ID` is optional for normal web development, but required for dashboard-to-extension session handoff.
 
-Important web environment values:
+### 3. Chrome extension
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `VITE_BACKEND_URL`
-- `VITE_STRIPE_THINKER_LITE_PRICE_ID`
-- `VITE_STRIPE_DEEP_THINKER_PRICE_ID`
-- `VITE_EXTENSION_ID`
+1. Open `chrome://extensions` and enable Developer mode.
+2. Choose **Load unpacked**.
+3. Select the repository's `extension/` directory — not the repository root.
+4. Copy the generated extension ID into `webpage/.env` as `VITE_EXTENSION_ID`, then restart Vite.
 
-`VITE_EXTENSION_ID` is only needed for dashboard-to-extension session handoff. You can find it at `chrome://extensions` after loading the unpacked extension.
+For local development the extension's default API target is `http://localhost:8000`; production is handled by the deployed session handoff. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
 
-### Chrome Extension
+## Tests
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Click Load unpacked.
-4. Select this repository root.
-5. Open the extension popup and confirm the backend URL points at your backend. Production uses `https://api.usesynapse.cv`; local development usually uses `http://localhost:8000`.
-
-## Testing
+Backend tests:
 
 ```bash
+cd backend
+python -m pytest
+```
+
+Browser contract tests:
+
+```bash
+npm install
 npx playwright test --config=playwright.config.mjs
 ```
 
-The Playwright suite is in `tests/`. Its global setup discovers the extension ID, temporarily patches `webpage/.env`, starts the backend on port 8000, starts Vite on port 5173, and runs a serial auth/sync flow against bundled Chromium.
+The Playwright setup loads `extension/`, discovers its path-derived ID, temporarily puts that ID in `webpage/.env`, seeds a disposable SQLite database, and starts the backend on port 8000 plus Vite on port 3000. Both ports must be free. See [`tests/README.md`](tests/README.md) for limitations and test-flow detail.
 
-Both ports must be free before running the suite.
+## Deployment
 
-## Tech Stack
+The root `Dockerfile` builds `webpage/`, installs the backend, runs `alembic upgrade head`, and serves the API plus compiled SPA on `$PORT`. Configure production URLs, Chrome extension origin restrictions (`CHROME_EXTENSION_ID` or `ALLOWED_ORIGIN_REGEX`), Stripe webhooks, and direct migration connectivity before deploying.
 
-- Extension: Chrome Manifest V3, vanilla JS/HTML/CSS, DOMPurify.
-- Backend: Python, FastAPI, SQLAlchemy async, PostgreSQL/Supabase, Redis/Upstash.
-- Web app: React, TypeScript, Vite, Supabase JS, lucide-react.
-- Billing: Stripe.
-- Tests: Playwright.
-- AI providers: Google Gemini for the free path, Anthropic Claude for premium.
+## Technology
 
-## Product Status
-
-The core extension/backend/dashboard loop is present: auth sync, profile management, reformatting, feedback, usage limits, and billing. Good next areas to pick up are test coverage, README/env cleanup, production deployment verification, and any planned institutional SSO or organization admin work.
+- Extension: Chrome Manifest V3, vanilla JavaScript, HTML/CSS, DOMPurify
+- Dashboard: React, TypeScript, Vite, Lucide
+- API: FastAPI, SQLAlchemy async, Alembic, PostgreSQL
+- Services: Redis/Upstash, Gemini, Claude, Stripe, Resend, Google OAuth
+- Validation: pytest and Playwright

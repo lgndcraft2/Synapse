@@ -99,7 +99,7 @@ chrome.runtime.sendMessage({ type: "GET_PROVIDER_CONFIG" }, (res) => {
 chrome.runtime.sendMessage({ type: "GET_FEEDBACK" }, (res) => {
   const log = res?.feedbackLog || [];
   if (log.length === 0) {
-    feedbackStats.textContent = "No feedback yet - use section cards to start.";
+    feedbackStats.textContent = "No feedback yet - rate an explanation to start.";
     return;
   }
 

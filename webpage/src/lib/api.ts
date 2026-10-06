@@ -258,6 +258,54 @@ export async function getObserverOverview() {
   return response.json();
 }
 
+export async function getObserverUsers(search = '') {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(
+    `${BACKEND_URL}/api/v1/observer/users${query({ search, limit: 50 })}`,
+    { headers: authHeaders },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch observer users' }));
+    throw new Error(error.detail || 'Failed to fetch observer users');
+  }
+  return response.json();
+}
+
+async function observerMutation(path: string, init: RequestInit = {}) {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/observer${path}`, {
+    ...init,
+    headers: { ...authHeaders, 'Content-Type': 'application/json', ...(init.headers || {}) },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Observer action failed' }));
+    throw new Error(error.detail || 'Observer action failed');
+  }
+  return response.json();
+}
+
+export const updateObserverUserTier = (userId: string, plan: string) =>
+  observerMutation(`/users/${userId}/tier`, { method: 'PATCH', body: JSON.stringify({ plan }) });
+
+export const resetObserverUserProfile = (userId: string) =>
+  observerMutation(`/users/${userId}/reset-profile`, { method: 'POST' });
+
+export const cancelObserverSubscription = (userId: string) =>
+  observerMutation(`/users/${userId}/cancel-subscription`, { method: 'POST' });
+
+export const refundObserverPayment = (userId: string, paymentIntentId: string) =>
+  observerMutation(`/users/${userId}/refund`, {
+    method: 'POST',
+    body: JSON.stringify({ payment_intent_id: paymentIntentId, confirm: true }),
+  });
+
+export async function getObserverAuditLog() {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/observer/audit-log`, { headers: authHeaders });
+  if (!response.ok) throw new Error('Failed to fetch observer audit log');
+  return response.json();
+}
+
 /**
  * One page of reading sessions. The aggregate /dashboard/stats payload still
  * carries `recent_sessions` for other callers; the dashboard list reads this.
@@ -312,6 +360,29 @@ export async function updateProfile(update: Record<string, unknown>) {
 }
 
 /** Permanently deletes the account: Stripe subscription, local rows, auth user. */
+/**
+ * Deletes every explanation saved to the account, across all sites.
+ *
+ * History on free plans lives only in the extension's local storage, so this
+ * reaches synced (paid) history alone. Returns how many entries were removed.
+ */
+export async function clearExplainHistory(): Promise<number> {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/explain/history${query({ all: 'true' })}`, {
+    method: 'DELETE',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to clear explanation history' }));
+    const detail = error.detail;
+    throw new Error(typeof detail === 'string' ? detail : detail?.message || 'Failed to clear explanation history');
+  }
+
+  const { deleted } = await response.json();
+  return deleted ?? 0;
+}
+
 export async function deleteAccount() {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(`${BACKEND_URL}/api/v1/auth/account`, {

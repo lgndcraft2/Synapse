@@ -14,3 +14,7 @@
 playwright.config.mjs
 .neon
 .env.local
+
+# Local working copy of docs/explain-plan.md for Claude Code
+CLAUDE.md
+Claude.md

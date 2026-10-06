@@ -7,8 +7,9 @@ export const ROOT = path.resolve(TESTS_DIR, '..');
 export const WEBPAGE_DIR = path.join(ROOT, 'webpage');
 export const BACKEND_DIR = path.join(ROOT, 'backend');
 
-// The unpacked extension lives at the repo root (manifest.json is there).
-export const EXTENSION_DIR = ROOT;
+// Keep the runnable Manifest V3 bundle isolated from the web app and API.
+// Chrome must load this directory because it contains manifest.json.
+export const EXTENSION_DIR = path.join(ROOT, 'extension');
 
 export const WEBPAGE_ENV = path.join(WEBPAGE_DIR, '.env');
 export const ENV_BACKUP = path.join(TESTS_DIR, '.env.backup');

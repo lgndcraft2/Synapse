@@ -92,6 +92,21 @@ class FakeRedis:
         self.store[key] = str(value)
         return value
 
+    async def decr(self, key):
+        value = int(self.store.get(key, 0)) - 1
+        self.store[key] = str(value)
+        return value
+
+    async def incrby(self, key, amount):
+        value = int(self.store.get(key, 0)) + int(amount)
+        self.store[key] = str(value)
+        return value
+
+    async def decrby(self, key, amount):
+        value = int(self.store.get(key, 0)) - int(amount)
+        self.store[key] = str(value)
+        return value
+
     async def expire(self, key, seconds):
         self.expiry[key] = seconds
         return True
