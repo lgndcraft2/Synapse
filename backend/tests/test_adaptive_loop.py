@@ -137,3 +137,73 @@ async def test_mixed_feedback_leaves_the_profile_alone(client, verified_user):
     headers = await _login_headers(client, verified_user)
     result = await _send(client, headers, "complex", "simple", "clearer", "complex", "simple")
     assert result["profile_update"] is None
+
+
+# ── Accepted re-explained versions ────────────────────────────────
+
+def test_clearer_after_simpler_counts_as_too_complex():
+    summary = build_feedback_summary([
+        {"reaction": "clearer", "reexplain_path": ["simpler"]},
+        {"reaction": "clearer", "reexplain_path": "simpler,simpler"},
+    ])
+    assert "2 were only clear after the user asked for a simpler version" in summary
+    assert "Simplify further" in summary
+
+
+def test_clearer_after_more_detail_counts_as_too_simple():
+    summary = build_feedback_summary([
+        {"reaction": "clearer", "reexplain_path": ["more_detail"]},
+        {"reaction": "clearer", "reexplain_path": ["more_detail", "specific"]},
+    ])
+    assert "only clear after the user asked for more detail" in summary
+    assert "Add depth" in summary
+
+
+def test_specific_requests_and_first_versions_carry_no_direction():
+    summary = build_feedback_summary([
+        {"reaction": "clearer", "reexplain_path": ["specific"]},
+        {"reaction": "clearer"},
+    ])
+    assert "working" in summary
+    assert "Simplify further" not in summary and "Add depth" not in summary
+
+
+def test_off_topic_is_no_longer_a_rule():
+    summary = build_feedback_summary(_entries("off-topic", "off-topic", "off-topic"))
+    assert "misses the point" not in summary
+
+
+@pytest.mark.asyncio
+async def test_accepted_simpler_versions_nudge_the_profile(client, verified_user, session_factory):
+    from app.models.models import CognitiveProfile, FeedbackLog
+
+    headers = await _login_headers(client, verified_user)
+    async with session_factory() as db:
+        profile = await db.scalar(select(CognitiveProfile))
+        profile.chunk_size = "long"
+        await db.commit()
+
+    resp = await client.post("/api/v1/feedback", headers=headers, json={"entries": [
+        {"reaction": "clearer", "reexplain_path": ["simpler"]} for _ in range(4)
+    ]})
+    assert resp.status_code == 200, resp.text
+    update = resp.json()["profile_update"]
+    assert update is not None and update["profile"]["chunk_size"] == "medium"
+
+    async with session_factory() as db:
+        rows = (await db.scalars(select(FeedbackLog))).all()
+    assert {r.reexplain_path for r in rows} == {"simpler"}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_breakdown_reads_feedback_like_the_loop(client, verified_user):
+    headers = await _login_headers(client, verified_user)
+    resp = await client.post("/api/v1/feedback", headers=headers, json={"entries": [
+        {"reaction": "clearer"},
+        {"reaction": "clearer", "reexplain_path": ["simpler"]},
+        {"reaction": "clearer", "reexplain_path": ["more_detail"]},
+        {"reaction": "off-topic"},
+    ]})
+    assert resp.status_code == 200, resp.text
+    stats = (await client.get("/api/v1/dashboard/stats", headers=headers)).json()
+    assert stats["feedback_breakdown"] == {"clearer": 1, "complex": 1, "simple": 1}

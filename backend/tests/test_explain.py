@@ -33,10 +33,11 @@ def ai_calls(monkeypatch):
     calls = Recorder()
 
     async def fake_call_explain(text, image_base64, media_type, profile, feedback_summary, use_claude=False,
-                                context_text="", document_text=""):
+                                context_text="", document_text="", reexplain=None):
         calls.append({
             "text": text, "image": image_base64, "media_type": media_type, "use_claude": use_claude,
-            "context_text": context_text, "document_text": document_text,
+            "context_text": context_text, "document_text": document_text, "reexplain": reexplain,
+            "feedback_summary": feedback_summary,
         })
         if calls.fail:
             raise RuntimeError("provider exploded at https://provider.example/?key=secret")
@@ -603,3 +604,118 @@ async def test_purge_is_noop_without_storage(session_factory):
 
     async with session_factory() as session:
         assert await purge_expired_thumbnails(session) == 0
+
+
+# ── Re-explain ────────────────────────────────────────────────────
+
+def _reexplain(mode="simpler", **extra) -> dict:
+    return {"mode": mode, "previous_html": "<div><p>First version.</p></div>", **extra}
+
+
+async def test_reexplain_sends_previous_version_and_mode(client, ai_calls):
+    resp = await _explain(client, _text_body(reexplain=_reexplain("more_detail")))
+    assert resp.status_code == 200, resp.text
+    assert ai_calls[0]["reexplain"] == {
+        "mode": "more_detail", "request": None, "previous_html": "<div><p>First version.</p></div>",
+    }
+    status = resp.json()["reexplain"]
+    assert status == {"free": True, "free_remaining": 9, "free_limit": 10}
+
+
+async def test_specific_reexplain_needs_a_request(client, ai_calls):
+    resp = await _explain(client, _text_body(reexplain=_reexplain("specific", request="   ")))
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "INVALID_REQUEST"
+    assert ai_calls == []
+
+    resp = await _explain(client, _text_body(reexplain=_reexplain("specific", request="Use a cooking analogy")))
+    assert resp.status_code == 200
+    assert ai_calls[0]["reexplain"]["request"] == "Use a cooking analogy"
+
+
+async def test_ten_free_reexplains_then_charged_like_explains(client, ai_calls, monkeypatch, fake_redis):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EXPLAIN_BURST_PER_MINUTE", 100)
+    monkeypatch.setattr(settings, "FREE_DAILY_LIMIT", 1)
+
+    # Ten free ones never touch the reformat quota (which only allows 1 here).
+    for i in range(10):
+        resp = await _explain(client, _text_body(reexplain=_reexplain()))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["reexplain"]["free_remaining"] == 9 - i
+
+    # The 11th is charged like a normal explain: it takes the one reformat...
+    resp = await _explain(client, _text_body(reexplain=_reexplain()))
+    assert resp.status_code == 200
+    assert resp.json()["reexplain"] == {"free": False, "free_remaining": 0, "free_limit": 10}
+    # ...and the 12th is refused by that quota.
+    resp = await _explain(client, _text_body(reexplain=_reexplain()))
+    assert resp.status_code == 429
+    assert len(ai_calls) == 11
+
+
+async def test_paid_image_reexplain_counts_as_image_capture(client, ai_calls, session_factory, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EXPLAIN_BURST_PER_MINUTE", 100)
+    monkeypatch.setattr(settings, "EXPLAIN_FREE_REEXPLAINS_PER_DAY", 1)
+    user = await _sign_in(client, session_factory, "relook")
+
+    first = await _explain(client, _image_body(reexplain=_reexplain()), user["headers"])
+    assert first.json()["usage"] is None  # free re-explain: no image unit used
+    assert ai_calls[0]["image"] == PNG    # the kept crop is sent again for the re-look
+
+    second = await _explain(client, _image_body(reexplain=_reexplain()), user["headers"])
+    assert second.json()["usage"]["image_captures_used"] == 1
+
+
+async def test_failed_free_reexplain_is_given_back(client, ai_calls):
+    ai_calls.fail = True
+    assert (await _explain(client, _text_body(reexplain=_reexplain()))).status_code == 502
+    ai_calls.fail = False
+    resp = await _explain(client, _text_body(reexplain=_reexplain()))
+    assert resp.json()["reexplain"]["free_remaining"] == 9
+
+
+async def test_paid_reexplain_appends_a_version_to_its_entry(client, ai_calls, session_factory):
+    from app.models.models import ExplanationHistory
+
+    user = await _sign_in(client, session_factory, "versions", plan="premium")
+    entry = (await _explain(client, _text_body(), user["headers"])).json()["history_entry"]
+    assert entry["versions"] == []
+
+    body = _text_body(reexplain=_reexplain("specific", request="Shorter please", parent_entry_id=entry["id"]))
+    updated = (await _explain(client, body, user["headers"])).json()["history_entry"]
+    assert updated["id"] == entry["id"]
+    assert [(v["mode"], v["request"]) for v in updated["versions"]] == [("specific", "Shorter please")]
+    assert updated["result_html"] == entry["result_html"]  # the original stays as v1
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(ExplanationHistory))).all()
+    assert len(rows) == 1 and len(rows[0].versions) == 1
+
+
+async def test_reexplain_cannot_append_to_another_users_entry(client, ai_calls, session_factory):
+    from app.models.models import ExplanationHistory
+
+    alice = await _sign_in(client, session_factory, "alice", plan="premium")
+    bob = await _sign_in(client, session_factory, "bob", plan="premium")
+    entry = (await _explain(client, _text_body(), alice["headers"])).json()["history_entry"]
+
+    body = _text_body(reexplain=_reexplain(parent_entry_id=entry["id"]))
+    bobs = (await _explain(client, body, bob["headers"])).json()["history_entry"]
+    assert bobs["id"] != entry["id"]  # saved as Bob's own new entry instead
+
+    async with session_factory() as session:
+        alices = await session.get(ExplanationHistory, uuid.UUID(entry["id"]))
+    assert alices.versions == []
+
+
+async def test_reexplain_is_not_written_to_the_feedback_log(client, ai_calls, session_factory):
+    from app.models.models import FeedbackLog
+
+    user = await _sign_in(client, session_factory, "nolog")
+    await _explain(client, _text_body(reexplain=_reexplain()), user["headers"])
+    async with session_factory() as session:
+        assert (await session.scalars(select(FeedbackLog))).all() == []

@@ -149,6 +149,9 @@ class FeedbackLog(Base):
     read_progress:       Mapped[int]       = mapped_column(Integer, nullable=True)
     session_difficulty:  Mapped[str]       = mapped_column(String, default="normal")
     section_title:       Mapped[str]       = mapped_column(Text, nullable=True)
+    # Comma-separated re-explain modes behind a "clearer" rating, e.g.
+    # "simpler,simpler": the user accepted the version they asked for.
+    reexplain_path:      Mapped[str]       = mapped_column(String, nullable=True)
     created_at:          Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     user:    Mapped["User"]           = relationship("User", back_populates="feedback")
@@ -393,6 +396,10 @@ class ExplanationHistory(Base):
     result_html:          Mapped[str]       = mapped_column(Text, nullable=False)
     thumbnail_key:        Mapped[str]       = mapped_column(String, nullable=True)
     thumbnail_expires_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
+    # Re-explained versions after the original, oldest first:
+    # [{mode, request, result_html, created_at}]. Reassign, never mutate in
+    # place: a plain JSONB column doesn't track in-place changes.
+    versions:             Mapped[list]      = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     created_at:           Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (

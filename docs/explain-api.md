@@ -36,6 +36,7 @@ Explain a highlighted text selection or a circled area.
 | `session_difficulty` | `hard`, `normal` or `easy`, same handling as `/reformat` |
 | `fingerprint`, `profile` | Same as `/reformat` |
 | `recent_feedback` | Anonymous callers only: up to 20 local feedback entries (same shape as `POST /feedback` entries), oldest first. Ignored when signed in; the server's feedback log is used instead |
+| `reexplain` | Optional. Asks for another version of an explanation the user already has: `{mode, request?, previous_html, parent_entry_id?}`. `mode` is `simpler`, `more_detail` or `specific`; `request` (max 500 chars) is required for `specific`; `previous_html` (max 40,000 chars) is the version on screen; `parent_entry_id` is the paid `HistoryEntry` to add the version to. Send the same `kind`, `text`, `context` and `context_id` as the original. For a circle, the extension re-sends the crop it kept (for an hour); after that it sends `kind=text` with the circled text. A re-explain is never written to the feedback log |
 
 ### Quota and rate limits
 
@@ -45,6 +46,7 @@ Applied in this order, before any AI call:
 2. **`kind=text`:** the existing `check_rate_limit`, so one text explain costs exactly one reformat (free 100/day + 500 lifetime, Lite 300/month, Premium and institutional unlimited).
 3. **`kind=image`:** a separate image-capture counter. Free and anonymous: `FREE_IMAGE_DAILY_LIMIT` (5) per UTC day. Lite: `LITE_IMAGE_MONTHLY_LIMIT` (100) per calendar month. Premium and institutional: unlimited. Over the limit: 429, `detail.code = "IMAGE_LIMIT"`. An image explain does **not** also consume reformat quota.
 4. If the AI call fails, the image-capture unit is refunded (best effort). Text explains are not refunded, matching `/reformat`.
+5. **Re-explains:** the first `EXPLAIN_FREE_REEXPLAINS_PER_DAY` (10) per user (or anonymous IP+fingerprint) per UTC day skip steps 2 and 3. After that a re-explain is charged exactly like a normal explain (text: reformat units, 4 with page or document context; image: one image capture). A free re-explain is given back if the AI call fails. The burst cap always applies.
 
 All Redis failures fail open, like `check_rate_limit`.
 
@@ -66,7 +68,8 @@ All Redis failures fail open, like `check_rate_limit`.
 
 - `html` is sanitized again by the extension with DOMPurify before rendering.
 - `history_entry` is the saved `HistoryEntry` (below) when the caller has an active paid plan (lite, premium, institutional), otherwise `null`.
-- `usage` is present for `kind=image`; `image_captures_limit` and `image_period` are `null` for unlimited plans. For `kind=text`, `usage` is `null`.
+- `usage` is present for `kind=image`; `image_captures_limit` and `image_period` are `null` for unlimited plans. For `kind=text`, `usage` is `null`. A free re-explain uses no image unit, so `usage` is `null` for it.
+- `reexplain` is present for re-explains: `{free, free_remaining, free_limit}`. `free` says whether this one cost nothing; `free_remaining` is `null` if the counter was unavailable. For a paid re-explain with a `parent_entry_id` the caller owns, `history_entry` is that entry with the new version appended; otherwise a new entry is saved as usual.
 
 ### Errors
 
@@ -177,9 +180,14 @@ On explain, the backend sends the model the document's opening (about 2,000 char
   "anchor": { "rect": { "x": 10, "y": 20, "width": 300, "height": 200 } },
   "result_html": "<div>...</div>",
   "thumbnail_url": "https://... (presigned, short-lived) or null",
-  "created_at": "2026-10-04T12:00:00Z"
+  "created_at": "2026-10-04T12:00:00Z",
+  "versions": [
+    { "mode": "simpler", "request": null, "result_html": "<div>...</div>", "created_at": "2026-10-04T12:01:00Z" }
+  ]
 }
 ```
+
+`versions` are re-explained versions after the original (`result_html`), oldest first, at most 10.
 
 `hostname` is the lowercased host of `page_url` (no port, no `www.` stripping). `thumbnail_url` is `null` when no thumbnail was stored, storage is not configured, or the thumbnail has passed its 30-day retention.
 

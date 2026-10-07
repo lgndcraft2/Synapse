@@ -45,6 +45,13 @@ async function backendProfile(token) {
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
+/** The dashboard's own session, as the SPA stores it. */
+async function dashboardSession(page) {
+  const raw = await page.evaluate(() => localStorage.getItem('synapse.session'));
+  expect(raw).toBeTruthy();
+  return JSON.parse(raw);
+}
+
 async function openPopup() {
   const page = await context.newPage();
   await page.goto(popupUrl);
@@ -113,7 +120,7 @@ test('signing in on the dashboard hands the session to the extension', async () 
   // correctly associated. Test the same accessible contract a user relies on
   // instead of coupling this flow to an implementation-specific ID.
   await page.getByLabel('Email').fill(testEmail);
-  await page.getByLabel('Password').fill(testPassword);
+  await page.getByLabel('Password', { exact: true }).fill(testPassword);
   await page.getByRole('button', { name: 'Log in' }).click();
 
   await page.waitForURL('**/dashboard', { timeout: 45_000 });
@@ -143,6 +150,66 @@ test('signing in on the dashboard hands the session to the extension', async () 
   const { providerConfig } = await readStorage(worker(), 'providerConfig');
   expect(providerConfig.backendBaseUrl).toBe(BACKEND_URL);
 
+  // The extension gets its own session (an `extension` token family), never
+  // the dashboard's tokens. Sharing them meant whichever side refreshed second
+  // looked like a replay, and the server signed both out.
+  const web = await dashboardSession(page);
+  expect(synapseSession.refresh_token).not.toBe(web.refresh_token);
+  expect(synapseSession.user_id).toBe(web.user.id);
+
+  const pong = await sendExternalMessage(page, extensionId, { type: 'SYNAPSE_PING' });
+  expect(pong.user_id).toBe(web.user.id);
+
+  await page.close();
+});
+
+test('dashboard and extension refresh independently and both stay signed in', async () => {
+  const page = await context.newPage();
+  await page.goto(`${FRONTEND_URL}/dashboard`);
+  await expect(page).toHaveURL(/\/dashboard/);
+
+  await wakeWorker();
+  const extBefore = (await readStorage(worker(), 'synapseSession')).synapseSession;
+
+  // Revisiting the dashboard must not mint another session: the ping says the
+  // extension is already signed in as this user.
+  await page.waitForTimeout(2_000);
+  expect((await readStorage(worker(), 'synapseSession')).synapseSession.refresh_token)
+    .toBe(extBefore.refresh_token);
+
+  // The dashboard rotates its refresh token...
+  const web = await dashboardSession(page);
+  const webRes = await fetch(`${BACKEND_URL}/api/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: web.refresh_token }),
+  });
+  expect(webRes.status).toBe(200);
+  const rotatedWeb = await webRes.json();
+  // Keep the dashboard tab consistent with the server, as its own refresh would.
+  await page.evaluate((v) => localStorage.setItem('synapse.session', JSON.stringify(v)), rotatedWeb);
+
+  // ...and then the extension rotates its own. With a shared family this was
+  // the replay that revoked everything.
+  await writeStorage(worker(), {
+    synapseSession: { ...extBefore, expires_at: Math.floor(Date.now() / 1000) - 10 },
+  });
+  const popup = await openPopup();
+  const auth = await sendMessage(popup, { type: 'GET_AUTH_STATUS' });
+  expect(auth).toMatchObject({ authenticated: true });
+  const extAfter = (await readStorage(worker(), 'synapseSession')).synapseSession;
+  expect(extAfter.refresh_token).not.toBe(extBefore.refresh_token);
+
+  // The dashboard's rotated session is still alive too.
+  const webAgain = await fetch(`${BACKEND_URL}/api/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: rotatedWeb.refresh_token }),
+  });
+  expect(webAgain.status).toBe(200);
+  await page.evaluate((v) => localStorage.setItem('synapse.session', JSON.stringify(v)), await webAgain.json());
+
+  await popup.close();
   await page.close();
 });
 
@@ -242,6 +309,53 @@ test('feedback submitted by the extension reaches the server', async () => {
   await page.close();
 });
 
+test('consistent "too complex" feedback nudges the profile once and the popup says so', async () => {
+  const page = await openPopup();
+
+  // The save test above left chunk size "long". Since that change: one
+  // "clearer", now "too complex" until the server reacts.
+  const results = [];
+  for (let i = 0; i < 4; i++) {
+    results.push(await sendMessage(page, {
+      type: 'FEEDBACK',
+      entry: {
+        ts: Date.now() + i,
+        reaction: 'complex',
+        note: '',
+        timeSpentSeconds: 10,
+        readProgress: null,
+        sessionDifficulty: 'normal',
+        sectionTitle: 'Explain',
+      },
+    }));
+  }
+  for (const r of results) expect(r).toMatchObject({ ok: true, synced: true });
+  const nudges = results.filter((r) => r.profileUpdate);
+  expect(nudges).toHaveLength(1);
+  expect(nudges[0].profileUpdate.profile.chunk_size).toBe('medium');
+
+  const { synapseSession } = await readStorage(worker(), 'synapseSession');
+  const { body } = await backendProfile(synapseSession.access_token);
+  expect(body.chunk_size).toBe('medium');
+
+  // Mirrored locally, every entry marked synced, and the popup banner armed.
+  const stored = await readStorage(worker(), ['cognitiveProfile', 'feedbackLog', 'pendingProfileUpdate']);
+  expect(stored.cognitiveProfile.chunkSize).toBe('medium');
+  expect(stored.feedbackLog.every((e) => e.synced !== false)).toBe(true);
+  expect(stored.pendingProfileUpdate.message).toMatch(/simpler/);
+
+  const history = await fetch(`${BACKEND_URL}/api/v1/profile/history?limit=1`, {
+    headers: { Authorization: `Bearer ${synapseSession.access_token}` },
+  }).then((r) => r.json());
+  expect(history.data[0].change_summary).toMatch(/^Adjusted from your feedback/);
+
+  await page.close();
+  const popup = await openPopup();
+  await expect(popup.locator('#update-banner')).toBeVisible();
+  await expect(popup.locator('#update-msg')).toContainText('simpler');
+  await popup.close();
+});
+
 test('an expired access token is refreshed instead of dropping the session', async () => {
   await wakeWorker();
   const before = (await readStorage(worker(), 'synapseSession')).synapseSession;
@@ -311,7 +425,16 @@ test('logging out of the dashboard clears the extension session', async () => {
   // a bare "logout" glyph in the header and clicked nothing — the control had
   // since moved into a menu.) Both steps target accessible roles rather than
   // icon text, so a future restyle does not silently break this again.
-  const beforeLogout = (await readStorage(worker(), 'synapseSession')).synapseSession;
+  // The previous test revoked the extension's family only. The dashboard is
+  // still signed in (proof the families are separate) and, on load, hands the
+  // extension a fresh session because the ping reports none.
+  await wakeWorker();
+  const { synapseSession: beforeLogout } = await waitForStorage(
+    worker(),
+    'synapseSession',
+    (s) => Boolean(s.synapseSession?.refresh_token),
+    30_000
+  );
 
   await page.locator('[aria-expanded]').first().click();
   await page.getByRole('menuitem', { name: /sign out/i }).click();

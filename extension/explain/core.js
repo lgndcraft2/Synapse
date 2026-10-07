@@ -700,6 +700,35 @@ padding:8px 12px!important;border-radius:8px!important;background:${C.green}!imp
 #synapse-explain-panel .sxp-action:hover{filter:brightness(.95)!important}
 #synapse-explain-panel .sxp-action:focus-visible{outline:2px solid ${C.greenDeep}!important;outline-offset:2px!important}
 
+/* Versions of one explanation, "Clearer", and re-explain */
+#synapse-explain-panel .sxp-versions{display:flex!important;flex-wrap:wrap!important;gap:4px!important;padding:10px 18px 0!important}
+#synapse-explain-panel .sxp-ver{all:unset;box-sizing:border-box!important;cursor:pointer!important;font:600 11px/1 ${FONT}!important;
+padding:5px 9px!important;border-radius:999px!important;border:1px solid ${C.g200}!important;color:${C.g600}!important;background:${C.white}!important}
+#synapse-explain-panel .sxp-ver[aria-pressed="true"]{background:${C.greenLight}!important;border-color:${C.greenMid}!important;color:${C.greenDeep}!important}
+#synapse-explain-panel .sxp-ver:focus-visible{outline:2px solid ${C.green}!important;outline-offset:1px!important}
+#synapse-explain-panel .sxp-tools{display:block!important;padding:6px 18px 14px!important}
+#synapse-explain-panel .sxp-tools-row{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:6px!important}
+#synapse-explain-panel .sxp-tools-label{font:700 10px/1 ${FONT}!important;letter-spacing:.08em!important;text-transform:uppercase!important;
+color:${C.g400}!important;display:block!important;width:100%!important;margin:10px 0 2px!important}
+#synapse-explain-panel .sxp-chip{all:unset;box-sizing:border-box!important;cursor:pointer!important;font:600 12px/1 ${FONT}!important;
+padding:7px 11px!important;border-radius:8px!important;border:1.5px solid ${C.g200}!important;background:${C.white}!important;color:${C.g600}!important}
+#synapse-explain-panel .sxp-chip:hover{border-color:${C.greenMid}!important;background:${C.greenLight}!important;color:${C.greenDeep}!important}
+#synapse-explain-panel .sxp-chip:focus-visible{outline:2px solid ${C.green}!important;outline-offset:1px!important}
+#synapse-explain-panel .sxp-chip.s-good{border-color:${C.green}!important;color:${C.greenDeep}!important}
+#synapse-explain-panel .sxp-chip[aria-expanded="true"]{background:${C.greenLight}!important;border-color:${C.greenMid}!important;color:${C.greenDeep}!important}
+#synapse-explain-panel .sxp-chip:disabled{opacity:.5!important;cursor:default!important}
+#synapse-explain-panel .sxp-thanks{font:600 11.5px/1.3 ${FONT}!important;color:${C.green}!important;display:block!important}
+#synapse-explain-panel .sxp-ask{display:flex!important;gap:6px!important;margin-top:8px!important}
+#synapse-explain-panel .sxp-ask-input{flex:1!important;min-width:0!important;padding:7px 10px!important;border-radius:8px!important;
+border:1.5px solid ${C.g200}!important;background:${C.g50}!important;font:400 12px/1.3 ${FONT}!important;color:${C.g900}!important;outline:none!important}
+#synapse-explain-panel .sxp-ask-input:focus{border-color:${C.green}!important;background:${C.white}!important}
+#synapse-explain-panel .sxp-ask .sxp-action{padding:7px 11px!important}
+#synapse-explain-panel .sxp-redo{display:flex!important;align-items:center!important;gap:8px!important;margin-top:10px!important;
+font:500 12px/1.3 ${FONT}!important;color:${C.g600}!important}
+#synapse-explain-panel .sxp-redo .sc-spinner{width:16px!important;height:16px!important;border-width:2px!important}
+#synapse-explain-panel .sxp-note{display:block!important;margin-top:8px!important;font:400 11px/1.4 ${FONT}!important;color:${C.g400}!important}
+#synapse-explain-panel .sxp-note.s-error{color:#b42318!important}
+
 /* Circle confirm step: outline of the circled hull + the confirm bar */
 #synapse-circle-outline{position:absolute!important;z-index:${Z.panel}!important;pointer-events:none!important;display:block!important;overflow:visible!important}
 #synapse-circle-outline svg{display:block!important;width:100%!important;height:100%!important;overflow:visible!important}

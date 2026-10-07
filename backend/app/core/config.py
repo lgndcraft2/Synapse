@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     FREE_IMAGE_DAILY_LIMIT: int = 5      # free and anonymous, per UTC day
     LITE_IMAGE_MONTHLY_LIMIT: int = 100  # Thinker Lite, per calendar month
     EXPLAIN_BURST_PER_MINUTE: int = 10
+    # Re-explains (simpler / more detail / a specific request) that cost nothing,
+    # per user (or anonymous IP+fingerprint) per UTC day. After these, a
+    # re-explain is charged exactly like a normal explain.
+    EXPLAIN_FREE_REEXPLAINS_PER_DAY: int = 10
     # Decoded byte ceilings. The crop goes to the model and is never stored;
     # the thumbnail is what paid history keeps.
     EXPLAIN_MAX_IMAGE_BYTES: int = 4 * 1024 * 1024

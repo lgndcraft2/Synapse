@@ -37,7 +37,7 @@ def ai_calls(monkeypatch):
     calls: list[dict] = []
 
     async def fake_call_explain(text, image_base64, media_type, profile, feedback_summary,
-                                use_claude=False, context_text="", document_text=""):
+                                use_claude=False, context_text="", document_text="", reexplain=None):
         calls.append({
             "text": text, "image": image_base64, "use_claude": use_claude,
             "context_text": context_text, "document_text": document_text,

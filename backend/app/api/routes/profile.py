@@ -4,6 +4,7 @@ from sqlalchemy import select, func, and_, case
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.models import User, CognitiveProfile, ProfileHistory, FeedbackLog, ReadingSession
+from app.services.ai import effective_reaction
 from app.schemas.schemas import ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut, Page
 from datetime import datetime, timedelta, timezone
 
@@ -193,6 +194,7 @@ async def submit_feedback(
             read_progress=entry.read_progress,
             session_difficulty=entry.session_difficulty,
             section_title=entry.section_title,
+            reexplain_path=",".join(entry.reexplain_path) if entry.reexplain_path else None,
         )
         db.add(log)
 
@@ -239,14 +241,15 @@ async def _adapt_profile(db: AsyncSession, user: User) -> dict | None:
         select(func.max(ProfileHistory.changed_at)).where(ProfileHistory.user_id == user.id)
     )
     query = (
-        select(FeedbackLog.reaction)
+        select(FeedbackLog.reaction, FeedbackLog.reexplain_path)
         .where(FeedbackLog.user_id == user.id, FeedbackLog.reaction.is_not(None))
         .order_by(FeedbackLog.created_at.desc())
         .limit(ADAPT_WINDOW)
     )
     if since is not None:
         query = query.where(FeedbackLog.created_at > since)
-    reactions = list((await db.scalars(query)).all())
+    # "Clearer" on a version reached by re-explaining counts in that direction.
+    reactions = [effective_reaction(r, path) for r, path in (await db.execute(query)).all()]
     if len(reactions) < ADAPT_MIN_REACTIONS:
         return None
 
@@ -366,13 +369,20 @@ async def get_dashboard_stats(
     result = await db.execute(_sessions_query(current_user.id).limit(10))
     recent_sessions = result.scalars().all()
 
-    # Feedback breakdown
+    # Feedback breakdown, read the way the adaptive loop reads it: "clearer"
+    # on a version reached by re-explaining counts as "complex" (asked for it
+    # simpler) or "simple" (asked for more detail). "off-topic" is no longer
+    # offered and is left out.
     result = await db.execute(
-        select(FeedbackLog.reaction, func.count(FeedbackLog.id))
+        select(FeedbackLog.reaction, FeedbackLog.reexplain_path, func.count(FeedbackLog.id))
         .where(FeedbackLog.user_id == current_user.id)
-        .group_by(FeedbackLog.reaction)
+        .group_by(FeedbackLog.reaction, FeedbackLog.reexplain_path)
     )
-    breakdown = {row[0]: row[1] for row in result.fetchall() if row[0]}
+    breakdown: dict[str, int] = {}
+    for reaction, path, count in result.fetchall():
+        effective = effective_reaction(reaction, path)
+        if effective in ("clearer", "complex", "simple"):
+            breakdown[effective] = breakdown.get(effective, 0) + count
 
     return DashboardStats(
         cards_this_week=int(cards_week),

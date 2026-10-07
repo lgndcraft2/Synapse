@@ -9,6 +9,9 @@ so they get a separate counter instead of draining the reformat quota:
   * Thinker Lite:       LITE_IMAGE_MONTHLY_LIMIT per calendar month
   * premium and institutional: unlimited (still counted, for the usage meter)
 
+Re-explains get EXPLAIN_FREE_REEXPLAINS_PER_DAY free per caller per UTC day;
+after that they are charged like any other explain.
+
 Like `check_rate_limit`, everything here fails OPEN on a Redis error. A
 limiter outage must not take explaining down with it.
 
@@ -181,3 +184,47 @@ async def refund_image_capture(usage: ImageUsage) -> None:
     """Give back an image unit after the AI call failed. Best effort."""
     await _undo(usage.keys)
     usage.keys = []
+
+
+@dataclass
+class FreeReexplain:
+    """A free re-explain taken from today's allowance.
+
+    `remaining` is None when Redis was unavailable (the re-explain is let
+    through free, like every other limiter here failing open).
+    """
+    remaining: int | None
+    keys: list[str] = field(default_factory=list)
+
+
+async def take_free_reexplain(
+    user: User | None,
+    fingerprint: str | None,
+    request: Request,
+) -> FreeReexplain | None:
+    """One free re-explain from today's allowance, or None when it is spent.
+
+    None means the caller pays: the route then charges the re-explain like a
+    normal explain.
+    """
+    now = datetime.utcnow()
+    limit = settings.EXPLAIN_FREE_REEXPLAINS_PER_DAY
+    key = f"rl:reexplain:day:{_caller_identity(user, fingerprint, request)}:{now.strftime('%Y%m%d')}"
+    try:
+        used = await _incr_with_ttl(key, _seconds_until_utc_midnight(now))
+    except RedisError as e:
+        logger.warning("Re-explain allowance degraded — Redis unavailable (%s). Treating as free.", e)
+        return FreeReexplain(remaining=None)
+    if used > limit:
+        # Paid from here on; leave the counter where it is so the answer stays
+        # "none left" for the rest of the day.
+        return None
+    return FreeReexplain(remaining=limit - used, keys=[key])
+
+
+async def refund_free_reexplain(free: FreeReexplain) -> None:
+    """Give a free re-explain back after the AI call failed. Best effort."""
+    await _undo(free.keys)
+    free.keys = []
+    if free.remaining is not None:
+        free.remaining += 1

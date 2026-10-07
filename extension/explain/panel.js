@@ -14,12 +14,15 @@
 
   let panel = null;
   // { kind, snippet, status: 'loading'|'done'|'error', html?, error?, entryId?,
-  //   actions?: [{ label, onClick, secondary? }], contextUsed?, contextNote? }
+  //   actions?: [{ label, onClick, secondary? }], contextUsed?, contextNote?,
+  //   versions?: [{ mode, request?, html }] (index 0 is the original), vi?,
+  //   request?: what a re-explain resends, entrySource?, relookId?,
+  //   redoing?, redoError?, askOpen?, askDraft?, reexplainStatus?, shownAt? }
   let current = null;
   const expanded = new Set();
 
   // History entries the user already rated. One opinion per explanation, so
-  // the feedback strip stays gone when the entry is reopened or re-rendered.
+  // "Clearer" stays gone when the entry is reopened or re-rendered.
   const RATED_KEY = 'explainFeedbackGiven';
   const RATED_MAX = 300;
   let rated = new Set();
@@ -43,6 +46,28 @@
   }
 
   const KIND_LABEL = { text: 'Text', image: 'Circle' };
+  const MODE_LABEL = { simpler: 'Simpler', more_detail: 'More detail', specific: 'Your request' };
+  const ASK_MAX = 300;
+
+  /** [{ mode, request, html }] with the original first, from an entry's fields. */
+  function versionsFrom(originalHtml, extra) {
+    const list = [{ mode: null, request: null, html: originalHtml }];
+    for (const v of Array.isArray(extra) ? extra : []) {
+      if (v && v.result_html) list.push({ mode: v.mode, request: v.request || null, html: v.result_html });
+    }
+    return list;
+  }
+
+  /** The newest version of a history entry: what the user last asked for. */
+  function latestHtml(entry) {
+    const extra = Array.isArray(entry.versions) ? entry.versions : [];
+    return extra.length ? extra[extra.length - 1].result_html : entry.result_html;
+  }
+
+  function shownHtml(view) {
+    const v = view.versions && view.versions[view.vi || 0];
+    return v ? v.html : view.html;
+  }
   const ICON_TEXT = 'Aa';
   const ICON_IMAGE = '◎';
 
@@ -110,8 +135,10 @@
           </div>
           <div class="sxp-error synapse-hide" role="alert"></div>
           <div class="sxp-actions synapse-hide"></div>
+          <div class="sxp-versions synapse-hide" role="group" aria-label="Versions of this explanation"></div>
           <div class="sc-body s-ready sxp-result synapse-hide"></div>
           <span class="sxp-ctx-used synapse-hide"></span>
+          <div class="sxp-tools synapse-hide"></div>
         </section>
         <section class="sxp-history">
           <div class="sxp-history-head">
@@ -254,18 +281,225 @@
     const body = el('.sxp-result');
     const done = current.status === 'done';
     body.classList.toggle('synapse-hide', !done);
-    section.querySelector('.sc-feedback')?.remove();
-    if (done) {
-      renderHTML(body, current.html);
-      // The existing feedback strip feeds the same learning loop as section cards.
-      if (!feedbackGiven(current)) {
-        const view = current;
-        H.feedbackStrip(section, {
-          title: 'Explain', readProgress: null, onFeedback: () => markFeedbackGiven(view)
-        });
+    if (done) renderHTML(body, shownHtml(current));
+    else body.innerHTML = '';
+    renderVersions(done);
+    renderTools(done);
+  }
+
+  function button(className, label, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = className;
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  // ── Versions ───────────────────────────────────────────────────
+  function renderVersions(done) {
+    const bar = el('.sxp-versions');
+    bar.innerHTML = '';
+    const view = current;
+    const versions = done && view.versions ? view.versions : [];
+    bar.classList.toggle('synapse-hide', versions.length < 2);
+    versions.forEach((v, i) => {
+      const label = i === 0 ? 'Original' : `${i + 1} · ${MODE_LABEL[v.mode] || 'Re-explained'}`;
+      const b = button('sxp-ver', label, () => {
+        view.vi = i;
+        renderCurrent();
+        el(`.sxp-ver[data-i="${i}"]`)?.focus({ preventScroll: true });
+      });
+      b.dataset.i = String(i);
+      b.setAttribute('aria-pressed', String((view.vi || 0) === i));
+      if (v.request) b.title = v.request;
+      bar.appendChild(b);
+    });
+  }
+
+  // ── "Clearer" and re-explain ───────────────────────────────────
+  // "Clearer" is the only rating: one per explanation, and it is what the
+  // long-term loop learns from (with the re-explains that led to the version
+  // the user accepted). Re-explain requests themselves only shape the next
+  // version; they are never logged as feedback.
+  function renderTools(done) {
+    const tools = el('.sxp-tools');
+    tools.innerHTML = '';
+    tools.classList.toggle('synapse-hide', !done);
+    if (!done) return;
+    const view = current;
+
+    const rate = document.createElement('div');
+    rate.className = 'sxp-tools-row';
+    if (feedbackGiven(view)) {
+      const thanks = document.createElement('span');
+      thanks.className = 'sxp-thanks';
+      thanks.textContent = 'Thanks. Synapse will remember what worked for you.';
+      rate.appendChild(thanks);
+    } else {
+      const clear = button('sxp-chip s-good sxp-clearer', '✓ Clearer', () => rateClearer(view));
+      clear.title = 'This version made sense to me';
+      rate.appendChild(clear);
+    }
+    tools.appendChild(rate);
+
+    if (!view.request) return; // nothing to resend (e.g. an entry with no source text)
+
+    const label = document.createElement('span');
+    label.className = 'sxp-tools-label';
+    label.textContent = 'Not quite? Re-explain it';
+    label.title = `The first ${view.reexplainStatus?.free_limit || 10} re-explains each day are free.`;
+    tools.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'sxp-tools-row';
+    const simpler = button('sxp-chip sxp-redo-simpler', 'Simpler', () => reexplain(view, 'simpler'));
+    const deeper = button('sxp-chip sxp-redo-detail', 'More detail', () => reexplain(view, 'more_detail'));
+    const ask = button('sxp-chip sxp-redo-ask', 'Ask something specific', () => {
+      view.askOpen = !view.askOpen;
+      renderCurrent();
+      if (view.askOpen) el('.sxp-ask-input')?.focus({ preventScroll: true });
+    });
+    ask.setAttribute('aria-expanded', String(!!view.askOpen));
+    for (const b of [simpler, deeper, ask]) { b.disabled = !!view.redoing; row.appendChild(b); }
+    tools.appendChild(row);
+
+    if (view.askOpen) {
+      const form = document.createElement('div');
+      form.className = 'sxp-ask';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'sxp-ask-input';
+      input.maxLength = ASK_MAX;
+      input.placeholder = 'e.g. use a cooking analogy';
+      input.setAttribute('aria-label', 'What should the next explanation do differently?');
+      input.value = view.askDraft || '';
+      input.disabled = !!view.redoing;
+      const send = button('sxp-action sxp-ask-send', 'Re-explain', () => submitAsk(view, input));
+      send.disabled = !!view.redoing;
+      input.addEventListener('input', () => { view.askDraft = input.value; });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitAsk(view, input); }
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          view.askOpen = false;
+          renderCurrent();
+          el('.sxp-redo-ask')?.focus({ preventScroll: true });
+        }
+      });
+      form.append(input, send);
+      tools.appendChild(form);
+    }
+
+    if (view.redoing) {
+      const busy = document.createElement('div');
+      busy.className = 'sxp-redo';
+      busy.setAttribute('role', 'status');
+      busy.innerHTML = '<div class="sc-spinner"></div><span>Re-explaining…</span>';
+      tools.appendChild(busy);
+    }
+
+    const noteText = view.redoError || reexplainNote(view);
+    if (noteText) {
+      const note = document.createElement('span');
+      note.className = 'sxp-note' + (view.redoError ? ' s-error' : '');
+      if (view.redoError) note.setAttribute('role', 'alert');
+      note.textContent = noteText;
+      tools.appendChild(note);
+    }
+  }
+
+  function reexplainNote(view) {
+    const parts = [];
+    if (view.relookFellBack) parts.push('The circled image is only kept for an hour, so this used the text in the circle.');
+    const status = view.reexplainStatus;
+    if (status && !status.free) parts.push('Free re-explains are used up for today, so this one counted as a normal explain.');
+    else if (status && status.free_remaining != null) {
+      const n = status.free_remaining;
+      parts.push(`${n} free re-explain${n === 1 ? '' : 's'} left today.`);
+    }
+    return parts.join(' ');
+  }
+
+  function submitAsk(view, input) {
+    const text = String(input.value || '').trim().slice(0, ASK_MAX);
+    if (!text) { input.focus({ preventScroll: true }); return; }
+    reexplain(view, 'specific', text);
+  }
+
+  function rateClearer(view) {
+    if (feedbackGiven(view)) return;
+    // The re-explains that led to the version on screen, oldest first.
+    const path = (view.versions || []).slice(1, (view.vi || 0) + 1).map(v => v.mode).filter(Boolean);
+    SX.send({
+      type: 'FEEDBACK',
+      entry: {
+        ts: Date.now(),
+        reaction: 'clearer',
+        note: '',
+        timeSpentSeconds: view.shownAt ? Math.round((Date.now() - view.shownAt) / 1000) : null,
+        readProgress: null,
+        sessionDifficulty: S.sessionDifficulty,
+        sectionTitle: 'Explain',
+        reexplainPath: path
+      }
+    });
+    markFeedbackGiven(view);
+    if (current === view) renderCurrent();
+  }
+
+  /** Asks for another version of the explanation on screen. Counts only for that version. */
+  async function reexplain(view, mode, requestText) {
+    if (view.redoing || !view.request) return;
+    const req = view.request;
+    const previous = view.versions[view.vi || 0];
+    view.redoing = true;
+    view.redoError = '';
+    if (mode === 'specific') view.askOpen = false;
+    if (current === view) renderCurrent();
+
+    const res = await SX.send({
+      type: 'EXPLAIN',
+      requestId: ++st.requestSeq,
+      kind: view.kind,
+      text: req.text || '',
+      anchor: req.anchor || null,
+      pageUrl: req.pageUrl || H.pageUrl(),
+      pageTitle: req.pageTitle || H.pageTitle(),
+      sessionDifficulty: S.sessionDifficulty,
+      context: req.context || null,
+      document: req.localOnly ? null : (req.document || null),
+      localOnly: !!req.localOnly,
+      reexplain: {
+        mode,
+        request: requestText || null,
+        previousHtml: previous.html,
+        entryId: view.entryId || null,
+        entrySource: view.entrySource || null,
+        relookId: view.relookId || view.entryId || null
+      }
+    });
+
+    view.redoing = false;
+    if (res && res.ok) {
+      view.versions.push({ mode, request: requestText || null, html: res.html });
+      view.vi = view.versions.length - 1;
+      view.reexplainStatus = res.reexplain || view.reexplainStatus || null;
+      view.relookFellBack = view.kind === 'image' && res.kind === 'text';
+      view.askDraft = '';
+      const entry = res.historyEntry || res.localEntry || null;
+      if (entry) {
+        // A paid entry deleted meanwhile comes back as a new entry; follow it.
+        view.entryId = entry.id;
+        view.entrySource = entry.source || view.entrySource;
+        SX.upsertHistory(entry, { skipPaint: true });
       }
     } else {
-      body.innerHTML = '';
+      view.redoError = (res && res.error) || "Couldn't re-explain that. Try again.";
+    }
+    if (current === view) {
+      renderCurrent();
+      if (res && res.ok) el(`.sxp-ver[data-i="${view.vi}"]`)?.focus({ preventScroll: true });
     }
   }
 
@@ -293,9 +527,19 @@
   /** Shows a saved entry without any API call (e.g. clicking a green highlight). */
   SX.showEntry = function (entry) {
     if (!entry) return;
+    const versions = versionsFrom(entry.result_html, entry.versions);
     SX.showCurrent({
       kind: entry.kind, snippet: snippetOf(entry.source_text || entry.page_title || ''),
-      status: 'done', html: entry.result_html, entryId: entry.id
+      status: 'done', html: entry.result_html, entryId: entry.id,
+      entrySource: entry.source || null,
+      versions, vi: versions.length - 1,
+      // The original page or document context isn't kept with history, so a
+      // re-explain from history sends the source text (and the kept crop).
+      request: entry.source_text || entry.kind === 'image'
+        ? { text: entry.source_text || '', anchor: entry.anchor || null, pageUrl: entry.url || '', pageTitle: entry.page_title || '' }
+        : null,
+      relookId: entry.id,
+      shownAt: Date.now()
     });
     SX.openPanel({ skipRefresh: true });
   };
@@ -342,8 +586,17 @@
       if (res && res.ok) {
         SX.showCurrent({
           kind: res.kind || kind, snippet: opts.snippet || '', status: 'done',
-          html: res.html, entryId: entry?.id,
-          contextUsed: res.contextUsed, contextNote: payload.localOnly ? 'fallback' : res.contextNote
+          html: res.html, entryId: entry?.id, entrySource: entry?.source || null,
+          contextUsed: res.contextUsed, contextNote: payload.localOnly ? 'fallback' : res.contextNote,
+          versions: [{ mode: null, request: null, html: res.html }], vi: 0,
+          // Kept so a re-explain sends the same source and context again.
+          request: {
+            text: payload.text || '', anchor: payload.anchor || null,
+            context: payload.context || null, document: payload.localOnly ? null : (payload.document || null),
+            localOnly: !!payload.localOnly, pageUrl: H.pageUrl(), pageTitle: H.pageTitle()
+          },
+          relookId: res.relookId || null,
+          shownAt: Date.now()
         });
       } else {
         SX.showCurrent({
@@ -461,7 +714,9 @@
       snip.textContent = snippetOf(entry.source_text) || (entry.kind === 'image' ? 'Circled area' : 'Explanation');
       const meta = document.createElement('span');
       meta.className = 'sxp-item-meta';
+      const versionCount = 1 + (Array.isArray(entry.versions) ? entry.versions.length : 0);
       const bits = [KIND_LABEL[entry.kind] || 'Text', G.relativeTime(entry.created_at)];
+      if (versionCount > 1) bits.push(`${versionCount} versions`);
       if (!onPage) bits.push(`on ${entry.page_title ? G.truncate(entry.page_title, 40) : 'another page'} ↗`);
       meta.textContent = bits.filter(Boolean).join(' · ');
       textWrap.append(snip, meta);
@@ -482,7 +737,7 @@
       if (open) {
         const body = document.createElement('div');
         body.className = 'sc-body s-ready sxp-item-body';
-        renderHTML(body, entry.result_html);
+        renderHTML(body, latestHtml(entry));
         li.appendChild(body);
       }
       list.appendChild(li);
