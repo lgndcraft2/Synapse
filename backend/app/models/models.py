@@ -216,6 +216,9 @@ class AIUsageEvent(Base):
     user_id:            Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     provider:           Mapped[str]       = mapped_column(String, nullable=False)
     operation:          Mapped[str]       = mapped_column(String, nullable=False, default="reformat")
+    # Where the call came from: "page", "pdf" (Synapse viewer or a PDF
+    # document reformat) or "document" (text, CSV, Markdown). NULL before 0004.
+    source:             Mapped[str]       = mapped_column(String, nullable=True)
     input_characters:   Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
     output_characters:  Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
     duration_ms:        Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
@@ -224,7 +227,9 @@ class AIUsageEvent(Base):
 
     __table_args__ = (
         CheckConstraint("provider IN ('gemini', 'claude')", name="ai_usage_events_provider_check"),
+        CheckConstraint("source IS NULL OR source IN ('page', 'pdf', 'document')", name="ai_usage_events_source_check"),
         Index("ix_ai_usage_events_created_provider", desc("created_at"), "provider"),
+        Index("ix_ai_usage_events_operation_created", "operation", desc("created_at")),
         Index("ix_ai_usage_events_user_created", "user_id", desc("created_at")),
     )
 

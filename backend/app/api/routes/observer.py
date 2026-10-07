@@ -215,6 +215,229 @@ async def overview(
     }
 
 
+_PLANS = ("free", "lite", "premium", "institutional")
+_FEATURES = ("explain_text", "explain_image", "pdf", "document_reformat", "page_reformat")
+
+
+def _paid_case(now: datetime):
+    """1 for a user with paid access right now, else 0. Requires Billing outer-joined.
+
+    Same rule as reformat._is_premium_active: institutional is always paid;
+    lite/premium need a matching, active or trialing, unexpired billing row.
+    """
+    return case(
+        (User.plan == "institutional", 1),
+        (
+            User.plan.in_(("lite", "premium"))
+            & (Billing.plan == User.plan)
+            & Billing.status.in_(("active", "trialing"))
+            & or_(Billing.renews_at.is_(None), Billing.renews_at > now),
+            1,
+        ),
+        else_=0,
+    )
+
+
+def _feature_case():
+    # PDF wins over the operation, so a circle in the PDF viewer counts as PDF
+    # use, not as a web-page circle. Rows from before 0004 have no source and
+    # fall through to their operation.
+    return case(
+        (AIUsageEvent.source == "pdf", "pdf"),
+        (AIUsageEvent.operation == "explain_text", "explain_text"),
+        (AIUsageEvent.operation == "explain_image", "explain_image"),
+        (AIUsageEvent.operation == "document_reformat", "document_reformat"),
+        (AIUsageEvent.operation == "reformat", "page_reformat"),
+        else_=None,
+    )
+
+
+async def _active_users(db: AsyncSession, since: datetime) -> int:
+    """Distinct signed-in users with an AI call or reading session since `since`."""
+    ids = (
+        select(AIUsageEvent.user_id.label("uid"))
+        .where(AIUsageEvent.created_at >= since, AIUsageEvent.user_id.is_not(None))
+        .union(
+            select(ReadingSession.user_id.label("uid"))
+            .where(ReadingSession.created_at >= since, ReadingSession.user_id.is_not(None))
+        )
+        .subquery()
+    )
+    return int(await db.scalar(select(func.count()).select_from(ids)) or 0)
+
+
+def _monthly_price(plan: str, period: str | None) -> float:
+    if plan == "lite":
+        return settings.LITE_ANNUAL_USD / 12 if period == "annual" else settings.LITE_MONTHLY_USD
+    if plan == "premium":
+        return settings.PREMIUM_ANNUAL_USD / 12 if period == "annual" else settings.PREMIUM_MONTHLY_USD
+    return 0.0  # institutional is contracted separately; free is free
+
+
+@router.get("/analytics")
+async def analytics(
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(_require_observer),
+):
+    """Users, plans and per-feature adoption. Aggregates only, no content."""
+    now = _now()
+    start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    dates = [(start + timedelta(days=offset)).date().isoformat() for offset in range(days)]
+    paid = _paid_case(now)
+
+    # ── Users and plans ───────────────────────────────────────────
+    total_users = int(await db.scalar(select(func.count(User.id))) or 0)
+    new_in_window = int(await db.scalar(select(func.count(User.id)).where(User.created_at >= start)) or 0)
+    active_24h = await _active_users(db, now - timedelta(hours=24))
+    active_7d = await _active_users(db, now - timedelta(days=7))
+    active_30d = await _active_users(db, now - timedelta(days=30))
+    active_window = await _active_users(db, start)
+
+    plan_rows = await db.execute(
+        select(
+            User.plan,
+            Billing.billing_period,
+            func.count(User.id),
+            func.coalesce(func.sum(paid), 0),
+            func.coalesce(func.sum(case((Billing.status == "trialing", 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Billing.status.in_(("past_due", "unpaid", "incomplete")), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Billing.cancel_at_period_end.is_(True), 1), else_=0)), 0),
+        )
+        .outerjoin(Billing, Billing.user_id == User.id)
+        .group_by(User.plan, Billing.billing_period)
+    )
+    plans = {
+        plan: {"plan": plan, "users": 0, "active": 0, "trialing": 0, "past_due": 0,
+               "cancel_scheduled": 0, "monthly": 0, "annual": 0, "est_mrr_usd": 0.0}
+        for plan in _PLANS
+    }
+    for plan, period, users, active, trialing, past_due, cancel_scheduled in plan_rows.all():
+        row = plans.setdefault(plan, {
+            "plan": plan, "users": 0, "active": 0, "trialing": 0, "past_due": 0,
+            "cancel_scheduled": 0, "monthly": 0, "annual": 0, "est_mrr_usd": 0.0,
+        })
+        row["users"] += int(users)
+        row["active"] += int(active)
+        row["trialing"] += int(trialing)
+        row["past_due"] += int(past_due)
+        row["cancel_scheduled"] += int(cancel_scheduled)
+        if plan in ("lite", "premium") and period:
+            row["annual" if period == "annual" else "monthly"] += int(active)
+        row["est_mrr_usd"] = round(row["est_mrr_usd"] + int(active) * _monthly_price(plan, period), 2)
+    paid_users = sum(row["active"] for plan, row in plans.items() if plan != "free")
+    # Free users have no paid access to count; "active" there means "has an account".
+    plans["free"]["active"] = plans["free"]["users"]
+
+    # Grouping happens over subquery columns: asyncpg numbers a CASE's bound
+    # parameters separately in SELECT and GROUP BY, which Postgres rejects.
+    signups = (
+        select(func.date(User.created_at).label("day"), paid.label("is_paid"))
+        .outerjoin(Billing, Billing.user_id == User.id)
+        .where(User.created_at >= start)
+        .subquery()
+    )
+    signup_rows = await db.execute(
+        select(signups.c.day, signups.c.is_paid, func.count())
+        .group_by(signups.c.day, signups.c.is_paid)
+    )
+    signups_by_day: dict[str, dict[str, int]] = {}
+    for day, is_paid, count in signup_rows.all():
+        bucket = signups_by_day.setdefault(str(day), {"free": 0, "paid": 0})
+        bucket["paid" if is_paid else "free"] += int(count)
+
+    # ── Feature usage ─────────────────────────────────────────────
+    in_window = AIUsageEvent.created_at >= start
+    events = (
+        select(
+            _feature_case().label("feature"),
+            func.date(AIUsageEvent.created_at).label("day"),
+            AIUsageEvent.user_id,
+            AIUsageEvent.succeeded,
+        )
+        .where(in_window)
+        .subquery()
+    )
+    feature_rows = await db.execute(
+        select(
+            events.c.feature,
+            func.count(),
+            func.count(func.distinct(events.c.user_id)),
+            func.coalesce(func.sum(case((events.c.user_id.is_(None), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((events.c.succeeded.is_(False), 1), else_=0)), 0),
+        )
+        .group_by(events.c.feature)
+    )
+    features = {
+        name: {"feature": name, "calls": 0, "users": 0, "anonymous_calls": 0, "failures": 0, "adoption": 0.0}
+        for name in _FEATURES
+    }
+    for name, calls, users, anonymous, failures in feature_rows.all():
+        if name not in features:
+            continue
+        features[name].update({
+            "calls": int(calls), "users": int(users), "anonymous_calls": int(anonymous),
+            "failures": int(failures),
+            "adoption": round(int(users) / active_window, 4) if active_window else 0.0,
+        })
+
+    pdf_rows = await db.execute(
+        select(AIUsageEvent.operation, func.count(AIUsageEvent.id))
+        .where(in_window, AIUsageEvent.source == "pdf")
+        .group_by(AIUsageEvent.operation)
+    )
+    pdf_breakdown = {"explain_text": 0, "explain_image": 0, "document_reformat": 0}
+    for operation, calls in pdf_rows.all():
+        if operation in pdf_breakdown:
+            pdf_breakdown[operation] = int(calls)
+
+    daily_rows = await db.execute(
+        select(events.c.day, events.c.feature, func.count(), func.count(func.distinct(events.c.user_id)))
+        .group_by(events.c.day, events.c.feature)
+    )
+    daily: dict[str, dict[str, dict[str, int]]] = {}
+    for day, name, calls, users in daily_rows.all():
+        if name not in features:
+            continue
+        bucket = daily.setdefault(str(day), {"calls": {}, "users": {}})
+        bucket["calls"][name] = int(calls)
+        bucket["users"][name] = int(users)
+
+    by_plan_rows = await db.execute(
+        select(events.c.feature, User.plan, func.count(func.distinct(events.c.user_id)))
+        .join(User, User.id == events.c.user_id)
+        .group_by(events.c.feature, User.plan)
+    )
+    by_plan = {name: {"feature": name, **{plan: 0 for plan in _PLANS}} for name in _FEATURES}
+    for name, plan, users in by_plan_rows.all():
+        if name in by_plan and plan in _PLANS:
+            by_plan[name][plan] = int(users)
+
+    return {
+        "generated_at": now.isoformat(),
+        "window_days": days,
+        "users": {
+            "total": total_users, "new_in_window": new_in_window,
+            "active_24h": active_24h, "active_7d": active_7d, "active_30d": active_30d,
+            "active_window": active_window,
+            "paid": paid_users, "paid_share": round(paid_users / total_users, 4) if total_users else 0.0,
+        },
+        "plans": [plans[plan] for plan in _PLANS] + [row for plan, row in plans.items() if plan not in _PLANS],
+        "signups": [{"date": day, **signups_by_day.get(day, {"free": 0, "paid": 0})} for day in dates],
+        "features": [features[name] for name in _FEATURES],
+        "pdf_breakdown": pdf_breakdown,
+        "feature_daily": [
+            {
+                "date": day,
+                "calls": {name: daily.get(day, {}).get("calls", {}).get(name, 0) for name in _FEATURES},
+                "users": {name: daily.get(day, {}).get("users", {}).get(name, 0) for name in _FEATURES},
+            }
+            for day in dates
+        ],
+        "feature_by_plan": [by_plan[name] for name in _FEATURES],
+    }
+
+
 @router.get("/users")
 async def list_users(
     search: str = Query(default="", max_length=120),

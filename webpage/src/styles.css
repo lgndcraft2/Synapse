@@ -497,7 +497,7 @@ h1 {
 .reading-card {
   display: grid;
   gap: 9px;
-  border-left: 3px solid var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   background: color-mix(in srgb, var(--primary-fixed) 28%, var(--surface-lowest));
   padding: 14px;
 }
@@ -2033,7 +2033,7 @@ h2 {
 .observer-inline-notice,
 .observer-action-message {
   margin: 16px 0 0;
-  border-left: 3px solid var(--primary);
+  border: 1px solid var(--outline-variant);
   background: var(--surface-low);
   padding: 10px 12px;
   color: var(--on-background);
@@ -2282,10 +2282,11 @@ h2 {
 
 .observer-status i b {
   display: block;
+  width: 100%;
   height: 100%;
-  min-width: 0;
   background: var(--primary);
-  transition: width 200ms ease-out;
+  transform-origin: left;
+  transition: transform 200ms ease-out;
 }
 
 .observer-status-4xx i b { background: #a25f00; }
@@ -2545,9 +2546,10 @@ h2 {
 .observer-bar-track i {
   display: block;
   width: 100%;
-  min-height: 2px;
+  height: 100%;
   background: var(--primary);
-  transition: height 200ms ease-out;
+  transform-origin: bottom;
+  transition: transform 200ms ease-out;
 }
 
 .observer-note {
@@ -2649,6 +2651,7 @@ h2 {
 
 @media (prefers-reduced-motion: reduce) {
   .observer-bar-track i,
+  .observer-status i b,
   .observer-spin {
     animation: none;
     transition: none;
@@ -4219,3 +4222,321 @@ h2 {
     height: 210px;
   }
 }
+
+/* ── Observer: users, plans and feature usage ───────────────────── */
+/* Categorical feature hues are the validated reference palette (slots 1-5),
+   in fixed order. Plans are ordinal, so they step the brand green light → dark. */
+.observer-page {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-plan-free: var(--tertiary-fixed-dim);
+  --viz-plan-lite: var(--primary-fixed-dim);
+  --viz-plan-premium: #2f8a6c;
+  --viz-plan-institutional: var(--primary);
+}
+
+.observer-range {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--outline);
+  border-radius: 2px;
+}
+
+.observer-range button {
+  min-width: 44px;
+  min-height: 36px;
+  border: 0;
+  background: var(--surface-lowest);
+  padding: 0 12px;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.observer-range button + button { border-left: 1px solid var(--outline-variant); }
+.observer-range button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.observer-range button:disabled { cursor: progress; }
+.observer-range button:focus-visible { outline: 3px solid var(--primary-fixed-dim); outline-offset: 1px; }
+
+.observer-metrics-compact { margin: 22px 0 0; }
+.observer-metrics-compact .observer-card { min-height: 0; }
+
+.observer-subhead {
+  margin: 0 0 14px;
+  color: var(--on-background);
+  font-size: 15px;
+}
+
+.observer-split {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 32px;
+  margin-top: 28px;
+  border-top: 1px solid var(--outline-variant);
+  padding-top: 22px;
+}
+
+.observer-heat-table + .observer-footnote,
+.observer-table-card > .observer-subhead { margin-top: 28px; }
+
+.observer-plan-table td .viz-swatch,
+.observer-heat-table td .viz-swatch { margin-right: 8px; }
+.observer-plan-table tfoot th,
+.observer-plan-table tfoot td { border-bottom: 0; font-weight: 800; }
+.observer-heat-table td:not(:first-child),
+.observer-heat-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.observer-table-scroll .observer-heat-table { width: auto; min-width: min(100%, 720px); }
+
+.observer-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.observer-feature-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-lowest);
+  padding: 16px;
+}
+
+.observer-feature-tile > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.observer-feature-tile strong {
+  margin: 12px 0 6px;
+  color: var(--primary);
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.observer-feature-tile strong small {
+  color: var(--secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.observer-feature-tile p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.observer-feature-tile .observer-feature-meta { margin-top: 4px; color: var(--secondary); }
+
+/* ── Chart primitives (component/observer-charts.tsx) ── */
+.viz-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.viz-legend {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--secondary);
+  font-size: 13px;
+}
+
+.viz-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-legend strong { margin-left: auto; color: var(--on-background); font-variant-numeric: tabular-nums; }
+.viz-legend small { min-width: 36px; color: var(--secondary); text-align: right; font-variant-numeric: tabular-nums; }
+
+.viz-legend-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.viz-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  color: var(--on-background);
+  font: inherit;
+  cursor: pointer;
+}
+
+.viz-legend-toggle[aria-pressed="false"] { color: var(--secondary); text-decoration: line-through; }
+.viz-legend-toggle[aria-pressed="false"] .viz-swatch { opacity: .3; }
+.viz-legend-toggle:focus-visible { outline: 3px solid var(--primary-fixed-dim); outline-offset: 1px; }
+
+.viz-share-bar {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-lowest);
+}
+
+.viz-share-bar i { display: block; min-width: 3px; }
+.viz-share-empty { flex: 1; background: var(--surface-low); }
+
+.viz-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.viz-y-axis {
+  position: relative;
+  min-width: 24px;
+  height: 200px;
+  color: var(--secondary);
+  font-family: "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.viz-y-axis span { position: absolute; right: 0; transform: translateY(-50%); line-height: 1; }
+
+.viz-plot { position: relative; padding-bottom: 22px; }
+
+.viz-plot svg {
+  display: block;
+  width: 100%;
+  height: 200px;
+  overflow: visible;
+}
+
+.viz-grid {
+  fill: none;
+  stroke: var(--outline-variant);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.viz-crosshair {
+  stroke: var(--outline);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.viz-hit { fill: transparent; }
+.viz-dim { opacity: .45; }
+
+.viz-marker {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid;
+  border-radius: 50%;
+  background: var(--surface-lowest);
+  box-shadow: 0 0 0 2px var(--surface-lowest);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.viz-x-axis {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 16px;
+  color: var(--secondary);
+  font-family: "Fira Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.viz-x-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.viz-x-axis span:first-child { transform: none; }
+.viz-x-axis span:last-child { transform: translateX(-100%); }
+
+.viz-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+  margin: 0 10px;
+  border: 1px solid var(--tertiary);
+  border-radius: 2px;
+  background: var(--surface-lowest);
+  padding: 10px 12px;
+  color: var(--on-background);
+  font-size: 12px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 10%);
+  pointer-events: none;
+}
+
+.viz-tooltip span { display: flex; align-items: center; gap: 7px; color: var(--secondary); }
+.viz-tooltip span i { width: 8px; height: 8px; border-radius: 2px; }
+.viz-tooltip span b { margin-left: auto; padding-left: 12px; color: var(--on-background); font-variant-numeric: tabular-nums; }
+
+.viz-sparkline {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin-top: auto;
+  padding-top: 12px;
+  overflow: visible;
+}
+
+.viz-sparkline polyline {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (max-width: 1100px) {
+  .observer-feature-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .observer-split { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .observer-feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .observer-metrics-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .viz-y-axis, .viz-plot svg { height: 160px; }
+}
+.viz-canvas { position: relative; }

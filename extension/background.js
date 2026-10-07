@@ -1088,6 +1088,8 @@ async function handleExplain(msg, sender) {
     session_difficulty: msg.sessionDifficulty || "normal",
     context: context || null,
     context_id: contextId,
+    // Aggregate telemetry only: which surface the explain came from.
+    source: !msg.document ? "page" : msg.document.mediaType === "application/pdf" ? "pdf" : "document",
     fingerprint,
     // Same rule as /reformat: signed-in users use their server profile and feedback.
     profile: token ? null : profile,

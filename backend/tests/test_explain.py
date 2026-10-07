@@ -160,6 +160,20 @@ async def test_text_explain_happy_path(client, ai_calls, session_factory):
         events = (await session.scalars(select(AIUsageEvent))).all()
     assert [(e.operation, e.succeeded) for e in events] == [("explain_text", True)]
     assert events[0].input_characters == len(_text_body()["text"])
+    assert events[0].source == "page"  # no source sent, no document context
+
+
+async def test_explain_records_its_source(client, ai_calls, session_factory):
+    from app.models.models import AIUsageEvent
+
+    resp = await _explain(client, _image_body(source="pdf"))
+    assert resp.status_code == 200, resp.text
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+    assert [(e.operation, e.source) for e in events] == [("explain_image", "pdf")]
+
+    bad = await _explain(client, _text_body(source="spreadsheet"))
+    assert bad.status_code == 422
 
 
 async def test_text_explain_counts_against_reformat_quota(client, ai_calls, monkeypatch):
