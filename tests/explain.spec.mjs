@@ -282,6 +282,7 @@ test('selecting text shows the bubble; clicking it explains with page context an
   expect(req.image_base64).toBeNull();
   expect(req.anchor.quote).toContain('Mitochondria are membrane-bound organelles');
   expect(req.page_url).toBe(`${base}/article.html`);
+  expect(req.source).toBe('page');
   expect(req.fingerprint).toMatch(/^ext-/);
 
   // Local context: heading path and surrounding text.
@@ -706,6 +707,7 @@ test('text document: uploads context once and reuses context_id', async () => {
   expect(upload.source_url).toBe(`${base}/notes.txt`);
   const firstId = `ctx-${ctxCounter}`;
   expect(req.context_id).toBe(firstId);
+  expect(req.source).toBe('document');
   expect(req.context.page).toBeUndefined();
   expect(req.context.local.surrounding_text).toContain('Plain text notes');
   await expect(page.locator('#synapse-explain-panel .sxp-ctx-used')).toContainText('whole document');
@@ -888,6 +890,7 @@ test('viewer: selecting text shows the bubble; explain sends the original PDF UR
   expect(req.page_url).toBe(`${base}/paper.pdf`);
   expect(req.page_title).toBe('paper.pdf');
   expect(req.context_id).toBe(`ctx-${ctxCounter}`);
+  expect(req.source).toBe('pdf');
   expect(req.context.page).toBeUndefined();
   expect(req.context.local.surrounding_text).toContain('Chlorophyll');
   expect(req.anchor.quote).toContain('Chlorophyll absorbs');
@@ -952,6 +955,7 @@ test('viewer: Circle button -> confirm bar -> Enter sends one image request for 
   expect(req.text).toContain('Photosynthesis converts light energy');
   expect(req.page_url).toBe(`${base}/paper.pdf`);
   expect(req.context_id).toMatch(/^ctx-/);
+  expect(req.source).toBe('pdf');
   await expect(v.locator('#synapse-explain-panel .sxp-result')).toContainText('Mock explanation for image');
   await v.waitForTimeout(400);
   expect(requests.length).toBe(before + 1);
@@ -1000,6 +1004,7 @@ test('viewer: "Read with Synapse" opens the reader; highlighting inside it expla
   expect(req.text).toContain('Rebuilt paragraph about plain notes');
   expect(req.page_url).toBe(`${base}/paper.pdf`);
   expect(req.context_id).toMatch(/^ctx-/);
+  expect(req.source).toBe('pdf');
   // Escape (focus inside the reader) closes it.
   await v.locator('.synapse-reader-close').focus();
   await v.keyboard.press('Escape');

@@ -4342,6 +4342,7 @@ h2 {
 }
 
 .observer-feature-tile .observer-feature-meta { margin-top: 4px; color: var(--secondary); }
+.observer-feature-tile .observer-feature-scope { margin-top: 6px; color: var(--secondary); font-size: 11.5px; }
 
 /* ── Chart primitives (component/observer-charts.tsx) ── */
 .viz-swatch {

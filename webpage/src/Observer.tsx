@@ -90,10 +90,10 @@ const PLAN_ORDER: PlanName[] = ['free', 'lite', 'premium', 'institutional'];
 
 // Fixed categorical order: a feature keeps its colour in every chart.
 const featureMeta: Record<FeatureName, { label: string; detail: string; color: string }> = {
-  explain_text: { label: 'Highlight explain', detail: 'Selected text on web pages', color: 'var(--viz-1)' },
-  explain_image: { label: 'Circle explain', detail: 'Circled areas on web pages', color: 'var(--viz-2)' },
-  pdf: { label: 'PDF viewer', detail: 'Explains and reformats of PDFs', color: 'var(--viz-3)' },
-  document_reformat: { label: 'Document reformatter', detail: 'Text, CSV and Markdown files', color: 'var(--viz-4)' },
+  explain_text: { label: 'Highlight explain', detail: 'Selected text on web pages and in text, CSV or Markdown files', color: 'var(--viz-1)' },
+  explain_image: { label: 'Circle explain', detail: 'Circled areas on web pages and in text, CSV or Markdown files', color: 'var(--viz-2)' },
+  pdf: { label: 'PDF viewer', detail: 'Highlights, circles and reformats in the Synapse PDF viewer', color: 'var(--viz-3)' },
+  document_reformat: { label: 'Document reformatter', detail: 'Reformatted text, CSV and Markdown files', color: 'var(--viz-4)' },
   page_reformat: { label: 'Page reformat', detail: 'Whole-page and section rebuilds', color: 'var(--viz-5)' },
 };
 const FEATURE_ORDER: FeatureName[] = ['explain_text', 'explain_image', 'pdf', 'document_reformat', 'page_reformat'];
@@ -434,8 +434,9 @@ export default function Observer() {
                       return (
                         <article className="observer-feature-tile" key={name}>
                           <span><i className="viz-swatch" style={{ background: featureMeta[name].color }} aria-hidden="true" />{featureMeta[name].label}</span>
+                          <p className="observer-feature-scope">{featureMeta[name].detail}</p>
                           <strong>{row ? number(row.users) : '—'}<small> users</small></strong>
-                          <p>{row ? `${number(row.calls)} uses · ${percent(row.adoption)} of active users` : featureMeta[name].detail}</p>
+                          <p>{row ? `${number(row.calls)} uses · ${percent(row.adoption)} of active users` : 'Loading…'}</p>
                           {row && (row.anonymous_calls > 0 || row.failures > 0) && (
                             <p className="observer-feature-meta">{[row.anonymous_calls ? `${number(row.anonymous_calls)} signed out` : '', row.failures ? `${number(row.failures)} failed` : ''].filter(Boolean).join(' · ')}</p>
                           )}
@@ -482,7 +483,7 @@ export default function Observer() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="observer-footnote">PDF, document and web-page tagging starts with this release. Earlier explains count as web-page use, and earlier document reformats count under the document reformatter. Users are distinct signed-in accounts; signed-out uses are counted but never as people.</p>
+                  <p className="observer-footnote">PDF, document and web-page tagging starts with this release. Earlier explains count as web-page use, and earlier document reformats count under the document reformatter. Only PDFs are counted separately: highlights and circles in text, CSV or Markdown files count under Highlight explain and Circle explain. Users are distinct signed-in accounts; signed-out uses are counted but never as people.</p>
                 </>
               )}
             </section>
