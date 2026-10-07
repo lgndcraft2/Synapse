@@ -121,3 +121,46 @@ async def test_observer_analytics_counts_plans_and_features(client, verified_use
     assert sum(day["free"] for day in body["signups"]) == 2
     assert len(body["feature_daily"]) == 7
     assert sum(day["calls"]["explain_text"] for day in body["feature_daily"]) == 3
+
+
+async def test_observer_queries_never_group_by_a_bound_parameter(client, verified_user, session_factory, db_engine, monkeypatch):
+    """Postgres rejects GROUP BY expressions holding bound parameters.
+
+    asyncpg numbers a literal separately in SELECT and GROUP BY ($1 vs $2), so
+    Postgres can't match the two expressions and the request answers 500.
+    SQLite accepts the same SQL, so check the statements themselves.
+    """
+    import re
+
+    from sqlalchemy import event, select
+
+    from app.models.models import FeedbackLog, User
+
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.email == verified_user["email"]))
+        session.add_all([FeedbackLog(user_id=user.id, reaction=None), FeedbackLog(user_id=user.id, reaction="clearer")])
+        await session.commit()
+
+    statements: list[str] = []
+    listener = lambda conn, cursor, statement, *args: statements.append(statement)  # noqa: E731
+    event.listen(db_engine.sync_engine, "before_cursor_execute", listener)
+    try:
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", verified_user["email"])
+        login = await client.post("/api/v1/auth/login", json=verified_user)
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        overview = await client.get("/api/v1/observer/overview", headers=headers)
+        assert overview.status_code == 200, overview.text
+        assert (await client.get("/api/v1/observer/analytics", headers=headers)).status_code == 200
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", listener)
+
+    reactions = {row["reaction"]: row["count"] for row in overview.json()["product_insights"]["feedback_reactions"]}
+    assert reactions == {"unrated": 1, "clearer": 1}
+
+    group_bys = [
+        match.group(1)
+        for statement in statements
+        for match in re.finditer(r"GROUP BY (.*?)(?=\bORDER BY\b|\bHAVING\b|\bLIMIT\b|\)|$)", statement, re.S)
+    ]
+    assert group_bys, "expected the observer to run grouped queries"
+    assert not [clause for clause in group_bys if "?" in clause]
