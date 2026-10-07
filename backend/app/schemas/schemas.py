@@ -392,6 +392,8 @@ class ExplainRequest(BaseModel):
     # From POST /explain/context. Format is checked in the route so that a
     # malformed id answers 400 CONTEXT_EXPIRED like any other unusable one.
     context_id: Optional[str] = Field(None, max_length=200)
+    # Where the explain happened, for aggregate feature telemetry only.
+    source: Optional[Literal["page", "pdf", "document"]] = None
 
 
 class ExplainContextUploadRequest(BaseModel):

@@ -258,6 +258,21 @@ export async function getObserverOverview() {
   return response.json();
 }
 
+/** Users, plans and per-feature adoption over the last `days` days. */
+export async function getObserverAnalytics(days: number) {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/observer/analytics${query({ days })}`, {
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to fetch observer analytics' }));
+    throw new Error(error.detail || 'Failed to fetch observer analytics');
+  }
+
+  return response.json();
+}
+
 export async function getObserverUsers(search = '') {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(
