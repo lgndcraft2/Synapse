@@ -152,9 +152,12 @@ async def overview(
         select(CognitiveProfile.profile_type, func.count(CognitiveProfile.id))
         .group_by(CognitiveProfile.profile_type).order_by(CognitiveProfile.profile_type)
     )
+    # Grouped on the raw column; NULL becomes "unrated" below. Grouping on
+    # coalesce(reaction, 'unrated') fails on Postgres: asyncpg binds the literal
+    # separately in SELECT and GROUP BY, so the expressions no longer match.
     feedback_rows = await db.execute(
-        select(func.coalesce(FeedbackLog.reaction, "unrated"), func.count(FeedbackLog.id))
-        .group_by(func.coalesce(FeedbackLog.reaction, "unrated"))
+        select(FeedbackLog.reaction, func.count(FeedbackLog.id))
+        .group_by(FeedbackLog.reaction)
         .order_by(func.count(FeedbackLog.id).desc())
     )
     profiles_changed_30d = await db.scalar(
@@ -197,7 +200,7 @@ async def overview(
         "runtime": telemetry.snapshot(),
         "product_insights": {
             "profile_distribution": [{"profile_type": label, "users": int(count)} for label, count in profile_rows.all()],
-            "feedback_reactions": [{"reaction": label, "count": int(count)} for label, count in feedback_rows.all()],
+            "feedback_reactions": [{"reaction": label or "unrated", "count": int(count)} for label, count in feedback_rows.all()],
             "profiles_changed_30d": int(profiles_changed_30d),
             "content_qa": {
                 "retention": "not_retained",
