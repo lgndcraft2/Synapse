@@ -42,6 +42,7 @@ const els = {
 
 const state = {
   pdf: null,
+  worker: null,       // pdfjsLib.PDFWorker, owned here (see startWorker)
   pages: [],          // PageView[]
   scale: 1,           // user scale (1 = 100%)
   zoomMode: 'auto',   // 'auto' | 'fit' | 'custom'
@@ -178,6 +179,37 @@ async function fetchPdf(url) {
   }
   if (!res.ok) throw new LoadError('http', `HTTP ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+// ── PDF engine (pdf.js worker) ──────────────────────────────────
+// pdf.js waits for its worker's handshake with no timeout: a worker that
+// neither starts nor fires `error` leaves getDocument() pending forever, and the
+// viewer on its spinner. So the worker is started here, given a deadline, and
+// retried once on a fresh worker before giving up with an error.
+const WORKER_START_TIMEOUT_MS = 8000;
+const WORKER_START_ATTEMPTS = 2;
+
+async function startWorker() {
+  for (let attempt = 1; ; attempt++) {
+    const worker = new pdfjsLib.PDFWorker();
+    let timer = null;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new LoadError('worker', 'The PDF engine did not start.')), WORKER_START_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([worker.promise, deadline]);
+      if (state.destroyed) { worker.destroy(); throw new LoadError('worker', 'Viewer closed.'); }
+      return worker;
+    } catch (err) {
+      worker.destroy();
+      if (state.destroyed || attempt >= WORKER_START_ATTEMPTS) {
+        throw err instanceof LoadError ? err : new LoadError('worker', String(err?.message || err));
+      }
+      console.warn('Synapse viewer: PDF engine did not start, retrying', err?.message || err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 // ── Page views ──────────────────────────────────────────────────
@@ -620,10 +652,15 @@ async function open() {
   els.title.textContent = host.fileName || 'PDF';
   showLoading('Downloading PDF…');
 
+  // The worker boots while the PDF downloads.
+  const workerReady = startWorker();
+  workerReady.catch(() => {}); // handled below; a failed download must not leave it unhandled
+
   let data;
   try {
     data = await fetchPdf(fileUrl);
   } catch (err) {
+    workerReady.then(w => w.destroy(), () => {});
     if (err.kind === 'file-access') {
       showError(
         'Synapse needs access to local files',
@@ -646,8 +683,16 @@ async function open() {
   if (fileUrl.startsWith('file:')) host.setLocalBytes?.(data.slice());
 
   showLoading('Opening PDF…');
+  try {
+    state.worker = await workerReady;
+  } catch (err) {
+    if (state.destroyed) return;
+    showError("Couldn't open this PDF", "Synapse's PDF reader didn't start. Reload to try again, or open the original.", { retry: true });
+    return;
+  }
   const task = pdfjsLib.getDocument({
     data,
+    worker: state.worker,
     cMapUrl: VENDOR + 'cmaps/',
     cMapPacked: true,
     standardFontDataUrl: VENDOR + 'standard_fonts/',
@@ -690,6 +735,8 @@ async function open() {
 window.addEventListener('pagehide', () => {
   state.destroyed = true;
   state.pdf?.loadingTask?.destroy?.();
+  // A worker passed to getDocument() is not destroyed with the loading task.
+  state.worker?.destroy();
 });
 
 // Test/debug handle (read-only snapshot, no PDF content).

@@ -979,7 +979,12 @@ test('viewer: history entry returns to its source in the scrolled document', asy
   await v.evaluate(() => globalThis.SynapseViewer.scrollToPage(4));
   await expect.poll(() => v.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
   await v.locator('#panelBtn').click();
-  const item = v.locator('#synapse-explain-panel .sxp-item', { hasText: 'Chlorophyll' }).first();
+  // Match the highlight's own entry by its snippet: the circle entry from the
+  // Circle-button test can also contain "Chlorophyll" when its trace catches the
+  // next line, and clicking that one returns to a different spot.
+  const item = v.locator('#synapse-explain-panel .sxp-item', {
+    has: v.locator('.sxp-item-snippet', { hasText: /^\s*Chlorophyll/ }),
+  }).first();
   await item.locator('.sxp-item-main').click();
   await expect.poll(async () => {
     const r = await textSpan(v, 'Chlorophyll absorbs').boundingBox();
