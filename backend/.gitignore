@@ -1,7 +1,8 @@
 .env
 .env.example
-/__pycache__
-/app/__pycache__
+# Python bytecode, in every folder (a leading / would match only one place).
+__pycache__/
+*.py[cod]
 .env.bak-*
 /.pytest_cache
 /venv
