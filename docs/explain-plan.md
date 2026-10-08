@@ -1,6 +1,6 @@
 # Synapse explain plan
 
-Status: everything in this plan is built (not yet committed): highlight, circle with confirm step, panel and history, page and document context, and the Synapse PDF viewer (`extension/viewer/`, pdf.js 5.7.284 in `extension/vendor/pdfjs/`). Backend needs migration `0003_explanation_history`, `pip install -r requirements.txt` (boto3, pypdf) and, for thumbnails, the `EXPLAIN_STORAGE_*` env vars. Backend in `backend/app/api/routes/explain.py` (contract: `docs/explain-api.md`), extension in `extension/explain/` and `extension/lib/geometry.js`. Needs migration `0003_explanation_history` and, for thumbnails, the `EXPLAIN_STORAGE_*` env vars.
+Status: everything in this plan is built and merged into `main`: highlight, circle with confirm step, panel and history, page and document context, and the Synapse PDF viewer (`extension/viewer/`, pdf.js 5.7.284 in `extension/vendor/pdfjs/`). Re-explain (simpler, more detail, a specific request) has shipped on top of it. Backend in `backend/app/api/routes/explain.py` (contract: `docs/explain-api.md`), extension in `extension/explain/` and `extension/lib/geometry.js`. Deploying needs `pip install -r requirements.txt` (boto3, pypdf), migrations through `0005_reexplain` (the Docker image runs `alembic upgrade head` on start) and, for thumbnails, the `EXPLAIN_STORAGE_*` env vars.
 
 ## Direction
 
