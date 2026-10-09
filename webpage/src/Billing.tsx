@@ -480,6 +480,13 @@ export default function Billing() {
                   {isRedirecting ? 'Redirecting to Stripe…' : 'Proceed to secure checkout'}
                 </button>
 
+                <p className="mt-3 text-xs" style={{ color: '#5e5f5b', lineHeight: 1.6 }}>
+                  By continuing you agree to our{' '}
+                  <a href="/terms" style={{ color: '#004635', textDecoration: 'underline' }}>Terms of Service</a> and{' '}
+                  <a href="/refunds" style={{ color: '#004635', textDecoration: 'underline' }}>Refund Policy</a>. Your
+                  subscription renews automatically until you cancel.
+                </p>
+
                 {error && <ErrorPanel message={error} />}
 
                 <button

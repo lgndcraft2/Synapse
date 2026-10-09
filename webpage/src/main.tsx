@@ -1,5 +1,5 @@
 import { StrictMode, type ComponentType } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, hydrateRoot } from 'react-dom/client';
 import App from './App';
 import AuthPage from './AuthPage';
 import Dashboard from './Dashboard';
@@ -9,6 +9,10 @@ import Subscription from './Subscription';
 import Profile from './Profile';
 import Support from './Support';
 import Observer from './Observer';
+import Privacy from './Privacy';
+import Terms from './Terms';
+import Refunds from './Refunds';
+import { LEGAL_META } from './lib/legal';
 import { applyRouteMeta, type RouteMeta } from './lib/seo';
 import './styles.css';
 
@@ -43,6 +47,9 @@ const routes: { test: RegExp; component: ComponentType; meta: RouteMeta }[] = [
       canonical: '/support',
     },
   },
+  { test: /^\/privacy\/?$/, component: Privacy, meta: { ...LEGAL_META['/privacy'], canonical: '/privacy' } },
+  { test: /^\/terms\/?$/, component: Terms, meta: { ...LEGAL_META['/terms'], canonical: '/terms' } },
+  { test: /^\/refunds\/?$/, component: Refunds, meta: { ...LEGAL_META['/refunds'], canonical: '/refunds' } },
   {
     test: /^\/profile/,
     component: Profile,
@@ -105,8 +112,25 @@ const Root = match?.component ?? App;
 
 applyRouteMeta(match?.meta ?? { ...LANDING, noindex: pathname !== '/' });
 
-createRoot(document.getElementById('root')!).render(
+const container = document.getElementById('root')!;
+const tree = (
   <StrictMode>
     <Root />
-  </StrictMode>,
+  </StrictMode>
 );
+
+// scripts/prerender.mjs bakes the landing page and the legal pages into
+// dist/, marked with data-prerendered. Hydrate those rather than repaint them.
+// Every other route either has no markup or a static crawler copy
+// (dist/support), which createRoot replaces.
+const HYDRATABLE = new Map<ComponentType, string>([
+  [App, 'landing'],
+  [Privacy, 'privacy'],
+  [Terms, 'terms'],
+  [Refunds, 'refunds'],
+]);
+if (HYDRATABLE.get(Root) === container.dataset.prerendered) {
+  hydrateRoot(container, tree);
+} else {
+  createRoot(container).render(tree);
+}

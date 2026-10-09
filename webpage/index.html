@@ -71,6 +71,9 @@
       rel="stylesheet"
     />
 
+    <!-- scripts/prerender.mjs fills FAQPage.mainEntity from src/lib/faq.ts and
+         adds SoftwareApplication.offers from src/lib/plans.ts at build time,
+         so edit those files rather than this block. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -114,72 +117,7 @@
             "@type": "FAQPage",
             "@id": "https://usesynapse.cv/#faq",
             "isPartOf": { "@id": "https://usesynapse.cv/#website" },
-            "mainEntity": [
-              {
-                "@type": "Question",
-                "name": "Is my reading data private?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Completely. All cognitive modeling happens on-device or via encrypted, anonymized tokens. We never see what you are reading, only how you process the structure."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Does this work with Dark Mode?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Yes. Synapse layers on top of existing styles to manage contrast, line-height, and paragraph spacing regardless of the site's theme."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "What if I have multiple diagnoses?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Our engine doesn't categorize you by diagnosis, but by trait. It adapts to your specific friction points, whether they stem from ADHD, dyslexia, or fatigue."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Can I use it on mobile?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Currently available for Chrome. Firefox, Safari, and Edge support is on our roadmap."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Does it translate languages?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "No. We focus on structural translation, changing how information is presented visually, not the language it is written in."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "How often does the model update?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Your profile updates continuously based on your reading behaviour and the feedback you give on each section card."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Can I export my profile?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Yes. You can take your cognitive profile data to any other device or share it with specialists if you choose."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Is there a student discount?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "We offer a 50% discount for anyone with a valid .edu email address or equivalent proof of study."
-                }
-              }
-            ]
+            "mainEntity": []
           }
         ]
       }

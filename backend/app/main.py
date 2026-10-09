@@ -322,16 +322,26 @@ if os.path.exists(static_path):
         if full_path.startswith("api/"):
             return Response(status_code=404)
         
-        # Check if the requested path is a real file (like favicon.ico)
-        file_path = os.path.join(static_path, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        
-        # Default to index.html for SPA routing
-        index_path = os.path.join(static_path, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        
+        static_root = os.path.realpath(static_path)
+        file_path = os.path.realpath(os.path.join(static_root, full_path))
+        if file_path != static_root and not file_path.startswith(static_root + os.sep):
+            return Response(status_code=404)
+
+        # A real file (favicon, llms.txt), or a prerendered page such as
+        # /support -> support/index.html (see webpage/scripts/prerender.mjs).
+        for candidate in (file_path, os.path.join(file_path, "index.html")):
+            if os.path.isfile(candidate):
+                return FileResponse(candidate)
+
+        # Everything else is a client-side route. app.html is the bare SPA
+        # shell; index.html now carries the prerendered landing page, which
+        # would flash on signed-in screens. Builds from before prerendering
+        # have no app.html, hence the fallback.
+        for name in ("app.html", "index.html"):
+            shell_path = os.path.join(static_root, name)
+            if os.path.isfile(shell_path):
+                return FileResponse(shell_path)
+
         return Response(status_code=404)
 
 

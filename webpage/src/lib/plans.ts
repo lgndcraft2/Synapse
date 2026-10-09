@@ -51,6 +51,7 @@ export const PLANS: Plan[] = [
     tagline: 'Enough to feel the difference.',
     features: [
       'Web reformatting',
+      'Highlight and circle to explain',
       'Single profile',
       '30 section reformats per month',
       'Basic cognitive profile',
@@ -65,6 +66,7 @@ export const PLANS: Plan[] = [
     features: [
       'Everything in Free',
       'Up to 300 section reformats per month',
+      'Saved explanation history',
       'Google Docs support',
       'Faster processing',
       'Basic adaptive feedback',
@@ -79,7 +81,8 @@ export const PLANS: Plan[] = [
     name: 'Deep Thinker',
     tagline: 'No ceiling, no rationing.',
     features: [
-      'Unlimited reformats',
+      'Unlimited explains and reformats',
+      'Saved explanation history',
       'Full Google Docs/PDF support',
       'Cognitive pattern insights',
       'Full adaptive feedback loop',
