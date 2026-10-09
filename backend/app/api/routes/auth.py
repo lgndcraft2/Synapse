@@ -73,6 +73,7 @@ from app.services.provisioning import (
     link_google_account,
     normalize_email,
     provision_user,
+    record_terms_acceptance,
 )
 from app.services.rate_limit import redis_client
 
@@ -224,6 +225,15 @@ async def register(
     Reporting "already registered" here would hand over a membership oracle
     that the careful work in login and /password/forgot is trying to deny.
     """
+    if not payload.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "terms_required",
+                "message": "Please accept the Terms of Service and Privacy Policy to create an account.",
+            },
+        )
+
     await auth_limits.enforce("register_ip", auth_limits.hash_identifier(client_ip(request)))
 
     email = normalize_email(payload.email)
@@ -248,6 +258,7 @@ async def register(
         name=(payload.name or "").strip() or email.split("@")[0],
         password_hash=pw_hash,
         email_verified=False,
+        terms_version=settings.TERMS_VERSION,
     )
     await _queue_verification_email(user, db, background)
     logger.info("Registered account %s pending verification", user.id)
@@ -532,6 +543,17 @@ async def update_me(
     return current_user
 
 
+@router.post("/terms/accept", response_model=UserOut)
+async def accept_terms(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record that the caller accepted the current terms (existing accounts)."""
+    record_terms_acceptance(current_user, settings.TERMS_VERSION)
+    await db.flush()
+    return current_user
+
+
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     db: AsyncSession = Depends(get_db),
@@ -601,9 +623,14 @@ def _frontend(path: str) -> str:
 async def google_start(
     request: Request,
     next: str | None = Query(default=None),
+    accept_terms: bool = Query(default=False),
 ):
     """
     Begin the Google handshake.
+
+    `accept_terms` is the signup checkbox. Without it the flow can still sign
+    in an existing account, but the callback will not create a new one.
+
 
     Must be reached by a top-level navigation, not fetch(): the browser has to
     accept a Set-Cookie and then follow a cross-origin redirect, and Google
@@ -612,7 +639,7 @@ async def google_start(
     await auth_limits.enforce("google_ip", auth_limits.hash_identifier(client_ip(request)))
 
     try:
-        redirect_url, cookie_value = goauth.build_authorize_url(next)
+        redirect_url, cookie_value = goauth.build_authorize_url(next, accept_terms)
     except goauth.OAuthError as exc:
         logger.error("Google sign-in unavailable: %s", exc)
         return RedirectResponse(_frontend(f"/auth?error={exc.code}"), status_code=303)
@@ -668,6 +695,13 @@ async def google_callback(
                     db, existing, google_sub, claims.get("picture")
                 )
             else:
+                if not tx.get("terms"):
+                    # A new account needs the signup checkbox. "Continue with
+                    # Google" on the login screen has none, so send them to
+                    # signup rather than creating an account they never agreed to.
+                    raise goauth.OAuthError(
+                        "oauth_terms_required", "Terms not accepted for a new account."
+                    )
                 user = await provision_user(
                     db,
                     email=email,
@@ -675,7 +709,13 @@ async def google_callback(
                     avatar_url=claims.get("picture"),
                     google_id=google_sub,
                     email_verified=True,
+                    terms_version=settings.TERMS_VERSION,
                 )
+
+        if tx.get("terms") and user.needs_terms_acceptance:
+            # An existing account came through the signup page and ticked the
+            # box, which is as good an acceptance as the in-app prompt.
+            record_terms_acceptance(user, settings.TERMS_VERSION)
 
         access, refresh_token, exp = await auth_tokens.issue_pair(
             db, user, client=auth_tokens.WEB, request=request
@@ -712,7 +752,9 @@ async def google_callback(
 
     except goauth.OAuthError as exc:
         logger.warning("Google callback rejected: %s", exc.code)
-        response = RedirectResponse(_frontend(f"/auth?error={exc.code}"), 303)
+        # The terms bounce lands on signup, where the checkbox is.
+        tab = "tab=signup&" if exc.code == "oauth_terms_required" else ""
+        response = RedirectResponse(_frontend(f"/auth?{tab}error={exc.code}"), 303)
         return response
     except Exception:
         logger.exception("Unexpected failure in Google callback")

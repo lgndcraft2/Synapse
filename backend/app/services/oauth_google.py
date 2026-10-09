@@ -67,9 +67,12 @@ def safe_next_path(raw: str | None) -> str:
     return "/dashboard"
 
 
-def build_authorize_url(next_path: str | None) -> tuple[str, str]:
+def build_authorize_url(next_path: str | None, accept_terms: bool = False) -> tuple[str, str]:
     """
     Return (redirect_url, signed_cookie_value) for the start of the flow.
+
+    `accept_terms` is the signup page's checkbox. It rides in the signed
+    cookie so the callback can tell whether a brand-new account may be created.
 
     Everything the callback needs to verify itself lives in the cookie. Nothing
     is stored server-side on purpose: the cookie *is* the proof that the
@@ -89,6 +92,7 @@ def build_authorize_url(next_path: str | None) -> tuple[str, str]:
             "nonce": nonce,
             "verifier": verifier,
             "next": safe_next_path(next_path),
+            "terms": bool(accept_terms),
         },
         COOKIE_TTL_SECONDS,
     )

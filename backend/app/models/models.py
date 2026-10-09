@@ -33,6 +33,11 @@ class User(Base):
     # password and everything signs out" true without a token blacklist.
     password_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at:       Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Evidence of agreement to the Terms of Service and Privacy Policy: which
+    # version (settings.TERMS_VERSION at the time) and when. NULL for accounts
+    # created before acceptance was recorded; those are asked on next visit.
+    terms_version:       Mapped[str]      = mapped_column(String, nullable=True)
+    terms_accepted_at:   Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at:   Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
     updated_at:   Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
@@ -63,6 +68,11 @@ class User(Base):
         if self.google_id:
             return "google"
         return "password"
+
+    @property
+    def needs_terms_acceptance(self) -> bool:
+        """True until this account has accepted the current terms version."""
+        return self.terms_version != settings.TERMS_VERSION
 
     @property
     def is_observer(self) -> bool:

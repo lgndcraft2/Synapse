@@ -50,6 +50,10 @@ export interface AuthUser {
   auth_provider: 'password' | 'google' | 'both';
   email_verified: boolean;
   is_observer?: boolean;
+  /** True until the account has accepted the current Terms and Privacy Policy. */
+  needs_terms_acceptance?: boolean;
+  /** When any version was last accepted; null if never. */
+  terms_accepted_at?: string | null;
 }
 
 export interface Session {
@@ -239,9 +243,10 @@ export async function getAccessToken(): Promise<string | null> {
 export async function signUp(
   email: string,
   password: string,
-  name?: string,
+  name: string | undefined,
+  acceptTerms: boolean,
 ): Promise<{ status: string; message: string }> {
-  return post('/api/v1/auth/register', { email, password, name });
+  return post('/api/v1/auth/register', { email, password, name, accept_terms: acceptTerms });
 }
 
 export async function signIn(email: string, password: string): Promise<Session> {
@@ -284,9 +289,21 @@ export async function exchangeOAuthCode(code: string): Promise<Session> {
  * cookie and then follow a cross-origin redirect, and Google will not serve
  * its consent screen to XHR.
  */
-export function startGoogleLogin(next: string): void {
-  const url = `${BACKEND_URL}/api/v1/auth/google/start?next=${encodeURIComponent(next)}`;
+export function startGoogleLogin(next: string, acceptTerms = false): void {
+  // acceptTerms is the signup checkbox. Without it the backend still signs in
+  // an existing account but will not create a new one.
+  const terms = acceptTerms ? '&accept_terms=true' : '';
+  const url = `${BACKEND_URL}/api/v1/auth/google/start?next=${encodeURIComponent(next)}${terms}`;
   window.location.href = url;
+}
+
+/** Record acceptance of the current terms for an existing account. */
+export async function acceptCurrentTerms(): Promise<AuthUser> {
+  const token = await getAccessToken();
+  const user = await post<AuthUser>('/api/v1/auth/terms/accept', undefined, token ?? undefined);
+  const session = read();
+  if (session) write({ ...session, user });
+  return user;
 }
 
 /**
