@@ -30,8 +30,21 @@ export const FAQS: FaqEntry[] = [
   {
     question: 'Is my reading data private?',
     answer:
-      'Completely. All cognitive modeling happens on-device or via encrypted, anonymized tokens. We never see what you are reading, only how you process the structure.',
+      "Synapse only reads what you ask it to. When you highlight, circle, or reformat something, that text or screen area (plus the surrounding page, if you allow it) is sent to our servers and processed by an AI model from Google or Anthropic to produce your result. We don't sell your data, show ads, or train our own AI models on what you read. On email, messaging, and banking sites only the passage you chose is used, and you can turn page context off entirely.",
     category: 'Privacy',
+    link: { href: '/privacy', label: 'Read the privacy policy' },
+  },
+  {
+    question: 'How do I get something explained?',
+    answer:
+      'Highlight any text, or hold Alt+S (Option+S on a Mac) and trace around anything on screen, including charts, images, and equations. The explanation appears in a panel in the bottom-right corner, tuned to your reading profile. From there you can ask for it simpler, in more detail, or with a specific question.',
+    category: 'Using Synapse',
+  },
+  {
+    question: 'Does Synapse work on PDFs?',
+    answer:
+      'Yes. Synapse opens PDFs in its own viewer, so you can highlight and circle inside them, and explanations use the rest of the document as context.',
+    category: 'Using Synapse',
   },
   {
     question: 'Does this work with Dark Mode?',

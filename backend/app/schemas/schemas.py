@@ -57,6 +57,9 @@ class UserOut(BaseModel):
     auth_provider: Literal["password", "google", "both"] = "password"
     email_verified: bool = False
     is_observer: bool = False
+    # The client shows a blocking "accept the updated terms" prompt while true.
+    needs_terms_acceptance: bool = False
+    terms_accepted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -71,6 +74,9 @@ class RegisterRequest(BaseModel):
     # "password" is a free denial-of-service otherwise.
     password: str = Field(min_length=10, max_length=128)
     name: Optional[str] = Field(default=None, max_length=80)
+    # The signup checkbox. Required to be true; checked in the route so the
+    # client gets a readable error rather than a generic 422.
+    accept_terms: bool = False
 
 
 class LoginRequest(BaseModel):

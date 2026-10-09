@@ -1,0 +1,39 @@
+# Synapse
+
+> Synapse is a Chrome extension that explains whatever you point at on a web page or in a PDF, in a way tuned to how you read. Highlight text, or hold Alt+S and trace around any part of the screen, and a plain-language explanation appears in a side panel. It is built for people with ADHD, dyslexia, autism, and anyone who finds dense pages tiring.
+
+## What Synapse does
+
+- **Highlight to explain:** select any text on a page and Synapse explains it.
+- **Circle to explain:** hold Alt+S and trace around anything (or click the floating button and draw), including charts, diagrams, images, or text that can't be selected. You see the exact area before anything is sent.
+- **Context-aware answers:** explanations take the surrounding paragraph into account and, where allowed, the rest of the page or document. On sensitive sites (email, messaging, banking) only the local passage is used by default.
+- **Re-explain:** ask for a simpler version, more detail, or something specific.
+- **History panel:** past explanations stay in a bottom-right panel. Clicking one scrolls back to where it came from.
+- **PDF viewer:** Synapse opens PDFs in its own viewer, so highlight and circle work there too, with the whole document as context.
+- **Page reformatting:** Synapse can also rebuild a dense page or section into clear, structured reading cards.
+- **Reading profiles:** onboarding asks how you process information (not your diagnosis) and sets one of three profiles, Load Reducer, Comprehension Gap, or Hyperfocus Reader. Explanations follow that profile, and you can change it at any time.
+
+## Who it is for
+
+Students, researchers, and professionals who read dense material: textbooks, academic papers, legal and policy documents, technical documentation, forms. It is especially useful for neurodivergent readers, including people with ADHD, dyslexia, or autism, and for anyone who needs to understand a passage quickly without leaving the page.
+
+## Plans
+
+- **Explorer:** free.
+- **Thinker Lite:** $4 per month, with a higher monthly allowance and saved history.
+- **Deep Thinker:** $8 per month, no usage cap, with saved history. Local university pricing is available in Nigeria.
+- Paid plans start with a 7-day free trial. A 50% student discount is available with proof of study.
+
+## Platform and privacy
+
+- Available for Google Chrome on desktop. Firefox, Safari, and Edge are on the roadmap. There is no mobile app.
+- The text or screen area you choose to explain is sent to Synapse's servers and processed by third-party AI models from Google and Anthropic. Synapse does not sell user data.
+
+## Links
+
+- [Synapse home page](https://usesynapse.cv/): overview, features, and pricing
+- [Support and FAQ](https://usesynapse.cv/support): privacy, billing, troubleshooting, and contact
+- [Privacy policy](https://usesynapse.cv/privacy): what is collected, which AI providers process it, retention, and deletion
+- [Terms of service](https://usesynapse.cv/terms): subscriptions, free trials, acceptable use, and liability
+- [Refund policy](https://usesynapse.cv/refunds): trials, cancellation, and when refunds are given
+- Contact: help@support.usesynapse.cv

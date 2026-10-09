@@ -50,6 +50,7 @@ async def main(db_path: str) -> None:
     os.environ["DATABASE_URL"] = url
 
     from app.db.database import Base
+    from app.core.config import settings
     from app.core.security import hash_password
     from app.services.provisioning import provision_user
     import app.models.models  # noqa: F401
@@ -68,6 +69,7 @@ async def main(db_path: str) -> None:
             name="E2E Tester",
             password_hash=await hash_password(E2E_PASSWORD),
             email_verified=True,
+            terms_version=settings.TERMS_VERSION,
         )
         await session.commit()
         user_id = str(user.id)

@@ -21,7 +21,7 @@ async def test_register_returns_no_session_until_verified(client):
     """
     resp = await client.post(
         "/api/v1/auth/register",
-        json={"email": "new@example.com", "password": "a-long-enough-password"},
+        json={"email": "new@example.com", "password": "a-long-enough-password", "accept_terms": True},
     )
     assert resp.status_code == 202
     body = resp.json()
@@ -32,7 +32,7 @@ async def test_register_returns_no_session_until_verified(client):
 
 async def test_register_does_not_reveal_existing_accounts(client):
     """A taken address and a fresh one must be indistinguishable."""
-    payload = {"email": "dup@example.com", "password": "a-long-enough-password"}
+    payload = {"email": "dup@example.com", "password": "a-long-enough-password", "accept_terms": True}
     first = await client.post("/api/v1/auth/register", json=payload)
     second = await client.post("/api/v1/auth/register", json=payload)
 
@@ -43,7 +43,7 @@ async def test_register_does_not_reveal_existing_accounts(client):
 async def test_unverified_account_cannot_log_in(client):
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "unverified@example.com", "password": "a-long-enough-password"},
+        json={"email": "unverified@example.com", "password": "a-long-enough-password", "accept_terms": True},
     )
     resp = await client.post(
         "/api/v1/auth/login",
@@ -61,7 +61,7 @@ async def test_verification_link_signs_the_user_in(client, session_factory):
     email = "verifyme@example.com"
     await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "a-long-enough-password"},
+        json={"email": email, "password": "a-long-enough-password", "accept_terms": True},
     )
 
     # The emailed URL carries the raw token; the database stores only its hash.
@@ -83,7 +83,7 @@ async def test_verification_link_signs_the_user_in(client, session_factory):
 async def test_verification_token_is_single_use(client):
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "once@example.com", "password": "a-long-enough-password"},
+        json={"email": "once@example.com", "password": "a-long-enough-password", "accept_terms": True},
     )
     token = client.sent_emails[-1]["url"].split("token=")[1]
 

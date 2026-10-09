@@ -210,7 +210,7 @@ async def verified_user(client, session_factory):
 
     resp = await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password, "name": "Test User"},
+        json={"email": email, "password": password, "name": "Test User", "accept_terms": True},
     )
     assert resp.status_code == 202, resp.text
 

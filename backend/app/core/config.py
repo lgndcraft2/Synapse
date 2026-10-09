@@ -126,6 +126,13 @@ class Settings(BaseSettings):
     EXPLAIN_MAX_THUMBNAIL_BYTES: int = 200 * 1024
     EXPLAIN_THUMBNAIL_RETENTION_DAYS: int = 30
 
+    # Version of the Terms of Service and Privacy Policy a user agrees to,
+    # recorded on the account at signup. Bump it to the new effective date
+    # whenever either document changes materially: every signed-in user whose
+    # recorded version differs is then asked to accept again. Must match
+    # EFFECTIVE_DATE in webpage/src/Terms.tsx and Privacy.tsx (as YYYY-MM-DD).
+    TERMS_VERSION: str = "2026-10-09"
+
     # S3-compatible object storage for history thumbnails. Leave any of the
     # required values blank and thumbnails are simply not stored; explaining
     # and text history keep working. REGION is optional for most providers.

@@ -54,7 +54,7 @@ async def _sign_in(client, session_factory, label: str) -> dict:
 
     resp = await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password, "name": label.title()},
+        json={"email": email, "password": password, "name": label.title(), "accept_terms": True},
     )
     assert resp.status_code == 202, resp.text
 

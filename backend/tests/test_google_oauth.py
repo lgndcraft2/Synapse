@@ -19,7 +19,11 @@ from app.services import oauth_google as goauth
 
 
 def _start(client):
-    return client.get("/api/v1/auth/google/start?next=/dashboard", follow_redirects=False)
+    # As from the signup page with the terms box ticked, so the happy-path
+    # tests may create accounts. test_terms_acceptance covers the unticked case.
+    return client.get(
+        "/api/v1/auth/google/start?next=/dashboard&accept_terms=true", follow_redirects=False
+    )
 
 
 async def test_start_redirects_to_google_with_all_required_params(client):

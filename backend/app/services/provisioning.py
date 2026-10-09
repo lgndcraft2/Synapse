@@ -51,9 +51,13 @@ async def provision_user(
     password_hash: str | None = None,
     google_id: str | None = None,
     email_verified: bool = False,
+    terms_version: str | None = None,
 ) -> User:
     """
     Create a user together with a default profile and billing record.
+
+    `terms_version` records the user's agreement to that version of the Terms
+    of Service and Privacy Policy, stamped with the creation time.
 
     The nested transaction guards the case where two requests for the same new
     address arrive together — the unique index on email rejects the loser, and
@@ -75,6 +79,8 @@ async def provision_user(
                 google_id=google_id,
                 email_verified=email_verified,
                 email_verified_at=now if email_verified else None,
+                terms_version=terms_version,
+                terms_accepted_at=now if terms_version else None,
                 plan="free",
             )
             db.add(user)
@@ -106,6 +112,13 @@ async def provision_user(
             raise RuntimeError("User provisioning failed.")
 
     return user
+
+
+def record_terms_acceptance(user: User, version: str) -> None:
+    """Stamp the account with the terms version just accepted."""
+    user.terms_version = version
+    user.terms_accepted_at = datetime.now(timezone.utc)
+    user.updated_at = user.terms_accepted_at
 
 
 async def link_google_account(

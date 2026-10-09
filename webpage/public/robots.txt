@@ -1,6 +1,8 @@
+# Search engines and AI crawlers (GPTBot, OAI-SearchBot, ClaudeBot,
+# PerplexityBot, Google-Extended, and the rest) are all welcome on the public
+# pages. A plain-text summary for language models lives at /llms.txt.
 User-agent: *
-Allow: /$
-Allow: /support
+Allow: /
 
 # Signed-in application surfaces: nothing useful for search, and every URL
 # behind them redirects to /auth for a crawler anyway.
@@ -9,5 +11,6 @@ Disallow: /dashboard
 Disallow: /profile
 Disallow: /billing
 Disallow: /subscription
+Disallow: /observer
 
 Sitemap: https://usesynapse.cv/sitemap.xml

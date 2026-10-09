@@ -93,6 +93,8 @@ const OAUTH_ERRORS: Record<string, string> = {
   oauth_unconfigured: 'Google sign-in is not available right now.',
   oauth_unavailable: 'Sign-in is temporarily unavailable. Please try again shortly.',
   oauth_failed: 'Something went wrong during Google sign-in. Please try again.',
+  oauth_terms_required:
+    'No Synapse account uses that Google address yet. To create one, tick the box to accept the Terms and Privacy Policy, then sign up with Google.',
 };
 
 // ── Form state ────────────────────────────────────────────────────
@@ -183,7 +185,46 @@ function LoginForm({ go, onResend }: { go: Go; onResend: (email: string) => void
   );
 }
 
-function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
+/**
+ * The terms checkbox. Its state lives in AuthPage, because it gates both the
+ * password form's submit and the Google button outside the form.
+ */
+function TermsCheckbox({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="auth-terms">
+      <input
+        type="checkbox"
+        name="accept_terms"
+        required
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and{' '}
+        <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+      </span>
+    </label>
+  );
+}
+
+function SignupForm({
+  onCreated,
+  acceptedTerms,
+  onAcceptedTermsChange,
+}: {
+  onCreated: (email: string) => void;
+  acceptedTerms: boolean;
+  onAcceptedTermsChange: (accepted: boolean) => void;
+}) {
   const { busy, error, run } = useSubmit();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -193,7 +234,8 @@ function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
   const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const passwordIsValid = password.length >= PASSWORD_MIN && password.length <= PASSWORD_MAX;
   const passwordsMatch = password.length > 0 && password === passwordConfirm;
-  const canSubmit = name.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch;
+  const canSubmit =
+    name.trim().length > 0 && emailIsValid && passwordIsValid && passwordsMatch && acceptedTerms;
 
   const passwordHint = (
     <span className={password.length > 0 && !passwordIsValid ? 'auth-hint auth-hint-error' : 'auth-hint'}>
@@ -218,7 +260,7 @@ function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
       // No session comes back by design: the address has to be confirmed
       // before the account can sign in, so free AI usage cannot be farmed with
       // throwaway addresses.
-      await signUp(email, password, name.trim());
+      await signUp(email, password, name.trim(), acceptedTerms);
       onCreated(email);
     }, 'Could not create your account. Please try again.');
   }
@@ -275,6 +317,7 @@ function SignupForm({ onCreated }: { onCreated: (email: string) => void }) {
           aria-invalid={passwordConfirm.length > 0 && !passwordsMatch}
         />
       </div>
+      <TermsCheckbox checked={acceptedTerms} onChange={onAcceptedTermsChange} disabled={busy} />
       {error && <FormError>{error}</FormError>}
       <SubmitButton busy={busy} busyLabel="Creating account…" disabled={!canSubmit}>
         Create account
@@ -425,6 +468,8 @@ function AuthPage() {
   // True while trading the Google handoff code, which replaces the form.
   const [finishingGoogle, setFinishingGoogle] = useState(() => Boolean(getParam('code')));
   const [googleBusy, setGoogleBusy] = useState(false);
+  // The signup terms checkbox; see TermsCheckbox.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // StrictMode runs effects twice in development. Both the Google code and
   // the verification token are single-use on the server, so the second run
@@ -502,7 +547,7 @@ function AuthPage() {
     showToast('Redirecting to Google…', 'info');
     // A full-page navigation, not a fetch: the browser has to accept the
     // backend's HttpOnly state cookie and then follow a cross-origin redirect.
-    startGoogleLogin(getNextPath());
+    startGoogleLogin(getNextPath(), mode === 'signup' && acceptedTerms);
   }
 
   const heading = finishingGoogle
@@ -517,7 +562,13 @@ function AuthPage() {
   } else if (mode === 'login') {
     screen = <LoginForm go={go} onResend={handleResend} />;
   } else if (mode === 'signup') {
-    screen = <SignupForm onCreated={(email) => showSent(email, 'verify')} />;
+    screen = (
+      <SignupForm
+        onCreated={(email) => showSent(email, 'verify')}
+        acceptedTerms={acceptedTerms}
+        onAcceptedTermsChange={setAcceptedTerms}
+      />
+    );
   } else if (mode === 'reset') {
     screen = <ResetForm onSent={(email) => showSent(email, 'reset')} />;
   } else if (mode === 'new-password') {
@@ -556,11 +607,15 @@ function AuthPage() {
             {showGoogle && (
               <>
                 <OrDivider />
-                <GoogleButton onClick={handleGoogle} disabled={googleBusy}>
+                <GoogleButton
+                  onClick={handleGoogle}
+                  disabled={googleBusy || (mode === 'signup' && !acceptedTerms)}
+                >
                   {mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'}
                 </GoogleButton>
               </>
             )}
+
 
             {!finishingGoogle && (
               <p className="auth-switch">

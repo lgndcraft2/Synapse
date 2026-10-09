@@ -7,9 +7,15 @@ import {
   Check,
   Compass,
   Eye,
+  FileText,
+  Highlighter,
+  History,
+  Lasso,
   Layers,
   Menu,
   Plus,
+  RefreshCw,
+  ShieldCheck,
   Sparkles,
   ToggleRight,
   WandSparkles,
@@ -19,10 +25,44 @@ import {
 import { useEffect, useState } from 'react';
 import { getSession, subscribeAuth } from './lib/auth';
 import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
+import { FAQS } from './lib/faq';
 import ConfigBanner from './component/ConfigBanner';
 import { BrandLockup } from './component/Brand';
 
-const navItems = ['Profile Engine', 'Solutions', 'Library', 'How it Works'];
+const navItems = ['Explain', 'Profile Engine', 'Solutions', 'How it Works'];
+
+const explainFeatures = [
+  {
+    icon: 'highlighter',
+    title: 'Highlight to explain',
+    text: 'Select a sentence, a term, or a whole paragraph. A plain-language explanation appears beside it, pitched to your reading profile.',
+  },
+  {
+    icon: 'lasso',
+    title: 'Circle anything',
+    text: "Hold Alt+S (Option+S on a Mac) and trace around a chart, a diagram, an equation, or text you can't select. You see the exact area before anything is sent.",
+  },
+  {
+    icon: 'refresh',
+    title: 'Re-explain',
+    text: 'Still unclear? Ask for a simpler version, more detail, or something specific, without starting over.',
+  },
+  {
+    icon: 'file',
+    title: 'Works in PDFs',
+    text: 'Synapse opens PDFs in its own viewer, so highlighting and circling work there too, with the whole document as context.',
+  },
+  {
+    icon: 'history',
+    title: 'History that remembers where',
+    text: 'Every explanation stays in a side panel. Click one and Synapse scrolls back to the passage it came from.',
+  },
+  {
+    icon: 'shield',
+    title: 'Context, with limits',
+    text: 'Explanations read the surrounding page so they make sense in place. On email, messaging, and banking sites only the passage you chose is used.',
+  },
+];
 
 const loopSteps = [
   { icon: 'visibility', title: 'Observe', text: 'Tracks reading patterns and friction points.' },
@@ -50,49 +90,14 @@ const howItWorks = [
 
 
 
-const faqs = [
-  [
-    'Is my reading data private?',
-    'Completely. All cognitive modeling happens on-device or via encrypted, anonymized tokens. We never see what you are reading, only how you process the structure.',
-  ],
-  [
-    'Does this work with Dark Mode?',
-    "Yes. Synapse layers on top of existing styles to manage contrast, line-height, and paragraph spacing regardless of the site's theme.",
-  ],
-  [
-    'What if I have multiple diagnoses?',
-    "Our engine doesn't categorize you by diagnosis, but by trait. It adapts to your specific friction points, whether they stem from ADHD, dyslexia, or fatigue.",
-  ],
-  [
-    'Can I use it on mobile?',
-    'Currently available for Chrome. Firefox, Safari, and Edge support is on our roadmap.',
-  ],
-  [
-    'Does it translate languages?',
-    'No. We focus on structural translation, changing how information is presented visually, not the language it is written in.',
-  ],
-  [
-    'How often does the model update?',
-    'Your profile updates continuously based on your reading behaviour and the feedback you give on each section card.',
-  ],
-  [
-    'Can I export my profile?',
-    'Yes. You can take your cognitive profile data to any other device or share it with specialists if you choose.',
-  ],
-  [
-    'Is there a student discount?',
-    'We offer a 50% discount for anyone with a valid .edu email address or equivalent proof of study.',
-  ],
-];
-
 const roadmap = [
-  ['Now', 'Chrome extension with live AI section reformatting, cognitive profile engine, and adaptive feedback loop.', true],
-  ['Next', 'Firefox and Safari support. PDF and document reformatting beyond web pages.'],
+  ['Now', 'Chrome extension with live AI section reformatting, highlight and circle to explain, a built-in PDF viewer, cognitive profile engine, and adaptive feedback loop.', true],
+  ['Next', 'Firefox and Safari support. Google Docs and more document types.'],
   ['Later', 'OpenAPI for third-party adaptive apps'],
   ['Future', 'Cognitive-first operating system'],
 ];
 
-const heroSignals = ['On-device profile', 'Adaptive layouts', 'No data sold'];
+const heroSignals = ['Highlight or circle to explain', 'Adaptive layouts', 'No data sold'];
 
 const icons = {
   add: Plus,
@@ -102,12 +107,18 @@ const icons = {
   check: Check,
   check_circle: BadgeCheck,
   compass: Compass,
+  file: FileText,
+  highlighter: Highlighter,
+  history: History,
   keyboard_arrow_down: ArrowDown,
+  lasso: Lasso,
   layers: Layers,
   menu: Menu,
   model_training: Sparkles,
   psychology: Brain,
+  refresh: RefreshCw,
   science: Beaker,
+  shield: ShieldCheck,
   toggle_on: ToggleRight,
   trending_up: TrendingUp,
   visibility: Eye,
@@ -188,7 +199,8 @@ function App() {
               <h1>The Internet wasn't Built for your Brain. <br /><span className="synapse_color">Synapse</span> is.</h1>
               <p>
                 Traditional accessibility tools apply fixed presets and forget you. Synapse builds a persistent,
-                evolving model of how you actually process information, reformatting every page you read in real time.
+                evolving model of how you actually process information, reformatting every page you read in real time
+                and explaining anything you highlight or circle.
               </p>
               <div className="button-row">
                 <a href="/auth?tab=signup" className="button button-primary" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get the Extension</a>
@@ -246,7 +258,7 @@ function App() {
             </div>
           </div>
           <div className="hero-bottom">
-            <p>Live reformatting for onboarding flows, policy pages, forms, and dense research.</p>
+            <p>Live reformatting and instant explanations for policy pages, forms, dense research, and PDFs.</p>
             <a href="#solutions" aria-label="Scroll to solutions">
               <Icon name="keyboard_arrow_down" />
             </a>
@@ -287,6 +299,32 @@ function App() {
                   <div />
                 </div>
               </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="explain" id="explain">
+          <div className="content-grid">
+            <div className="section-copy">
+              <h2>Point at anything. Understand it.</h2>
+              <p>
+                Some pages don't need rebuilding, just one confusing paragraph explained. Highlight it, or circle it,
+                and Synapse explains it right where you are, in the way your profile says you read best.
+              </p>
+              <p>
+                No copying into a chatbot, no new tab, no losing your place.
+              </p>
+            </div>
+            <div className="explain-grid">
+              {explainFeatures.map((feature) => (
+                <article className="feature-card" key={feature.title}>
+                  <h4>
+                    <Icon name={feature.icon} />
+                    {feature.title}
+                  </h4>
+                  <p>{feature.text}</p>
+                </article>
+              ))}
             </div>
           </div>
         </section>
@@ -420,7 +458,7 @@ function App() {
         <section className="faq full-section surface-low">
           <h2>Frequently Asked Questions</h2>
           <div className="faq-grid">
-            {faqs.map(([question, answer]) => (
+            {FAQS.map(({ question, answer }) => (
               <article className="faq-item" key={question}>
                 <h4>{question}</h4>
                 <p>{answer}</p>
@@ -462,8 +500,9 @@ function App() {
           <BrandLockup href="#top" height={26} />
           <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
           <nav aria-label="Footer navigation">
-            <a href="#top">Privacy Policy</a>
-            <a href="#top">Accessibility Statement</a>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Service</a>
+            <a href="/refunds">Refund Policy</a>
             <a href="#library">Research Library</a>
             <a href="/support">Contact Support</a>
           </nav>

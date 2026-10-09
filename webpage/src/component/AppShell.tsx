@@ -6,6 +6,8 @@ import ConfigBanner from './ConfigBanner';
 import { Skeleton } from './ui';
 import { BrandLockup } from './Brand';
 import { Avatar } from './Avatar';
+import TermsPrompt from './TermsPrompt';
+import { LEGAL_PAGES } from '../lib/legal';
 
 /** Initials for the header avatar, matching the dashboard's derivation. */
 export function initialsFor(user: any): string {
@@ -243,7 +245,12 @@ export function AppHeader({ user, authChecked = true, backTo }: AppHeaderProps) 
             <Skeleton style={{ width: 20, height: 20, borderRadius: 4 }} />
           </div>
         ) : user ? (
-          <UserMenu user={user} />
+          <>
+            <UserMenu user={user} />
+            {user.needs_terms_acceptance && (
+              <TermsPrompt hasAcceptedBefore={Boolean(user.terms_accepted_at)} onSignOut={signOut} />
+            )}
+          </>
         ) : (
           /* Public app-shell pages (e.g. /support) are reachable signed out,
              so mirror the landing page's actions rather than an empty corner.
@@ -271,9 +278,11 @@ export function AppFooter() {
         <BrandLockup href="/" height={26} />
         <div className="copyright">2026 Synapse. Built for the cognitive edge.</div>
         <nav aria-label="Footer navigation">
-          <a href="/">Privacy Policy</a>
-          <a href="/">Accessibility Statement</a>
-          <a href="/#library">Research Library</a>
+          {LEGAL_PAGES.map((page) => (
+            <a key={page.href} href={page.href}>
+              {page.label}
+            </a>
+          ))}
           <a href="/support">Contact Support</a>
         </nav>
       </div>
