@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { signOut as authSignOut } from '../lib/auth';
 import { pushLogoutToExtension } from '../lib/extensionBridge';
-import ConfigBanner from './ConfigBanner';
 import { Skeleton } from './ui';
 import { BrandLockup } from './Brand';
 import { Avatar } from './Avatar';
@@ -302,7 +301,6 @@ interface AppShellProps {
 export default function AppShell({ user, authChecked = true, backTo, children }: AppShellProps) {
   return (
     <>
-      <ConfigBanner />
       <div
         className="dash font-body"
         style={{

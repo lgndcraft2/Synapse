@@ -3,7 +3,6 @@ import { requireAuth, getSession, subscribeAuth } from "./lib/auth";
 import { confirmCheckout, getBillingStatus, getDashboardStats, getProfile, getProfileHistory, getReadingSessions, updateProfile } from "./lib/api";
 import { pushSessionToExtension, pushLogoutToExtension } from "./lib/extensionBridge";
 import { PLAN_LABELS } from "./lib/plans";
-import ConfigBanner from "./component/ConfigBanner";
 import { Pager, Skeleton } from "./component/ui";
 import { useOffsetPage } from "./lib/usePaging";
 import { AppFooter, AppHeader } from "./component/AppShell";
@@ -215,7 +214,6 @@ export default function Dashboard() {
 
   return (
     <>
-      <ConfigBanner />
       <div className="dash font-body" style={{ backgroundColor: "#fcf9f8", color: "#1b1c1c", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
         {/* ── HEADER ─────────────────────────────────────────────── */}

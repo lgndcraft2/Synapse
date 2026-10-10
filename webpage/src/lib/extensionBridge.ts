@@ -6,12 +6,13 @@
 // If either is missing (e.g. the extension isn't installed), every call is a safe no-op.
 
 import { getAccessToken, type Session } from './auth';
+import { BACKEND_URL } from './config';
 
 const EXTENSION_ID = import.meta.env.VITE_EXTENSION_ID || '';
 // Handed to the extension so it knows which API to refresh against. It
 // previously received a Supabase URL and anon key; it now gets neither, so no
 // API key ever leaves the dashboard.
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+const API_URL = BACKEND_URL;
 
 type ChromeRuntime = {
   sendMessage: (id: string, message: unknown, callback?: (response: unknown) => void) => void;
