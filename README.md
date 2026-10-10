@@ -84,7 +84,9 @@ The API URL needs no setting: `npm run dev` uses `http://localhost:8000` and a p
 3. Select the repository's `extension/` directory — not the repository root.
 4. Copy the generated extension ID into `webpage/.env` as `VITE_EXTENSION_ID`, then restart Vite.
 
-The extension picks its URLs in `extension/lib/config.js`: an unpacked copy uses `http://localhost:8000` and `http://localhost:5173`, a Chrome Web Store install uses `https://api.usesynapse.cv` and `https://usesynapse.cv`. A store install also refuses a session handoff for any other API. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
+The extension picks its URLs in `extension/lib/config.js`: an unpacked copy uses `http://localhost:8000` and `http://localhost:5173`, a Chrome Web Store install uses `https://api.usesynapse.cv` and `https://usesynapse.cv`. A store install also refuses a session handoff for any other API.
+
+To build the Chrome Web Store upload, run `python scripts/package_extension.py`. It writes `dist/synapse-extension-<version>.zip`: the same files, with the localhost origins removed from `externally_connectable`. Bump `version` in `extension/manifest.json` before each new upload. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
 
 ## Tests
 

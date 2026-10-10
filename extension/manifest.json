@@ -6,16 +6,10 @@
 
   "permissions": [
     "activeTab",
-    "storage",
-    "scripting",
-    "tabs"
+    "storage"
   ],
 
   "host_permissions": [
-    "https://api.usesynapse.cv/*",
-    "http://localhost:8000/*",
-    "http://*/*",
-    "https://*/*",
     "<all_urls>"
   ],
 
