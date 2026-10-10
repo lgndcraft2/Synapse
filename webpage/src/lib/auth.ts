@@ -22,17 +22,7 @@
  * token lifetime and by server-side reuse detection.
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-
-/**
- * Whether the app has been told where its API lives.
- *
- * With Supabase gone this is the one setting that breaks everything if wrong,
- * so ConfigBanner surfaces it on every page. The fallback above keeps local
- * development working without a .env at all, which is why this reports on the
- * raw variable rather than on BACKEND_URL.
- */
-export const isBackendConfigured = Boolean(import.meta.env.VITE_BACKEND_URL);
+import { BACKEND_URL } from './config';
 
 const STORAGE_KEY = 'synapse.session';
 const AUTH_EVENT = 'synapse:auth';

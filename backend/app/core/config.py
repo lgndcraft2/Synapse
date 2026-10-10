@@ -1,6 +1,21 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 from typing import List
+
+# Where each part of Synapse lives. FRONTEND_URL, ALLOWED_ORIGINS and
+# GOOGLE_REDIRECT_URI default to these by APP_ENV ("development" picks the
+# local set, anything else production), so a deployment only has to set them
+# when it moves hosts.
+URLS = {
+    "development": {
+        "frontend": "http://localhost:5173",
+        "backend": "http://localhost:8000",
+    },
+    "production": {
+        "frontend": "https://usesynapse.cv",
+        "backend": "https://api.usesynapse.cv",
+    },
+}
 
 
 class Settings(BaseSettings):
@@ -30,6 +45,7 @@ class Settings(BaseSettings):
     # registered in the Cloud Console byte-for-byte, including scheme and path.
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    # Blank derives it from the backend URL for APP_ENV (see URLS).
     GOOGLE_REDIRECT_URI: str = ""
 
     # How many proxies sit in front of the app. request.client.host is the edge's
@@ -86,7 +102,8 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     APP_SECRET_KEY: str
-    FRONTEND_URL: str = "http://localhost:3000"
+    # Blank means "the dashboard for APP_ENV" (see URLS).
+    FRONTEND_URL: str = ""
     # Where support tickets are delivered, and the address shown on /support.
     # Must match the frontend's VITE_SUPPORT_EMAIL.
     SUPPORT_EMAIL: str = "help@support.usesynapse.cv"
@@ -95,7 +112,8 @@ class Settings(BaseSettings):
     # MAIL_FROM must be on a domain verified in Resend, or sends are rejected.
     RESEND_API_KEY: str = ""
     MAIL_FROM: str = "Synapse Support <help@support.usesynapse.cv>"
-    ALLOWED_ORIGINS: str = "http://localhost:3000"
+    # Comma-separated. Blank means FRONTEND_URL (plus www. in production).
+    ALLOWED_ORIGINS: str = ""
     CHROME_EXTENSION_ID: str = ""
     ALLOWED_ORIGIN_REGEX: str = ""
 
@@ -158,6 +176,21 @@ class Settings(BaseSettings):
                 "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`."
             )
         return v
+
+    @model_validator(mode="after")
+    def _fill_urls_for_env(self) -> "Settings":
+        """Default the URL settings to the ones for APP_ENV."""
+        urls = URLS["development" if self.APP_ENV == "development" else "production"]
+        if not self.FRONTEND_URL:
+            self.FRONTEND_URL = urls["frontend"]
+        if not self.ALLOWED_ORIGINS:
+            origins = [self.FRONTEND_URL.rstrip("/")]
+            if self.APP_ENV != "development":
+                origins.append(origins[0].replace("https://", "https://www.", 1))
+            self.ALLOWED_ORIGINS = ",".join(origins)
+        if not self.GOOGLE_REDIRECT_URI:
+            self.GOOGLE_REDIRECT_URI = f"{urls['backend']}/api/v1/auth/google/callback"
+        return self
 
     @property
     def google_oauth_configured(self) -> bool:

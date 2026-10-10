@@ -26,7 +26,6 @@ import { useEffect, useState } from 'react';
 import { getSession, subscribeAuth } from './lib/auth';
 import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
 import { FAQS } from './lib/faq';
-import ConfigBanner from './component/ConfigBanner';
 import { BrandLockup } from './component/Brand';
 
 const navItems = ['Explain', 'Profile Engine', 'Solutions', 'How it Works'];
@@ -150,7 +149,6 @@ function App() {
 
   return (
     <>
-      <ConfigBanner />
       <header className="topbar">
         <div className="nav-shell">
           <BrandLockup href="#top" height={32} />
