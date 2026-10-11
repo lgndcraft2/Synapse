@@ -4,6 +4,7 @@ from sqlalchemy import select, update
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.config import settings
+from app.core.timeutils import is_past
 from app.models.models import User, Billing
 from app.schemas.schemas import (
     CheckoutRequest,
@@ -62,7 +63,7 @@ def _plan_for_subscription(sub, status: str, renews_at: datetime | None) -> str:
     """
     if status not in ("active", "trialing"):
         return "free"
-    if renews_at is not None and renews_at <= datetime.utcnow():
+    if is_past(renews_at):
         return "free"
     try:
         price_id = sub["items"]["data"][0]["price"]["id"]

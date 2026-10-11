@@ -18,7 +18,7 @@ from app.services.profile_context import (
     load_profile, load_feedback_summary, apply_session_difficulty,
 )
 from app.core.config import settings
-from datetime import datetime
+from app.core.timeutils import is_past
 from time import perf_counter
 import asyncio
 import logging
@@ -67,12 +67,11 @@ async def _validate_input_length(db: AsyncSession, user: User | None, text: str)
             select(Billing).where(Billing.user_id == user.id)
         )
         billing = result.scalar_one_or_none()
-        now = datetime.utcnow()
         is_active = (
             billing
             and billing.plan in ("premium", "lite")
             and billing.status in ("active", "trialing")
-            and (billing.renews_at is None or billing.renews_at > now)
+            and not is_past(billing.renews_at)
         )
         if is_active and billing.plan == "lite":
             limit = settings.TRIAL_TEXT_LIMIT
@@ -113,10 +112,10 @@ async def _is_premium_active(user: User | None, db: AsyncSession) -> bool:
         if not billing or billing.plan != "premium":
             return False
         
-        # Verify both status and expiration date
-        now = datetime.utcnow()
+        # Verify both status and expiration date. renews_at comes back from
+        # Postgres timezone-aware; is_past compares it safely either way.
         is_active = billing.status in ("active", "trialing")
-        has_not_expired = billing.renews_at is None or billing.renews_at > now
+        has_not_expired = not is_past(billing.renews_at)
         
         return is_active and has_not_expired
 

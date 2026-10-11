@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from app.core.config import settings
 from app.models.models import Billing, UsageTracking, User
 from datetime import datetime
+from app.core.timeutils import is_past
 import hashlib
 import logging
 
@@ -324,7 +325,7 @@ async def _active_paid_plan(db: AsyncSession, user: User) -> str | None:
         return None
     if billing.status not in ("active", "trialing"):
         return None
-    if billing.renews_at is not None and billing.renews_at <= datetime.utcnow():
+    if is_past(billing.renews_at):
         return None
     return billing.plan
 
