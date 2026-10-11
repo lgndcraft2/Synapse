@@ -389,11 +389,13 @@ border-color:${C.green}!important;outline:none!important;background:white!import
    (backend/app/services/ai.py, _REFORMAT_BLOCKS). Text size comes from the
    container (card, full page, reader); these only lay the blocks out. */
 .syn{display:flex!important;flex-direction:column!important;gap:14px!important}
-.synapse-fp .syn{gap:22px!important}
+.synapse-fp .syn,.synapse-reader-content .syn{gap:22px!important}
 .syn .syn-key,.syn .syn-note,.syn .syn-example,.syn .syn-recap{
 border-radius:12px!important;padding:12px 16px!important}
 .synapse-fp .syn .syn-key,.synapse-fp .syn .syn-note,
-.synapse-fp .syn .syn-example,.synapse-fp .syn .syn-recap{padding:16px 20px!important}
+.synapse-fp .syn .syn-example,.synapse-fp .syn .syn-recap,
+.synapse-reader-content .syn .syn-key,.synapse-reader-content .syn .syn-note,
+.synapse-reader-content .syn .syn-example,.synapse-reader-content .syn .syn-recap{padding:16px 20px!important}
 .syn .syn-key{background:${C.greenLight}!important}
 .syn .syn-key>p:not(.syn-label){color:${C.g900}!important;font-weight:600!important}
 .syn .syn-note,.syn .syn-example{background:${C.g100}!important}
@@ -1359,31 +1361,7 @@ function activateDocumentMode() {
   const fab = document.getElementById('synapse-fab');
   fab?.classList.add('s-analysing', 's-active');
 
-  let reader = document.getElementById('synapse-reader-overlay');
-  if (!reader) {
-    reader = document.createElement('div');
-    reader.id = 'synapse-reader-overlay';
-    reader.className = 'synapse-reader';
-    reader.innerHTML = `
-      <div class="synapse-reader-panel">
-        <div class="synapse-reader-topbar">
-          <div class="synapse-reader-title">
-            <span class="sc-title-dot"></span>Synapse Document Reader
-          </div>
-          <button class="synapse-reader-close">✕</button>
-        </div>
-        <div class="synapse-reader-loading">
-          <div class="sc-spinner"></div>
-          <span class="sc-loading-text">Rebuilding document for your brain...</span>
-        </div>
-        <div class="synapse-reader-content" style="display:none"></div>
-      </div>
-    `;
-    document.body.appendChild(reader);
-    reader.querySelector('.synapse-reader-close').addEventListener('click', closeDocumentReader);
-  }
-
-  requestAnimationFrame(() => requestAnimationFrame(() => reader.classList.add('s-visible')));
+  const reader = openReaderOverlay('Synapse Document Reader', 'Rebuilding document for your brain...');
 
   chrome.runtime.sendMessage(
     { 
@@ -1398,21 +1376,136 @@ function activateDocumentMode() {
       if (btn) { btn.disabled = false; btn.textContent = `Read ${S.documentType.label}`; }
       fab?.classList.remove('s-analysing');
 
-      const loading = reader.querySelector('.synapse-reader-loading');
-      const content = reader.querySelector('.synapse-reader-content');
+      showReaderResult(reader, res?.html, res?.error || 'Failed to read document.');
+      if (res?.html) showPanelHint('Document reformatted. Close the reader to return to the original.');
+      else showPanelHint(res?.error || 'Document reading failed.', true);
+    }
+  );
+}
 
-      loading.style.setProperty('display', 'none', 'important');
-      content.style.setProperty('display', 'block', 'important');
+/**
+ * The side reader both documents and web pages open in. Created on first use,
+ * reset to its loading state on reuse. Returns the overlay element.
+ */
+function openReaderOverlay(title, loadingText) {
+  injectStyles();
+  let reader = document.getElementById('synapse-reader-overlay');
+  if (!reader) {
+    reader = document.createElement('div');
+    reader.id = 'synapse-reader-overlay';
+    reader.className = 'synapse-reader';
+    reader.innerHTML = `
+      <div class="synapse-reader-panel" role="dialog" aria-modal="true" aria-labelledby="synapse-reader-title">
+        <div class="synapse-reader-topbar">
+          <div class="synapse-reader-title" id="synapse-reader-title">
+            <span class="sc-title-dot"></span><span class="synapse-reader-title-text"></span>
+          </div>
+          <button class="synapse-reader-close" type="button" aria-label="Close the reader">✕</button>
+        </div>
+        <div class="synapse-reader-loading">
+          <div class="sc-spinner"></div>
+          <span class="sc-loading-text"></span>
+        </div>
+        <div class="synapse-reader-content" style="display:none"></div>
+      </div>
+    `;
+    document.body.appendChild(reader);
+    reader.querySelector('.synapse-reader-close').addEventListener('click', closeDocumentReader);
+    // Clicking the dimmed page beside the panel closes it, like the ✕.
+    reader.addEventListener('click', (e) => { if (e.target === reader) closeDocumentReader(); });
+  }
+  reader.querySelector('.synapse-reader-title-text').textContent = title;
+  reader.querySelector('.sc-loading-text').textContent = loadingText;
+  reader.querySelector('.synapse-reader-loading').style.removeProperty('display');
+  const content = reader.querySelector('.synapse-reader-content');
+  content.innerHTML = '';
+  content.style.setProperty('display', 'none', 'important');
 
-      if (res?.html) {
-        // Sanitize AI-generated HTML before injection
-        content.innerHTML = DOMPurify.sanitize(res.html);
-        showPanelHint('Document reformatted. Close the reader to return to the original.');
-      } else {
-        // Sanitize error message just in case it contains malicious content
-        content.innerHTML = DOMPurify.sanitize(`<p style="color:${C.red}">${res?.error || 'Failed to read document.'}</p>`);
-        showPanelHint(res?.error || 'Document reading failed.', true);
+  requestAnimationFrame(() => requestAnimationFrame(() => reader.classList.add('s-visible')));
+  return reader;
+}
+
+/** Swap the reader from loading to its result (sanitised HTML) or an error. */
+function showReaderResult(reader, html, error) {
+  const loading = reader.querySelector('.synapse-reader-loading');
+  const content = reader.querySelector('.synapse-reader-content');
+  loading.style.setProperty('display', 'none', 'important');
+  content.style.setProperty('display', 'block', 'important');
+  if (html) {
+    content.innerHTML = DOMPurify.sanitize(html);
+  } else {
+    const p = document.createElement('p');
+    p.style.color = C.red;
+    p.textContent = error;
+    content.replaceChildren(p);
+  }
+}
+
+// ================================================================
+// PAGE READER — "Rebuild this page"
+// ================================================================
+// Rebuilds the current web page's text in the side reader. The page itself is
+// never modified (the old full-page swap is parked with Article mode), so this
+// can't break the site underneath.
+
+// Below this much text there is nothing worth rebuilding (a login form, an
+// app shell). Above PAGE_READER_MAX_CHARS the tail is dropped.
+const PAGE_READER_MIN_CHARS = 280;
+const PAGE_READER_MAX_CHARS = 12000;
+
+function extractReadableText() {
+  const root = document.querySelector('main,article,[role="main"]') || document.body;
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll(
+    'script,style,noscript,template,svg,nav,footer,header,aside,form,button,iframe,' +
+    '[aria-hidden="true"],[hidden],#synapse-fab,#synapse-history-btn,#synapse-fab-menu,' +
+    '#synapse-reader-overlay,.synapse-card'
+  ).forEach(e => e.remove());
+  // A detached clone has no layout, so innerText can't find the line breaks
+  // between blocks; join the block-level text by hand instead.
+  const blocks = clone.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,td,th,dt,dd,figcaption');
+  const text = blocks.length
+    ? Array.from(blocks).map(b => b.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n\n')
+    : clone.textContent.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+function canRebuildPage() {
+  return !S.documentType && /^(https?|file):$/.test(location.protocol);
+}
+
+function activatePageReader() {
+  if (S.analysing) return;
+  const text = extractReadableText();
+  if (text.length < PAGE_READER_MIN_CHARS) {
+    globalThis.SynapseExplain?.showTip("There isn't enough readable text on this page to rebuild.", { message: true, duration: 3200 });
+    return;
+  }
+  S.analysing = true;
+  const fab = document.getElementById('synapse-fab');
+  fab?.classList.add('s-analysing', 's-active');
+
+  const reader = openReaderOverlay(document.title || 'This page', 'Rebuilding this page for your brain...');
+
+  chrome.runtime.sendMessage(
+    {
+      type: 'CALL_LLM',
+      pageText: text.slice(0, PAGE_READER_MAX_CHARS),
+      pageUrl: location.href,
+      pageTitle: document.title,
+      sessionDifficulty: S.sessionDifficulty,
+      mode: 'fullpage'
+    },
+    (res) => {
+      S.analysing = false;
+      fab?.classList.remove('s-analysing');
+      if (chrome.runtime.lastError) {
+        showReaderResult(reader, null, "Synapse couldn't reach its background service. Reload the page and try again.");
+        return;
       }
+      const err = res?.error;
+      const message = typeof err === 'object' && err ? (err.message || 'Something went wrong.') : err;
+      showReaderResult(reader, res?.html, message || 'Something went wrong. Please try again.');
     }
   );
 }

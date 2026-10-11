@@ -18,7 +18,7 @@
   'use strict';
   if (globalThis.SynapseExplainHost) return;
 
-  /* global S, C, Z, FEATURES, injectStyles, applyBionicReading, injectFeedbackStrip, activateDocumentMode */
+  /* global S, C, Z, FEATURES, injectStyles, applyBionicReading, injectFeedbackStrip, activateDocumentMode, activatePageReader, canRebuildPage */
   const hasContentScript = typeof S !== 'undefined' && typeof injectStyles === 'function';
 
   const FALLBACK_C = {
@@ -110,6 +110,15 @@
 
   H.canOpenReader = function () {
     return typeof H.openReaderFn === 'function' || typeof activateDocumentMode === 'function';
+  };
+
+  /** "Rebuild this page": ordinary web pages only, never extension pages or documents. */
+  H.canRebuildPage = function () {
+    return hasContentScript && !H.isExtensionPage && typeof canRebuildPage === 'function' && canRebuildPage();
+  };
+
+  H.rebuildPage = function () {
+    if (typeof activatePageReader === 'function') activatePageReader();
   };
 
   // ── content.js helpers, with fallbacks ─────────────────────────

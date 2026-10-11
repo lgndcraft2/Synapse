@@ -1,7 +1,8 @@
 // ================================================================
 // SYNAPSE EXPLAIN — wiring
-// Floating button behaviour, the document-page prompt (PDFs add "Open in
-// Synapse viewer"), the history button,
+// Floating button behaviour, its menu (circle, plus "Rebuild this page" on web
+// pages or "Read this document" on documents; PDFs add "Open in Synapse
+// viewer"), the history button,
 // history loading/repainting, background messages, and SPA URL changes.
 // Loaded last. On content-script pages it initialises itself; an extension
 // page (the PDF viewer) calls SynapseExplain.init({...}) — see host.js.
@@ -26,13 +27,18 @@
     e.preventDefault();
     e.stopPropagation();
     if (SX.isCircling()) { SX.cancelCircle(); return; }
-    if (hasDocumentPrompt()) { menu ? SX.closeFabMenu() : openFabMenu(); return; }
+    if (hasFabMenu()) { menu ? SX.closeFabMenu() : openFabMenu(); return; }
     SX.startCircle('click');
   }
 
-  // ── Document prompt ────────────────────────────────────────────
+  // ── FAB menu ───────────────────────────────────────────────────
   function hasDocumentPrompt() {
     return !!(H.S.documentType && H.canOpenReader());
+  }
+
+  /** Documents offer "Read this document"; ordinary web pages "Rebuild this page". */
+  function hasFabMenu() {
+    return hasDocumentPrompt() || H.canRebuildPage();
   }
 
   /** PDFs on web/file pages (not already inside the Synapse viewer) can open in the viewer. */
@@ -47,6 +53,7 @@
 
   function openFabMenu() {
     SX.injectStyles();
+    const isDocument = hasDocumentPrompt();
     const label = H.S.documentType?.label || 'document';
     menu = document.createElement('div');
     menu.id = 'synapse-fab-menu';
@@ -63,10 +70,15 @@
         <span class="sxm-ico" aria-hidden="true">◎</span>
         <span><span>Circle something</span><span class="sxm-sub">Trace around anything to explain it</span></span>
       </button>
+      ${isDocument ? `
       <button type="button" role="menuitem" data-action="read">
         <span class="sxm-ico" aria-hidden="true">Aa</span>
         <span><span>Read this document</span><span class="sxm-sub">Rebuild this ${SX.escapeHTML(label)} for your brain</span></span>
-      </button>`;
+      </button>` : `
+      <button type="button" role="menuitem" data-action="rebuild">
+        <span class="sxm-ico" aria-hidden="true">Aa</span>
+        <span><span>Rebuild this page</span><span class="sxm-sub">Read it laid out for your brain</span></span>
+      </button>`}`;
     document.body.appendChild(menu);
     fab.setAttribute('aria-expanded', 'true');
     historyBtn?.classList.add('s-suppressed');
@@ -81,6 +93,7 @@
       SX.closeFabMenu();
       if (action === 'circle') SX.startCircle('click');
       else if (action === 'viewer') openViewer();
+      else if (action === 'rebuild') H.rebuildPage();
       else H.openReader();
     });
 
@@ -216,6 +229,11 @@
       fab.setAttribute('aria-label', canOpenViewer()
         ? 'Synapse: open in the Synapse viewer, circle something, or read this document'
         : 'Synapse: circle something or read this document');
+      fab.title = 'Synapse';
+    } else if (H.canRebuildPage()) {
+      fab.setAttribute('aria-haspopup', 'menu');
+      fab.setAttribute('aria-expanded', 'false');
+      fab.setAttribute('aria-label', 'Synapse: circle something or rebuild this page (hold Alt+S to circle)');
       fab.title = 'Synapse';
     } else {
       fab.setAttribute('aria-label', 'Synapse: circle something to explain it (or hold Alt+S)');
