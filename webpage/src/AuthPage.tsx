@@ -11,7 +11,6 @@ import {
   startGoogleLogin,
   verifyEmail,
 } from './lib/auth';
-import ConfigBanner from './component/ConfigBanner';
 import useToast from './lib/useToast';
 import { BrandLockup } from './component/Brand';
 import {
@@ -581,7 +580,6 @@ function AuthPage() {
 
   return (
     <>
-      <ConfigBanner />
       <ToastContainer />
       <main className="auth">
         <BrandPanel />

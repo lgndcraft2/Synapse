@@ -1,5 +1,5 @@
 // Pure geometry/history and context helpers shared with the content scripts.
-importScripts("lib/geometry.js", "explain/context.js");
+importScripts("lib/config.js", "lib/geometry.js", "explain/context.js");
 const G = self.SynapseGeometry;
 const CX = self.SynapseContext;
 
@@ -16,7 +16,8 @@ const defaultProfile = {
 
 const defaultProviderConfig = {
   tier: "free",
-  backendBaseUrl: "http://localhost:8000",
+  // Production for a store install, localhost for an unpacked one (lib/config.js).
+  backendBaseUrl: self.SynapseConfig.BACKEND_URL,
   backendAccessToken: "",
   useBackendProxy: true,
   preferredProvider: "auto",
@@ -1651,6 +1652,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === "SYNAPSE_SESSION") {
     if (!msg.access_token || !msg.refresh_token || !msg.api_url) {
       sendResponse({ ok: false, error: "Incomplete session payload." });
+      return true;
+    }
+    // A store install only ever talks to the production API. Without this,
+    // any page on a whitelisted origin (localhost included) could point it at
+    // another server and receive every page the user reformats. Unpacked
+    // copies accept any URL so local, staging and test backends still work.
+    if (!self.SynapseConfig.IS_DEV &&
+        normalizeBackendBaseUrl(msg.api_url) !== self.SynapseConfig.BACKEND_URL) {
+      sendResponse({ ok: false, error: "Session is for a different server." });
       return true;
     }
     const session = {

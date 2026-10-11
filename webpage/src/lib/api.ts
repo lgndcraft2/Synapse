@@ -1,6 +1,5 @@
 import { getAccessToken, clearSession, redirectToLogin } from './auth';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+import { BACKEND_URL } from './config';
 
 /**
  * Bearer header for an authenticated call, or `{}` when signed out.

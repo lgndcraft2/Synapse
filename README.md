@@ -75,7 +75,7 @@ npm install
 npm run dev
 ```
 
-Set `VITE_BACKEND_URL`; add matching Stripe price IDs and `VITE_SUPPORT_EMAIL` as needed. `VITE_EXTENSION_ID` is optional for normal web development, but required for dashboard-to-extension session handoff.
+The API URL needs no setting: `npm run dev` uses `http://localhost:8000` and a production build (Vercel) uses `https://api.usesynapse.cv` (`webpage/src/lib/config.ts`); `VITE_BACKEND_URL` overrides both. Add matching Stripe price IDs and `VITE_SUPPORT_EMAIL` as needed. `VITE_EXTENSION_ID` is optional for normal web development, but required for dashboard-to-extension session handoff.
 
 ### 3. Chrome extension
 
@@ -84,7 +84,9 @@ Set `VITE_BACKEND_URL`; add matching Stripe price IDs and `VITE_SUPPORT_EMAIL` a
 3. Select the repository's `extension/` directory — not the repository root.
 4. Copy the generated extension ID into `webpage/.env` as `VITE_EXTENSION_ID`, then restart Vite.
 
-For local development the extension's default API target is `http://localhost:8000`; production is handled by the deployed session handoff. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
+The extension picks its URLs in `extension/lib/config.js`: an unpacked copy uses `http://localhost:8000` and `http://localhost:5173`, a Chrome Web Store install uses `https://api.usesynapse.cv` and `https://usesynapse.cv`. A store install also refuses a session handoff for any other API.
+
+To build the Chrome Web Store upload, run `python scripts/package_extension.py`. It writes `dist/synapse-extension-<version>.zip`: the same files, with the localhost origins removed from `externally_connectable`. Bump `version` in `extension/manifest.json` before each new upload. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
 
 ## Tests
 

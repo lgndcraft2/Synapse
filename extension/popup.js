@@ -27,7 +27,7 @@ const usageStats = document.getElementById("usage-stats");
 
 // The dashboard (frontend) origin — where users sign in. The extension talks to
 // the backend API automatically; there is no user-facing backend setting.
-const DASHBOARD_URL = "https://usesynapse.cv";
+const DASHBOARD_URL = window.SynapseConfig.DASHBOARD_URL;
 if (dashboardLink) dashboardLink.href = DASHBOARD_URL + "/auth?tab=login";
 
 function setStatus(msg, isError = false) {
