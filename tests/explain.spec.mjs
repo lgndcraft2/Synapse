@@ -35,6 +35,7 @@ let extensionId;
 const requests = [];     // POST /explain bodies
 const ctxUploads = [];   // POST /explain/context bodies
 const docReads = [];     // POST /reformat/reformat-document bodies
+const pageReads = [];    // POST /reformat bodies ("Rebuild this page")
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
 let reexplainsServed = 0;
@@ -151,6 +152,14 @@ function startServer() {
         const chars = (body.document_text || '').length || (body.document_base64 ? 4321 : 0);
         return json(res, 200, { context_id: `ctx-${ctxCounter}`, chars, truncated: false, expires_in: 3600 });
       }
+      if (req.method === 'POST' && url.pathname === '/api/v1/reformat') {
+        pageReads.push(await readBody(req));
+        return json(res, 200, {
+          html: '<div class="syn"><div class="syn-key"><p class="syn-label">The key idea</p><p id="page-rebuilt">Cells run on organelles.</p></div></div>',
+          questions: null,
+          model_used: 'mock',
+        });
+      }
       if (req.method === 'POST' && url.pathname === '/api/v1/reformat/reformat-document') {
         docReads.push(await readBody(req));
         return json(res, 200, { html: '<h2>Notes rebuilt</h2><p id="rebuilt">Rebuilt paragraph about plain notes and organelles.</p>' });
@@ -195,10 +204,16 @@ async function chordAround(locator, pad = 10) {
   await page.keyboard.up('Alt');
 }
 
+/** Web pages: the FAB opens its menu; "Circle something" starts circle mode. */
+async function circleFromFab() {
+  await page.locator('#synapse-fab').click();
+  await page.locator('#synapse-fab-menu').getByRole('menuitem', { name: /Circle something/ }).click();
+}
+
 /** FAB click-to-trace around a locator. */
 async function fabAround(locator, pad = 8) {
   const box = await locator.boundingBox();
-  await page.locator('#synapse-fab').click();
+  await circleFromFab();
   await page.mouse.click(box.x - pad, box.y - pad);
   await page.mouse.move(box.x + box.width + pad, box.y - pad, { steps: 6 });
   await page.mouse.move(box.x + box.width + pad, box.y + box.height + pad, { steps: 6 });
@@ -346,13 +361,58 @@ test('after reload: history button shows, highlight restored, click reopens with
   await expect(page.locator('#synapse-circle-overlay')).toHaveCount(0);
 });
 
-test('FAB click enters circle mode; Escape cancels', async () => {
+test('web page: FAB menu offers circle and rebuild; "Circle something" enters circle mode; Escape cancels', async () => {
   await openArticle();
   await page.locator('#synapse-fab').click();
+  const menu = page.locator('#synapse-fab-menu');
+  await expect(menu.getByRole('menuitem')).toHaveCount(2);
+  await expect(menu).toContainText('Circle something');
+  await expect(menu).toContainText('Rebuild this page');
+  await menu.getByRole('menuitem', { name: /Circle something/ }).click();
   await expect(page.locator('#synapse-circle-overlay')).toBeAttached();
   await expect(page.locator('#synapse-circle-tip')).toContainText('Click where you want to start');
   await page.keyboard.press('Escape');
   await expect(page.locator('#synapse-circle-overlay')).toHaveCount(0);
+});
+
+test('"Rebuild this page" shows the page rebuilt in the reader and leaves the page alone', async () => {
+  await openArticle();
+  const originalMain = await page.locator('main').innerHTML();
+  const before = pageReads.length;
+  await page.locator('#synapse-fab').click();
+  await page.locator('#synapse-fab-menu').getByRole('menuitem', { name: /Rebuild this page/ }).click();
+
+  const reader = page.locator('#synapse-reader-overlay');
+  await expect(reader.locator('#page-rebuilt')).toHaveText('Cells run on organelles.');
+  await expect(reader.locator('.synapse-reader-title')).toContainText('Cells 101');
+
+  await expect.poll(() => pageReads.length).toBe(before + 1);
+  const req = pageReads[before];
+  expect(req.mode).toBe('fullpage');
+  expect(req.page_url).toBe(`${base}/article.html`);
+  expect(req.page_text).toContain('Mitochondria are membrane-bound organelles');
+  expect(req.page_text).toContain('Ribosomes read messenger RNA');
+  // Navigation and form controls are not page content.
+  expect(req.page_text).not.toContain('Navigation link text');
+
+  // The site's own content is never replaced.
+  expect(await page.locator('main').innerHTML()).toBe(originalMain);
+
+  await reader.getByRole('button', { name: 'Close the reader' }).click();
+  await expect(reader).toHaveCount(0);
+});
+
+test('"Rebuild this page" on a page with too little text says so and sends nothing', async () => {
+  await page.bringToFront();
+  await page.goto(`${base}/settings.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  const before = pageReads.length;
+  await page.locator('#synapse-fab').click();
+  await page.locator('#synapse-fab-menu').getByRole('menuitem', { name: /Rebuild this page/ }).click();
+  await expect(page.locator('#synapse-circle-tip')).toContainText("isn't enough readable text");
+  await expect(page.locator('#synapse-reader-overlay')).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(pageReads.length).toBe(before);
 });
 
 test('Alt+S chord: a tiny trace shows the gentle message and sends nothing', async () => {

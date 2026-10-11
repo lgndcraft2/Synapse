@@ -167,7 +167,8 @@ Gemini's URL context and Claude's web fetch only see the public, logged-out page
 ## Floating button
 
 - On document pages (PDF, text, CSV, Markdown, as detected by `detectDocumentType`), clicking the floating button opens a small two-option prompt next to it: "Circle something" and "Read this document".
-- On every other page there is no prompt: clicking the floating button starts circle mode directly.
+- On ordinary web pages the prompt offers "Circle something" and "Rebuild this page". Rebuild sends the page's readable text (main/article, without nav, header, footer, forms or buttons; at most 12,000 characters) to `/reformat` and shows the result in the side reader. The page itself is never modified. Pages with under 280 characters of readable text get a tip instead.
+- Pages with neither (extension pages) have no prompt: clicking the floating button starts circle mode directly. Alt+S always starts circle mode directly.
 - "Circle something" starts click-to-trace circle mode.
 - "Read this document" runs the existing document reader (`activateDocumentMode`).
 - The prompt replaces the current panel's "Activate on this page" / "Reformat full page" button (`sp-main-btn`), which is hidden with the rest of Article mode.
@@ -234,7 +235,7 @@ None at the moment.
 
 ## Parked: Article mode
 
-Revisit after the explain flow ships.
+Revisit after the explain flow ships. "Rebuild this page" (see Floating button) brings back whole-page reformatting without touching the page: it shows the result in the side reader. Section cards and the in-place full-page swap stay parked.
 
 - Replace the AI-rewrites-sections approach with DOM block IDs: send numbered snippets, get block IDs back, wrap the real DOM ranges. Removes the heading/Dice/even-distribution guessing in `renderAISections`.
 - Only offer it on pages that pass a readability check: a `main`/`article` landmark, enough text compared to interactive elements, little `contenteditable`.
