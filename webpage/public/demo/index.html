@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synapse demo: see a page rebuilt for your brain</title>
+<meta name="description" content="Try Synapse in your browser: pick a reading profile, watch a dense article get rebuilt around it, and ask for an explanation of any phrase.">
+<link rel="canonical" href="https://usesynapse.cv/demo">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<meta property="og:title" content="Synapse demo">
+<meta property="og:description" content="Pick a reading profile and watch a dense article get rebuilt around it.">
+<meta property="og:image" content="https://usesynapse.cv/og-image.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#fcf9f8; --surface:#ffffff; --sunk:#f6f3f2; --line:#e4e0dd; --line-strong:#d6d1cd;
+  --ink:#1b1c1c; --ink-2:#3d3d38; --muted:#5e5f5b;
+  --brand:#004635; --brand-2:#1b5e4b; --brand-soft:#e6f0ec; --mark:#d8ebe3; --on-brand:#ffffff;
+  --serif:'Source Serif 4', Georgia, serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#121413; --surface:#1b1e1d; --sunk:#202423; --line:#2c312f; --line-strong:#3a403e;
+    --ink:#eef0ee; --ink-2:#cdd2cf; --muted:#a3aaa6;
+    --brand:#7fd1b2; --brand-2:#9fdcc5; --brand-soft:#1d3a31; --mark:#24483c; --on-brand:#0b1f18;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121413; --surface:#1b1e1d; --sunk:#202423; --line:#2c312f; --line-strong:#3a403e;
+  --ink:#eef0ee; --ink-2:#cdd2cf; --muted:#a3aaa6;
+  --brand:#7fd1b2; --brand-2:#9fdcc5; --brand-soft:#1d3a31; --mark:#24483c; --on-brand:#0b1f18;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Atkinson Hyperlegible Next',system-ui,sans-serif;font-size:17px;line-height:1.55}
+a{color:var(--brand)}a:hover{color:var(--brand-2)}
+button{font:inherit;cursor:pointer;color:inherit}
+button:focus-visible,a:focus-visible{outline:3px solid var(--brand-2);outline-offset:2px}
+[hidden]{display:none !important}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+@media (min-width:720px){.wrap{padding:0 24px}}
+header{border-bottom:1px solid var(--line)}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:18px 0}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+.brand b{font-family:var(--serif);font-size:22px;color:var(--brand)}
+.tag{font-size:13px;color:var(--muted);border:1px solid var(--line-strong);border-radius:999px;padding:2px 10px}
+.steps{display:flex;flex-wrap:wrap;gap:8px}
+.pill{min-height:44px;padding:8px 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2);font-size:15px}
+.pill[aria-current="step"]{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
+main{padding:40px 0 64px}
+.stack{display:flex;flex-direction:column;gap:28px}
+.eyebrow{margin:0;font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-2)}
+h1,h2{font-family:var(--serif);margin:0;line-height:1.12}
+h1{font-size:clamp(34px,5vw,48px)}
+h2{font-size:clamp(28px,4vw,38px)}
+.lede{margin:0;font-size:19px;color:var(--ink-2);max-width:720px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.card{text-align:left;display:flex;flex-direction:column;gap:10px;padding:24px;border-radius:16px;border:2px solid var(--line);background:var(--surface)}
+.card[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-soft)}
+.card .name{font-size:14px;font-weight:700;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.card[aria-pressed="true"] .name{color:var(--brand)}
+.card .badge{display:none}
+.card[aria-pressed="true"] .badge{display:inline}
+.badge{font-size:13px;font-weight:700;color:var(--on-brand);background:var(--brand);border-radius:999px;padding:2px 10px}
+.card .title{font-family:var(--serif);font-size:22px;font-weight:700;line-height:1.25}
+.card .desc{font-size:16px;color:var(--ink-2)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:16px}
+.btn{min-height:48px;padding:12px 24px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2);font-size:16px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.btn.primary{border-color:var(--brand);background:var(--brand);color:var(--on-brand);font-weight:700;font-size:17px}
+.btn.outline{border-color:var(--brand);color:var(--brand);font-weight:700}
+.note{font-size:15px;color:var(--muted)}
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.seg{display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--sunk)}
+.seg button{min-height:44px;padding:8px 16px;border-radius:9px;border:none;background:transparent;color:var(--ink-2);font-size:15px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--brand);font-weight:700}
+.browser{border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.chrome{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--sunk);border-bottom:1px solid var(--line)}
+.dots{display:flex;gap:6px}.dots span{width:11px;height:11px;border-radius:50%;background:var(--line-strong)}
+.url{flex:1;min-width:0;font-size:14px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.chip{font-size:14px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:999px;padding:4px 12px;white-space:nowrap}
+.rebuild{min-height:40px;padding:6px 14px;border-radius:8px;border:none;background:var(--brand);color:var(--on-brand);font-size:14px;font-weight:700;white-space:nowrap}
+.original{padding:36px clamp(20px,4vw,40px) 44px;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.5;color:var(--ink-2);max-width:860px}
+.original h3{margin:0 0 18px;font-size:26px;line-height:1.2;color:var(--ink)}
+.original p{margin:0 0 14px}
+.kicker{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.split{display:flex;flex-wrap:wrap}
+.rebuilt{flex:999 1 560px;min-width:0;padding:32px clamp(20px,4vw,40px) 40px;display:flex;flex-direction:column;gap:20px}
+.rebuilt h3{margin:0;font-family:var(--serif);font-size:30px;line-height:1.2}
+.rebuilt p{margin:0}
+.view{display:flex;flex-direction:column;gap:18px}
+.box{padding:14px 18px;border-radius:12px;background:var(--sunk)}
+.box.key{background:var(--brand-soft)}
+.box.ring{border:1px solid var(--line-strong);background:var(--ground)}
+.label{margin:0 0 4px !important;font-size:14px;font-weight:700;color:var(--brand)}
+.part{font-size:14px;font-weight:700;color:var(--muted)}
+ul{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
+h4{margin:0;font-size:20px;color:var(--brand)}
+.term{padding:0 2px;border:none;border-bottom:2px solid var(--brand-2);background:var(--mark);color:var(--brand);font-weight:700}
+aside{flex:1 1 300px;min-width:0;border-left:1px solid var(--line);background:var(--ground);padding:28px 24px;display:flex;flex-direction:column;gap:12px}
+@media (max-width:900px){aside{border-left:none;border-top:1px solid var(--line)}}
+aside p{margin:0}
+.x{width:44px;height:44px;border:none;background:transparent;color:var(--ink-2);display:flex;align-items:center;justify-content:center}
+.choice{min-height:44px;text-align:left;padding:8px 14px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2);font-size:15px}
+.choice[aria-pressed="true"]{border:2px solid var(--brand);background:var(--brand-soft);color:var(--brand);font-weight:700}
+.plan{display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:16px;border:1px solid var(--line);background:var(--surface)}
+.plan.featured{border:2px solid var(--brand);background:var(--brand-soft)}
+.plan p{margin:0}
+.price{font-family:var(--serif);font-size:40px;font-weight:700}
+.price small{font-size:18px;font-weight:500;color:var(--ink-2)}
+.plan .btn{margin-top:auto}
+.cta{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:24px 28px;border-radius:16px;background:var(--brand);color:var(--on-brand)}
+.cta p{margin:0;flex:1 1 320px;font-family:var(--serif);font-size:24px;font-weight:700}
+.cta a{background:var(--on-brand);color:var(--brand);border:none;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="Synapse home">
+      <img src="/favicon-48.png" width="28" height="28" alt="">
+      <b>Synapse</b>
+      <span class="tag">Demo</span>
+    </a>
+    <nav class="steps" aria-label="Demo steps">
+      <button type="button" class="pill" data-go="profile">1. Profile</button>
+      <button type="button" class="pill" data-go="read">2. Read</button>
+      <button type="button" class="pill" data-go="plans">3. Plans</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="stack" data-step="profile" aria-labelledby="h-profile">
+    <div class="stack" style="gap:10px">
+      <p class="eyebrow">Step 1 · Your reading profile</p>
+      <h1 id="h-profile">The internet wasn't built for your brain. Synapse is.</h1>
+      <p class="lede">Tell Synapse how reading usually goes for you. Every page you open is rebuilt around that, and your profile keeps adapting as you read.</p>
+    </div>
+    <div class="grid3" data-profile-cards></div>
+    <div class="row">
+      <button type="button" class="btn primary" data-go="read">Open a page as <span data-profile-name></span> →</button>
+      <span class="note">You can switch profiles at any time.</span>
+    </div>
+  </section>
+
+  <section class="stack" data-step="read" aria-labelledby="h-read" style="gap:20px" hidden>
+    <div class="head">
+      <div class="stack" style="gap:6px">
+        <p class="eyebrow">Step 2 · Rebuild the page</p>
+        <h2 id="h-read">Same article, rebuilt for a <span data-profile-name></span></h2>
+      </div>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-view="original">Original</button>
+        <button type="button" data-view="rebuilt">Synapse</button>
+      </div>
+    </div>
+
+    <div class="browser">
+      <div class="chrome">
+        <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="url">example-journal.org/learning/why-we-forget-what-we-read</span>
+        <button type="button" class="rebuild" data-view="rebuilt" data-when="original">Rebuild with Synapse</button>
+        <span class="chip" data-when="rebuilt">Rebuilt · <span data-profile-name></span></span>
+      </div>
+
+      <article class="original" data-when="original">
+        <p class="kicker">Learning · Long read</p>
+        <h3>Why We Forget What We Read, and What the Research on Memory Consolidation Suggests About Changing It</h3>
+        <p>It is a familiar experience to reach the end of a long article and find that very little of it remains, a phenomenon that researchers in cognitive psychology have approached from several directions, including the way working memory limits how much new information can be held at once, the role that sleep appears to play in consolidating what was encountered during the day, and the observation, repeated across many studies, that rereading a passage tends to produce a feeling of familiarity that is easily mistaken for understanding, whereas actively attempting to recall the material without looking at it, a technique often described as retrieval practice, tends to strengthen the memory itself even when the attempt is effortful or partly unsuccessful.</p>
+        <p>Spacing those attempts out over days rather than concentrating them in a single sitting appears to amplify the effect, although the mechanisms behind this spacing effect remain debated, with some accounts emphasising the additional effort required to retrieve partly forgotten material and others pointing to the variety of contexts in which the material ends up being encountered, and practical recommendations drawn from this literature therefore tend to combine short self-tests with deliberately delayed review.</p>
+        <p style="margin:0">None of this means that reading is wasted effort; rather, it suggests that the experience of reading fluently is a poor guide to what will be remembered, and that small changes in how a reader engages with a text after the first pass may matter more than the speed or completeness of that first pass.</p>
+      </article>
+
+      <div class="split" data-when="rebuilt">
+        <article class="rebuilt">
+          <h3>Why we forget what we read</h3>
+
+          <div class="view" data-for="load-reducer">
+            <div class="box key">
+              <p class="label">The key idea</p>
+              <p style="font-size:19px">Rereading feels like learning. Testing yourself is what actually makes it stick.</p>
+            </div>
+            <div class="stack" style="gap:6px">
+              <p class="part">Part 1 of 3 · Why it slips away</p>
+              <ul>
+                <li>Your brain can only hold a little new information at once.</li>
+                <li>Sleep helps lock in what you read during the day.</li>
+                <li>Rereading makes text feel familiar, which is easy to mistake for understanding.</li>
+              </ul>
+            </div>
+            <div class="stack" style="gap:6px">
+              <p class="part">Part 2 of 3 · What helps</p>
+              <ul>
+                <li>Try to recall it without looking. This is called <button type="button" class="term" data-explain>retrieval practice</button>.</li>
+                <li>Space your reviews over days, not one sitting.</li>
+              </ul>
+            </div>
+            <div class="stack" style="gap:6px">
+              <p class="part">Part 3 of 3 · The takeaway</p>
+              <p>Reading smoothly doesn't mean you'll remember. What you do after the first read matters most.</p>
+            </div>
+          </div>
+
+          <div class="view" data-for="comprehension-gap">
+            <p>After a long article, very little of it tends to stay with us. Part of the reason is that rereading creates a sense of familiarity that is easily mistaken for understanding. Actively recalling the material, known as <button type="button" class="term" data-explain>retrieval practice</button>, strengthens the memory itself.</p>
+            <div class="box">
+              <p class="label">What this is really saying</p>
+              <p>"I've seen this before" is not the same as "I understand this." Testing yourself tells you which one you have.</p>
+            </div>
+            <p>Spreading those attempts over several days amplifies the effect. Researchers still debate exactly why.</p>
+            <div class="box">
+              <p class="label">For example</p>
+              <p>Quiz yourself on a chapter tonight, then again in three days, instead of rereading it twice tonight.</p>
+            </div>
+            <div class="box key">
+              <p class="label">The implied point</p>
+              <p>The author isn't saying reading is pointless. They're saying how easy reading feels is a bad signal of what you'll keep.</p>
+            </div>
+          </div>
+
+          <div class="view" data-for="hyperfocus">
+            <section class="stack" style="gap:6px">
+              <h4>1. The problem: fluency fools us</h4>
+              <p>Working memory holds little at once, sleep consolidates the day's reading, and rereading builds familiarity that feels like understanding but isn't.</p>
+            </section>
+            <section class="stack" style="gap:6px">
+              <h4>2. The fix: recall, then space it out</h4>
+              <p><button type="button" class="term" data-explain>Retrieval practice</button> strengthens memory even when recall is hard or partial. Spacing reviews over days amplifies it. Why spacing works is still debated: extra retrieval effort vs. varied contexts.</p>
+            </section>
+            <section class="stack" style="gap:6px">
+              <h4>3. The conclusion</h4>
+              <p>How you engage after the first pass matters more than how fast or completely you read it.</p>
+            </section>
+            <div class="box ring">
+              <p class="label">Remember</p>
+              <ul><li>Familiar ≠ understood</li><li>Self-test beats rereading</li><li>Spread reviews over days</li></ul>
+            </div>
+          </div>
+        </article>
+
+        <aside aria-label="Synapse panel" aria-live="polite">
+          <div class="stack" style="gap:12px" data-panel="explain" hidden>
+            <div class="row" style="justify-content:space-between;gap:8px">
+              <p class="eyebrow" style="letter-spacing:.06em">Explain</p>
+              <button type="button" class="x" data-close aria-label="Close explanation">
+                <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M4 4 L14 14 M14 4 L4 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <p style="font-family:var(--serif);font-size:22px;font-weight:700">“retrieval practice”</p>
+            <p data-explain-text></p>
+            <div class="row" style="gap:8px">
+              <button type="button" class="choice" data-depth="simple">Simpler</button>
+              <button type="button" class="choice" data-depth="detail">More detail</button>
+            </div>
+            <p class="note" style="font-size:14px">Highlight any text, or circle a chart or image, to get an explanation like this.</p>
+          </div>
+          <div class="stack" style="gap:12px" data-panel="try">
+            <p class="eyebrow" style="letter-spacing:.06em">Try it</p>
+            <p>Click the highlighted phrase in the article to see Synapse explain it.</p>
+            <p class="note">Or switch profile to see the same page rebuilt differently.</p>
+            <div class="stack" style="gap:8px" data-profile-choices></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="row">
+      <button type="button" class="btn primary" data-go="plans">See plans →</button>
+      <button type="button" class="btn" data-go="profile">← Change profile</button>
+    </div>
+  </section>
+
+  <section class="stack" data-step="plans" aria-labelledby="h-plans" hidden>
+    <div class="stack" style="gap:8px">
+      <p class="eyebrow">Step 3 · Get started</p>
+      <h2 id="h-plans">Start free. Upgrade when it clicks.</h2>
+      <p class="lede" style="font-size:18px">Paid plans start with a 7-day free trial.</p>
+    </div>
+    <div class="grid3">
+      <div class="plan">
+        <p class="part">Explorer</p>
+        <p class="price">Free</p>
+        <p style="color:var(--ink-2)">Enough to feel the difference.</p>
+        <ul><li>Web reformatting</li><li>Highlight and circle to explain</li><li>Single profile</li><li>30 section reformats per month</li></ul>
+        <a class="btn outline" href="/auth?tab=signup">Start Free</a>
+      </div>
+      <div class="plan featured">
+        <p class="part" style="color:var(--brand);display:flex;justify-content:space-between;gap:8px"><span>Thinker Lite</span><span class="badge">Most popular</span></p>
+        <p class="price">$4<small>/mo</small></p>
+        <p style="color:var(--ink-2)">For steady, everyday reading.</p>
+        <ul><li>Everything in Free</li><li>Up to 300 section reformats per month</li><li>Saved explanation history</li><li>Document support</li></ul>
+        <a class="btn primary" href="/auth?tab=signup">Upgrade</a>
+      </div>
+      <div class="plan">
+        <p class="part">Deep Thinker</p>
+        <p class="price">$8<small>/mo</small></p>
+        <p style="color:var(--ink-2)">No ceiling, no rationing.</p>
+        <ul><li>Unlimited explains and reformats</li><li>Full Document and PDF support</li><li>Cognitive pattern insights</li><li>Full adaptive feedback loop</li></ul>
+        <a class="btn outline" href="/auth?tab=signup">Go Deep</a>
+      </div>
+    </div>
+    <div class="cta">
+      <p>Read the web the way your brain works.</p>
+      <a class="btn" href="/auth?tab=signup">Get the Extension</a>
+    </div>
+    <div><button type="button" class="btn" data-go="read">← Back to the page</button></div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  var PROFILES = [
+    { id: 'load-reducer', name: 'Load Reducer', title: 'I struggle to stay focused while reading', desc: 'I lose the thread, get distracted, or need to re-read things. Dense pages are exhausting.' },
+    { id: 'comprehension-gap', name: 'Comprehension Gap', title: 'I can read fine, but meaning gets lost', desc: "I finish a paragraph and don't know what it was really saying. I miss subtext and implied meaning." },
+    { id: 'hyperfocus', name: 'Hyperfocus Reader', title: 'I read a lot. I just need better structure', desc: 'I can hyperfocus on reading, but I need help organizing, retaining, and navigating information.' }
+  ];
+  var EXPLAIN = {
+    simple: 'Close the page and try to remember what it said. That effort is what helps you remember.',
+    normal: 'Instead of rereading, you test yourself by recalling the material from memory. The act of pulling it back out is what strengthens it, even when you only half remember.',
+    detail: 'Retrieval practice means recalling information without looking, through self-quizzes, flashcards or summarising from memory. Each effortful recall strengthens the memory more than another pass of rereading, and it also shows you what you have not yet learned. It works best when the attempts are spaced over days.'
+  };
+  var state = { step: 'profile', profile: 'load-reducer', view: 'original', explain: false, depth: 'normal' };
+  var $ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
+
+  function build() {
+    var cards = document.querySelector('[data-profile-cards]');
+    var choices = document.querySelector('[data-profile-choices]');
+    PROFILES.forEach(function (p) {
+      var card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'card';
+      card.dataset.profile = p.id;
+      card.innerHTML = '<span class="name"><span></span><span class="badge">Selected</span></span><span class="title"></span><span class="desc"></span>';
+      card.querySelector('.name span').textContent = p.name;
+      card.querySelector('.title').textContent = p.title;
+      card.querySelector('.desc').textContent = p.desc;
+      cards.appendChild(card);
+
+      var choice = document.createElement('button');
+      choice.type = 'button';
+      choice.className = 'choice';
+      choice.dataset.profile = p.id;
+      choice.textContent = p.name;
+      choices.appendChild(choice);
+    });
+  }
+
+  function render() {
+    var current = PROFILES.filter(function (p) { return p.id === state.profile; })[0];
+    $('[data-step]').forEach(function (el) { el.hidden = el.dataset.step !== state.step; });
+    $('.pill').forEach(function (el) {
+      if (el.dataset.go === state.step) el.setAttribute('aria-current', 'step');
+      else el.removeAttribute('aria-current');
+    });
+    $('[data-profile]').forEach(function (el) { el.setAttribute('aria-pressed', String(el.dataset.profile === state.profile)); });
+    $('[data-profile-name]').forEach(function (el) { el.textContent = current.name; });
+    $('.seg [data-view]').forEach(function (el) { el.setAttribute('aria-pressed', String(el.dataset.view === state.view)); });
+    $('[data-when]').forEach(function (el) { el.hidden = el.dataset.when !== state.view; });
+    $('[data-for]').forEach(function (el) { el.hidden = el.dataset.for !== state.profile; });
+    document.querySelector('[data-panel="explain"]').hidden = !state.explain;
+    document.querySelector('[data-panel="try"]').hidden = state.explain;
+    document.querySelector('[data-explain-text]').textContent = EXPLAIN[state.depth];
+  }
+
+  function set(patch) {
+    var stepChanged = patch.step && patch.step !== state.step;
+    for (var k in patch) state[k] = patch[k];
+    render();
+    if (stepChanged) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.go) set({ step: t.dataset.go });
+    else if (t.dataset.profile) set({ profile: t.dataset.profile, explain: false });
+    else if (t.dataset.view) set({ view: t.dataset.view, explain: false });
+    else if (t.hasAttribute('data-explain')) set({ explain: true, depth: 'normal' });
+    else if (t.hasAttribute('data-close')) set({ explain: false });
+    else if (t.dataset.depth) set({ depth: t.dataset.depth });
+  });
+
+  build();
+  render();
+})();
+</script>
+</body>
+</html>

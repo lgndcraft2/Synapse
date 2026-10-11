@@ -17,6 +17,10 @@
       "destination": "/refunds/index.html"
     },
     {
+      "source": "/demo",
+      "destination": "/demo/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/app.html"
     }
