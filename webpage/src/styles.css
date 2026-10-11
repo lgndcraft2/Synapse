@@ -246,7 +246,7 @@ h4 {
   padding-block: clamp(64px, 8vh, 112px) 32px;
 }
 
-.hero::before {
+/* .hero::before {
   position: absolute;
   top: 52px;
   right: var(--page-margin);
@@ -258,7 +258,7 @@ h4 {
     var(--surface-low);
   content: "";
   transform: rotate(2deg);
-}
+} */
 
 .hero::after {
   position: absolute;

@@ -29,7 +29,7 @@ import { FAQS } from './lib/faq';
 import ConfigBanner from './component/ConfigBanner';
 import { BrandLockup } from './component/Brand';
 
-const navItems = ['Explain', 'Profile Engine', 'Solutions', 'How it Works'];
+// const navItems = ['Explain', 'Profile Engine', 'Solutions', 'How it Works'];
 
 const explainFeatures = [
   {
@@ -154,13 +154,13 @@ function App() {
       <header className="topbar">
         <div className="nav-shell">
           <BrandLockup href="#top" height={32} />
-          <nav className="nav-links" aria-label="Primary navigation">
+          {/* <nav className="nav-links" aria-label="Primary navigation">
             {navItems.map((item) => (
               <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`}>
                 {item}
               </a>
             ))}
-          </nav>
+          </nav> */}
           <div className="nav-actions" style={{display: 'flex', gap: '12px', alignItems: 'center'}}>
             {isLoggedIn ? (
               <a href="/dashboard" className="nav-login" style={{textDecoration: 'none'}}>Dashboard</a>
@@ -169,26 +169,16 @@ function App() {
             )}
             <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
-          <button
-            className="icon-button menu-button"
-            type="button"
-            aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
-            aria-expanded={mobileNavOpen}
-            aria-controls="mobile-navigation"
-            onClick={() => setMobileNavOpen((open) => !open)}
-          >
-            <Icon name="menu" />
-          </button>
-          <nav id="mobile-navigation" className={`mobile-nav ${mobileNavOpen ? 'is-open' : ''}`} aria-label="Mobile navigation">
+          {/* <nav id="mobile-navigation" className={`mobile-nav ${mobileNavOpen ? 'is-open' : ''}`} aria-label="Mobile navigation">
             {navItems.map((item) => (
-              <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileNavOpen(false)}>
+              <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`}>
                 {item}
               </a>
             ))}
-            <a className="button button-primary" href="/auth?tab=signup" onClick={() => setMobileNavOpen(false)}>
+            <a className="button button-primary" href="/auth?tab=signup">
               Get Extension
             </a>
-          </nav>
+          </nav> */}
         </div>
       </header>
 
@@ -503,7 +493,6 @@ function App() {
             <a href="/privacy">Privacy Policy</a>
             <a href="/terms">Terms of Service</a>
             <a href="/refunds">Refund Policy</a>
-            <a href="#library">Research Library</a>
             <a href="/support">Contact Support</a>
           </nav>
         </div>
