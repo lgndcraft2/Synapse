@@ -384,6 +384,27 @@ border:1.5px solid #ddd!important;border-radius:8px!important;
 margin-bottom:12px!important;font-family:inherit!important;background:#fafafa!important}
 .synapse-fp input:focus,.synapse-fp textarea:focus{
 border-color:${C.green}!important;outline:none!important;background:white!important}
+
+/* REFORMAT BLOCKS — the fixed vocabulary the reformat prompt must use
+   (backend/app/services/ai.py, _REFORMAT_BLOCKS). Text size comes from the
+   container (card, full page, reader); these only lay the blocks out. */
+.syn{display:flex!important;flex-direction:column!important;gap:14px!important}
+.synapse-fp .syn{gap:22px!important}
+.syn .syn-key,.syn .syn-note,.syn .syn-example,.syn .syn-recap{
+border-radius:12px!important;padding:12px 16px!important}
+.synapse-fp .syn .syn-key,.synapse-fp .syn .syn-note,
+.synapse-fp .syn .syn-example,.synapse-fp .syn .syn-recap{padding:16px 20px!important}
+.syn .syn-key{background:${C.greenLight}!important}
+.syn .syn-key>p:not(.syn-label){color:${C.g900}!important;font-weight:600!important}
+.syn .syn-note,.syn .syn-example{background:${C.g100}!important}
+.syn .syn-recap{background:${C.g50}!important;border:1px solid ${C.g200}!important}
+.syn .syn-part{display:flex!important;flex-direction:column!important;gap:6px!important}
+.syn .syn-part>h3{color:${C.greenDeep}!important;margin:0!important}
+.syn .syn-label{font-size:.78em!important;font-weight:700!important;line-height:1.3!important;
+color:${C.greenDark}!important;margin:0 0 4px!important;letter-spacing:.01em!important}
+.syn .syn-part>.syn-label{color:${C.g600}!important}
+.syn .syn-key>:last-child,.syn .syn-note>:last-child,.syn .syn-example>:last-child,
+.syn .syn-recap>:last-child,.syn .syn-part>:last-child{margin-bottom:0!important}
 /* DOCUMENT READER */
 .synapse-reader{position:fixed!important;inset:0!important;z-index:2147483638!important;
 background:rgba(0,0,0,.55)!important;display:flex!important;justify-content:flex-end!important;
