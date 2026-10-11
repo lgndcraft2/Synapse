@@ -1,21 +1,29 @@
 """
-Build the Chrome Web Store upload: dist/synapse-extension-<version>.zip
+Build the production extension.
 
     python scripts/package_extension.py
 
-The zip holds extension/ as-is except for the manifest, which loses the
-localhost origins in "externally_connectable". Those let a local dashboard
-hand a session to an unpacked copy; a store install has no use for them, and
-they would let any page served from localhost on a user's machine message it.
+Writes two copies of the same build:
+  dist/synapse-extension-<version>.zip  the Chrome Web Store upload
+  dist/synapse-extension/               the same files unzipped, for
+                                        "Load unpacked" to test production
 
-Nothing else differs between the two builds. Which API the extension talks to
-is decided at runtime (extension/lib/config.js), so the code is not rewritten.
+They hold extension/ as-is with two changes:
+  - manifest.json loses the localhost origins in "externally_connectable".
+    Those let a local dashboard hand a session to an unpacked copy; a
+    production build has no use for them, and they would let any page served
+    from localhost on a user's machine message it.
+  - lib/config.js gets BUILD = "prod", so the build talks to the production
+    API and dashboard even when loaded unpacked. Without it an unpacked copy
+    counts as dev and sends you to localhost.
+
 Uses only the standard library.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -29,6 +37,9 @@ SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 SKIP_SUFFIXES = {".map"}
 
 DEV_PREFIXES = ("http://localhost", "http://127.0.0.1")
+
+CONFIG = "lib/config.js"
+BUILD_LINE = "const BUILD = null;"
 
 
 def store_manifest() -> dict:
@@ -63,22 +74,42 @@ def shipped_files() -> list[Path]:
     return files
 
 
+def prod_config() -> bytes:
+    source = (EXTENSION / CONFIG).read_text(encoding="utf-8")
+    if source.count(BUILD_LINE) != 1:
+        sys.exit(f"extension/{CONFIG} must contain `{BUILD_LINE}` exactly once.")
+    return source.replace(BUILD_LINE, 'const BUILD = "prod";').encode("utf-8")
+
+
 def main() -> None:
-    if not (EXTENSION / "lib" / "config.js").is_file():
-        sys.exit("extension/lib/config.js is missing; the store build would not know its API.")
+    if not (EXTENSION / CONFIG).is_file():
+        sys.exit(f"extension/{CONFIG} is missing; the build would not know its API.")
 
     manifest = store_manifest()
-    files = shipped_files()
+    contents: dict[str, bytes] = {
+        "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
+    }
+    for path in shipped_files():
+        contents[path.relative_to(EXTENSION).as_posix()] = path.read_bytes()
+    contents[CONFIG] = prod_config()
 
     DIST.mkdir(exist_ok=True)
     out = DIST / f"synapse-extension-{manifest['version']}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
-        for path in files:
-            zf.write(path, path.relative_to(EXTENSION).as_posix())
+        for name, data in contents.items():
+            zf.writestr(name, data)
+
+    # Same path every time, so Chrome keeps giving the unpacked copy one ID.
+    unpacked = DIST / "synapse-extension"
+    shutil.rmtree(unpacked, ignore_errors=True)
+    for name, data in contents.items():
+        target = unpacked / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
     size_kb = out.stat().st_size / 1024
-    print(f"Wrote {out.relative_to(ROOT)} ({len(files) + 1} files, {size_kb:,.0f} KB)")
+    print(f"Wrote {out.relative_to(ROOT)} ({len(contents)} files, {size_kb:,.0f} KB)")
+    print(f"  and {unpacked.relative_to(ROOT)}{'/'} for Load unpacked")
     print(f"  version:               {manifest['version']}")
     print(f"  permissions:           {', '.join(manifest.get('permissions', []))}")
     print(f"  host_permissions:      {', '.join(manifest.get('host_permissions', []))}")

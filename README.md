@@ -86,7 +86,7 @@ The API URL needs no setting: `npm run dev` uses `http://localhost:8000` and a p
 
 The extension picks its URLs in `extension/lib/config.js`: an unpacked copy uses `http://localhost:8000` and `http://localhost:5173`, a Chrome Web Store install uses `https://api.usesynapse.cv` and `https://usesynapse.cv`. A store install also refuses a session handoff for any other API.
 
-To build the Chrome Web Store upload, run `python scripts/package_extension.py`. It writes `dist/synapse-extension-<version>.zip`: the same files, with the localhost origins removed from `externally_connectable`. Bump `version` in `extension/manifest.json` before each new upload. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
+To build the Chrome Web Store upload, run `python scripts/package_extension.py`. It writes `dist/synapse-extension-<version>.zip` and the same build unzipped in `dist/synapse-extension/`: the same files, with the localhost origins removed from `externally_connectable` and `lib/config.js` fixed to production. To test production before the store listing exists, load `dist/synapse-extension/` with **Load unpacked**, then set its ID as `VITE_EXTENSION_ID` on Vercel. Bump `version` in `extension/manifest.json` before each new upload. The manifest already permits the local Vite origins used by the project and the production dashboard origins.
 
 ## Tests
 
