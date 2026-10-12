@@ -789,7 +789,9 @@ def _explain_user_text(
     elif safe_text.strip():
         ask = (
             "The attached image is the area I circled on the page. The text found inside that "
-            "area is between these tags. Explain the circled area as a whole for my cognitive profile:"
+            "area is between these tags. Explain the circled area as a whole for my cognitive profile. "
+            "If the image shows a picture, chart, diagram, table or photo, explain what it shows and "
+            "its main takeaway too, not only the text: the visual may hold information the text does not."
             f"\n\n<source_content>\n{safe_text}\n</source_content>"
         )
     else:
