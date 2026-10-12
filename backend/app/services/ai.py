@@ -555,15 +555,28 @@ async def call_claude(page_text: str, profile: dict, feedback_summary: str) -> R
     return ReformatOutput(clean_reformat_html(data["content"][0]["text"]), cut_off)
 
 
-async def generate_sq4r_questions(page_text: str, profile_type: str) -> list[str] | None:
+class SQ4ROutput(NamedTuple):
+    questions: list[str] | None
+    # Whether Gemini was asked at all (hyperfocus skips it), and whether it
+    # answered. The reformat route records it as its own AI usage event.
+    called: bool
+    succeeded: bool
+    input_characters: int
+    output_characters: int
+    duration_ms: float
+
+
+async def generate_sq4r_questions(page_text: str, profile_type: str) -> SQ4ROutput:
     """
     Generate SQ4R pre-reading focus questions.
-    Only fires for load-reducer and comprehension-gap profiles.
+    Skipped for the hyperfocus profile.
     Uses Gemini (free) regardless of user plan — these are lightweight calls.
+    Never raises: the reformat goes ahead without questions on any failure.
     """
     if profile_type == "hyperfocus":
-        return None
+        return SQ4ROutput(None, False, False, 0, 0, 0.0)
 
+    source = page_text[:600]
     payload = {
         "system_instruction": {
             "parts": [{"text": (
@@ -574,19 +587,28 @@ async def generate_sq4r_questions(page_text: str, profile_type: str) -> list[str
             )}]
         },
         "contents": [{
-            "parts": [{"text": f"Generate focus questions for the content inside these tags:\n\n<source_content>\n{_escape_tags(page_text[:600])}\n</source_content>"}]
+            "parts": [{"text": f"Generate focus questions for the content inside these tags:\n\n<source_content>\n{_escape_tags(source)}\n</source_content>"}]
         }],
         "generationConfig": {"maxOutputTokens": 200},
     }
 
+    started = time.perf_counter()
     try:
         data = await _gemini_generate(payload, timeout=10)
         raw = data["candidates"][0]["content"]["parts"][0]["text"]
-        
-        questions = _extract_json_array(raw)
-        return questions[:3] if isinstance(questions, list) else None
     except Exception:
-        return None
+        return SQ4ROutput(None, True, False, len(source), 0, (time.perf_counter() - started) * 1_000)
+
+    # Gemini answered, so the call counts as made even if the reply is unusable.
+    duration_ms = (time.perf_counter() - started) * 1_000
+    try:
+        questions = _extract_json_array(raw)
+    except Exception:
+        questions = None
+    return SQ4ROutput(
+        questions[:3] if isinstance(questions, list) else None,
+        True, True, len(source), len(raw), duration_ms,
+    )
 
 
 SECTION_SYSTEM_PROMPT = """You are a document structure analyser.

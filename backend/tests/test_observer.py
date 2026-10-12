@@ -249,13 +249,13 @@ async def test_page_reformat_records_cut_off_and_clipped(client, session_factory
 
     from app.api.routes import reformat
     from app.models.models import AIUsageEvent
-    from app.services.ai import ReformatOutput
+    from app.services.ai import ReformatOutput, SQ4ROutput
 
     async def fake_gemini(page_text, profile, feedback_summary):
         return ReformatOutput('<div class="syn"><p>Part</p></div>', True)
 
     async def fake_questions(page_text, profile_type):
-        return None
+        return SQ4ROutput(["Why?"], True, True, 600, 9, 150.0)
 
     monkeypatch.setattr(reformat, "call_gemini", fake_gemini)
     monkeypatch.setattr(reformat, "generate_sq4r_questions", fake_questions)
@@ -272,6 +272,78 @@ async def test_page_reformat_records_cut_off_and_clipped(client, session_factory
     })
     assert response.status_code == 200, response.text
 
+    assert response.json()["questions"] == ["Why?"]
+
     async with session_factory() as session:
         events = (await session.scalars(select(AIUsageEvent).order_by(AIUsageEvent.created_at))).all()
-    assert [(e.cut_off, e.input_clipped) for e in events] == [(True, True), (True, None)]
+    reformats = [e for e in events if e.operation == "reformat"]
+    assert [(e.cut_off, e.input_clipped) for e in reformats] == [(True, True), (True, None)]
+    # The SQ4R questions call is its own Gemini event, one per reformat.
+    sq4r = [e for e in events if e.operation == "sq4r_questions"]
+    assert [(e.provider, e.input_characters, e.output_characters, e.duration_ms, e.succeeded) for e in sq4r] == [
+        ("gemini", 600, 9, 150, True), ("gemini", 600, 9, 150, True),
+    ]
+
+
+async def test_sq4r_is_recorded_even_when_the_reformat_fails(client, session_factory, monkeypatch):
+    from sqlalchemy import select
+
+    from app.api.routes import reformat
+    from app.models.models import AIUsageEvent
+    from app.services.ai import SQ4ROutput
+
+    async def failing_gemini(page_text, profile, feedback_summary):
+        raise RuntimeError("provider down")
+
+    async def fake_questions(page_text, profile_type):
+        return SQ4ROutput(None, True, False, 600, 0, 80.0)
+
+    monkeypatch.setattr(reformat, "call_gemini", failing_gemini)
+    monkeypatch.setattr(reformat, "generate_sq4r_questions", fake_questions)
+
+    for _ in range(2):
+        response = await client.post("/api/v1/reformat", json={
+            "page_text": "A page. " * 60, "mode": "fullpage", "fingerprint": "fp-sq4r-fail",
+        })
+        assert response.status_code == 502
+
+    from app.models.models import UsageTracking
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+        charged = (await session.scalars(select(UsageTracking.lifetime_requests))).all()
+    assert sorted((e.operation, e.succeeded) for e in events) == [("reformat", False)] * 2 + [("sq4r_questions", False)] * 2
+    # Keeping the records doesn't keep the failed request's lifetime charge.
+    # The first request's row insert survives only because SQLite's driver
+    # mishandles the limiter's savepoint; Postgres rolls it back. The second
+    # request takes the update path, which must not stick.
+    assert charged == [1]
+
+
+async def test_failed_document_reformat_is_recorded(client, session_factory, monkeypatch):
+    import base64
+
+    from sqlalchemy import select
+
+    import app.services.ai as ai
+    from app.models.models import AIUsageEvent
+
+    async def failing_document(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(ai, "call_document", failing_document)
+    response = await client.post("/api/v1/reformat/reformat-document", json={
+        "base64_data": base64.b64encode(b"some notes").decode(), "media_type": "text/plain",
+        "fingerprint": "fp-doc-fail",
+    })
+    assert response.status_code == 502
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+    assert [(e.operation, e.source, e.succeeded) for e in events] == [("document_reformat", "document", False)]
+
+
+async def test_sq4r_skipped_for_hyperfocus_is_not_a_call():
+    from app.services.ai import generate_sq4r_questions
+
+    assert (await generate_sq4r_questions("Some text", "hyperfocus")).called is False

@@ -217,7 +217,7 @@ class UsageTracking(Base):
 
 
 class AIUsageEvent(Base):
-    """A content-free record of one primary reformat provider call.
+    """A content-free record of one AI provider call (explain, reformat or SQ4R questions).
 
     The observer needs provider usage and cost trends, but must never turn into
     a second store of the page a person was reading.  Token counts are estimated

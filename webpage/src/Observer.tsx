@@ -589,7 +589,7 @@ export default function Observer() {
                       <tr key={provider.provider}>
                         <td><strong>{provider.provider}</strong></td><td>{number(provider.calls)}</td><td>{number(provider.estimated_input_tokens)}</td><td>{number(provider.estimated_output_tokens)}</td><td>{duration(provider.average_duration_ms)}</td><td>{number(provider.failures)}</td><td>{overview.ai_usage.costs_configured ? `$${provider.estimated_cost_usd.toFixed(4)}` : 'Configure rates'}</td>
                       </tr>
-                    )) : <tr><td colSpan={7} className="observer-empty">No primary reformat calls have been recorded since this deployment.</td></tr>}
+                    )) : <tr><td colSpan={7} className="observer-empty">No AI calls have been recorded in the last 7 days.</td></tr>}
                   </tbody>
                 </table>
               </div>

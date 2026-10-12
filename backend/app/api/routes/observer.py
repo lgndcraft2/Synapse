@@ -209,7 +209,7 @@ async def overview(
             },
         },
         "ai_usage": {
-            "window": "last 7 days", "scope": "primary reformat calls recorded after this deployment",
+            "window": "last 7 days", "scope": "every recorded explain, reformat and SQ4R question call",
             "costs_configured": _costs_configured(), "providers": provider_usage,
         },
         "redis": {
