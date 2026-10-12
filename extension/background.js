@@ -322,6 +322,8 @@ async function callBackendReformat(pageText, profile, providerConfig, options = 
       page_title: options.pageTitle || "",
       session_difficulty: options.sessionDifficulty || "normal",
       mode: options.mode || "cards",
+      // The page's length before it was cut to fit; lets the observer count clipped pages.
+      ...(Number.isFinite(options.sourceChars) ? { source_characters: options.sourceChars } : {}),
       fingerprint,
       // Authenticated users use their server-side (dashboard) profile and
       // feedback; only send the local copies for anonymous callers.
@@ -390,6 +392,17 @@ async function callBackendDocument(base64Data, mediaType, profile, providerConfi
     return { error: data?.detail || "Document reformatting failed." };
   }
   return { html: data.html };
+}
+
+// Counts a document opened in the PDF viewer. Sends nothing about the document.
+async function reportViewerOpened(providerConfig) {
+  const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
+  if (!baseUrl) return;
+  const token = await getValidAccessToken();
+  await fetch(`${baseUrl}/api/v1/viewer/opened`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
 }
 
 async function getBackendBillingStatus(providerConfig) {
@@ -1517,6 +1530,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "VIEWER_OPENED") {
+    getFullConfig()
+      .then(({ providerConfig }) => reportViewerOpened(providerConfig))
+      .catch(() => {})
+      .finally(() => sendResponse({ ok: true }));
+    return true;
+  }
+
   if (msg.type === "CALL_LLM") {
     getFullConfig().then(async ({ profile, providerConfig }) => {
       try {
@@ -1524,7 +1545,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           pageUrl: msg.pageUrl,
           pageTitle: msg.pageTitle,
           sessionDifficulty: msg.sessionDifficulty,
-          mode: msg.mode
+          mode: msg.mode,
+          sourceChars: msg.sourceChars
         });
         sendResponse(result);
       } catch (err) {

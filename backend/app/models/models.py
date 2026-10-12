@@ -236,6 +236,11 @@ class AIUsageEvent(Base):
     output_characters:  Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
     duration_ms:        Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
     succeeded:          Mapped[bool]      = mapped_column(Boolean, nullable=False, default=True)
+    # Reformats only (NULL elsewhere and before 0007). cut_off: the reply hit
+    # its output-token limit, so the reader got a partial page. input_clipped:
+    # the extension sent only the first part of a page that was too long.
+    cut_off:            Mapped[bool]      = mapped_column(Boolean, nullable=True)
+    input_clipped:      Mapped[bool]      = mapped_column(Boolean, nullable=True)
     created_at:         Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
@@ -422,4 +427,23 @@ class ExplanationHistory(Base):
             "thumbnail_expires_at",
             postgresql_where=text("thumbnail_key IS NOT NULL"),
         ),
+    )
+
+
+class ViewerOpen(Base):
+    """One document opened in the Synapse PDF viewer. Content-free.
+
+    AI usage only shows people who highlighted, circled or reformatted; this
+    counts everyone who read a document in the viewer. No URL, file name or
+    title is kept.
+    """
+    __tablename__ = "viewer_opens"
+
+    id:         Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id:    Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_viewer_opens_created", desc("created_at")),
+        Index("ix_viewer_opens_user_created", "user_id", desc("created_at")),
     )

@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from typing import NamedTuple
 from app.core.config import settings
 
 logger = logging.getLogger("synapse.ai")
@@ -491,12 +492,19 @@ def _reformat_gemini_config(max_tokens: int, **extra) -> dict:
     return {"maxOutputTokens": max_tokens, "thinkingConfig": {"thinkingBudget": 0}, **extra}
 
 
-def _warn_if_truncated(provider: str, stopped_at_limit: bool, budget: int) -> None:
+class ReformatOutput(NamedTuple):
+    html: str
+    # The reply hit its output-token limit, so the reader got a partial page.
+    cut_off: bool
+
+
+def _warn_if_truncated(provider: str, stopped_at_limit: bool, budget: int) -> bool:
     if stopped_at_limit:
         logger.warning("%s reformat hit its %s-token output limit; the answer is cut off.", provider, budget)
+    return stopped_at_limit
 
 
-async def call_gemini(page_text: str, profile: dict, feedback_summary: str) -> str:
+async def call_gemini(page_text: str, profile: dict, feedback_summary: str) -> ReformatOutput:
     """Call Gemini Flash via direct API with key rotation."""
     system_prompt = _build_system_prompt(profile, feedback_summary)
     safe_text = _escape_tags(page_text)
@@ -512,11 +520,11 @@ async def call_gemini(page_text: str, profile: dict, feedback_summary: str) -> s
 
     data = await _gemini_generate(payload, timeout=60)
     candidate = data["candidates"][0]
-    _warn_if_truncated("Gemini", candidate.get("finishReason") == "MAX_TOKENS", budget)
-    return clean_reformat_html(candidate["content"]["parts"][0]["text"])
+    cut_off = _warn_if_truncated("Gemini", candidate.get("finishReason") == "MAX_TOKENS", budget)
+    return ReformatOutput(clean_reformat_html(candidate["content"]["parts"][0]["text"]), cut_off)
 
 
-async def call_claude(page_text: str, profile: dict, feedback_summary: str) -> str:
+async def call_claude(page_text: str, profile: dict, feedback_summary: str) -> ReformatOutput:
     """Call Claude Sonnet via Anthropic API — premium users only."""
     system_prompt = _build_system_prompt(profile, feedback_summary)
     safe_text = _escape_tags(page_text)
@@ -543,8 +551,8 @@ async def call_claude(page_text: str, profile: dict, feedback_summary: str) -> s
 
     response.raise_for_status()
     data = response.json()
-    _warn_if_truncated("Claude", data.get("stop_reason") == "max_tokens", budget)
-    return clean_reformat_html(data["content"][0]["text"])
+    cut_off = _warn_if_truncated("Claude", data.get("stop_reason") == "max_tokens", budget)
+    return ReformatOutput(clean_reformat_html(data["content"][0]["text"]), cut_off)
 
 
 async def generate_sq4r_questions(page_text: str, profile_type: str) -> list[str] | None:
@@ -620,7 +628,7 @@ async def call_document(
     profile: dict,
     feedback_summary: str,
     use_claude: bool = False
-) -> str:
+) -> ReformatOutput:
     """Reformat a document (PDF, Image, Text) for a cognitive profile."""
     system_prompt = _build_system_prompt(profile, feedback_summary)
 
@@ -655,8 +663,8 @@ async def call_document(
             )
         response.raise_for_status()
         data = response.json()
-        _warn_if_truncated("Claude", data.get("stop_reason") == "max_tokens", _REFORMAT_MAX_TOKENS)
-        return clean_reformat_html(data["content"][0]["text"])
+        cut_off = _warn_if_truncated("Claude", data.get("stop_reason") == "max_tokens", _REFORMAT_MAX_TOKENS)
+        return ReformatOutput(clean_reformat_html(data["content"][0]["text"]), cut_off)
     else:
         payload = {
             "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -672,8 +680,8 @@ async def call_document(
 
         data = await _gemini_generate(payload, timeout=90)
         candidate = data["candidates"][0]
-        _warn_if_truncated("Gemini", candidate.get("finishReason") == "MAX_TOKENS", _REFORMAT_MAX_TOKENS)
-        return clean_reformat_html(candidate["content"]["parts"][0]["text"])
+        cut_off = _warn_if_truncated("Gemini", candidate.get("finishReason") == "MAX_TOKENS", _REFORMAT_MAX_TOKENS)
+        return ReformatOutput(clean_reformat_html(candidate["content"]["parts"][0]["text"]), cut_off)
 
 
 # ── Explain (highlight / circle) ──────────────────────────────────

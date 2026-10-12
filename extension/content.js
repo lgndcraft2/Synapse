@@ -1264,7 +1264,8 @@ function activateFullPage() {
   // ── Extract text-only content for Claude ────────────────────────
   const clone = main.cloneNode(true);
   clone.querySelectorAll('script,style,nav,footer,header').forEach(e => e.remove());
-  const text = clone.innerText.slice(0, 8000);
+  const fullText = clone.innerText;
+  const text = fullText.slice(0, 8000);
 
   const btn = document.getElementById('sp-main-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reformatting...'; }
@@ -1275,7 +1276,8 @@ function activateFullPage() {
     pageUrl: window.location.href,
     pageTitle: document.title,
     sessionDifficulty: S.sessionDifficulty,
-    mode: 'fullpage'
+    mode: 'fullpage',
+    sourceChars: fullText.length
   }, (res) => {
     if (btn) { btn.disabled = false; btn.textContent = 'Reformat full page'; }
     if (res?.html) {
@@ -1494,7 +1496,8 @@ function activatePageReader() {
       pageUrl: location.href,
       pageTitle: document.title,
       sessionDifficulty: S.sessionDifficulty,
-      mode: 'fullpage'
+      mode: 'fullpage',
+      sourceChars: text.length
     },
     (res) => {
       S.analysing = false;

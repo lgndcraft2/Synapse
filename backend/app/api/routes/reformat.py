@@ -39,6 +39,8 @@ def _record_ai_usage(
     duration_ms: float,
     succeeded: bool,
     source: str | None = None,
+    cut_off: bool | None = None,
+    input_clipped: bool | None = None,
 ) -> None:
     """Store provider telemetry without storing source or generated content."""
     db.add(AIUsageEvent(
@@ -50,6 +52,8 @@ def _record_ai_usage(
         output_characters=output_characters,
         duration_ms=max(0, round(duration_ms)),
         succeeded=succeeded,
+        cut_off=cut_off,
+        input_clipped=input_clipped,
     ))
 
 
@@ -159,14 +163,18 @@ async def reformat_page(
     )
 
     provider = "claude" if is_premium else "gemini"
+    input_clipped = (
+        body.source_characters > len(body.page_text) if body.source_characters is not None else None
+    )
     ai_started = perf_counter()
     try:
-        html, questions = await asyncio.gather(html_task, questions_task)
+        (html, cut_off), questions = await asyncio.gather(html_task, questions_task)
     except Exception as e:
         _record_ai_usage(
             db, user=user, provider=provider, operation="reformat", source="page",
             input_characters=len(body.page_text), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
+            input_clipped=input_clipped,
         )
         raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
 
@@ -174,6 +182,7 @@ async def reformat_page(
         db, user=user, provider=provider, operation="reformat", source="page",
         input_characters=len(body.page_text), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+        cut_off=cut_off, input_clipped=input_clipped,
     )
 
     # ── 7. Log reading session ────────────────────────────────────
@@ -246,7 +255,7 @@ async def reformat_document_route(
     source = "pdf" if body.media_type == "application/pdf" else "document"
     ai_started = perf_counter()
     try:
-        html = await call_document(
+        html, cut_off = await call_document(
             body.base64_data,
             body.media_type,
             profile,
@@ -276,6 +285,7 @@ async def reformat_document_route(
         db, user=user, provider=provider, operation="document_reformat", source=source,
         input_characters=len(body.base64_data), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+        cut_off=cut_off,
     )
 
     return ReformatResponse(
