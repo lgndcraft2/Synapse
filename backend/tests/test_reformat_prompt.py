@@ -6,6 +6,7 @@ from app.services.ai import (
     _build_explain_prompt,
     _build_system_prompt,
     clean_reformat_html,
+    reformat_output_budget,
 )
 
 PROFILE = {
@@ -72,7 +73,19 @@ def test_explain_prompt_still_gets_the_strategy_and_note():
         ('Here you go:\n<div class="syn"><p>Hi</p></div>\nHope it helps', '<div class="syn"><p>Hi</p></div>'),
         ("```\nplain text\n```", "plain text"),
         ("", ""),
+        # Cut off at the output limit: keep everything, not just up to the
+        # first complete block (which is how a long page came back as only
+        # its "core argument").
+        (
+            '<div class="syn"><div class="syn-key"><p>Key</p></div><p>Second part, cut off mid',
+            '<div class="syn"><div class="syn-key"><p>Key</p></div><p>Second part, cut off mid',
+        ),
     ],
 )
 def test_clean_reformat_html(raw, expected):
     assert clean_reformat_html(raw) == expected
+
+
+@pytest.mark.parametrize("chars, expected", [(0, 2000), (12000, 5600), (100000, 8192)])
+def test_reformat_budget_follows_the_source(chars, expected):
+    assert reformat_output_budget(chars) == expected
