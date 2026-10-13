@@ -37,6 +37,7 @@ const ctxUploads = [];   // POST /explain/context bodies
 const docReads = [];     // POST /reformat/reformat-document bodies
 const pageReads = [];    // POST /reformat bodies ("Rebuild this page")
 const viewerOpens = [];  // POST /viewer/opened raw bodies (must stay empty)
+const reformatQueue = []; // queued raw replies for POST /reformat: { status, type, body }
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
 let reexplainsServed = 0;
@@ -161,6 +162,11 @@ function startServer() {
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/reformat') {
         pageReads.push(await readBody(req));
+        const queued = reformatQueue.shift();
+        if (queued) {
+          res.writeHead(queued.status, { 'Content-Type': queued.type });
+          return res.end(queued.body);
+        }
         return json(res, 200, {
           html: '<div class="syn"><div class="syn-key"><p class="syn-label">The key idea</p><p id="page-rebuilt">Cells run on organelles.</p></div></div>',
           questions: null,
@@ -407,6 +413,30 @@ test('"Rebuild this page" shows the page rebuilt in the reader and leaves the pa
   // The site's own content is never replaced.
   expect(await page.locator('main').innerHTML()).toBe(originalMain);
 
+  await reader.getByRole('button', { name: 'Close the reader' }).click();
+  await expect(reader).toHaveCount(0);
+});
+
+test('"Rebuild this page" failures show plain copy, never provider or parse errors', async () => {
+  const reader = page.locator('#synapse-reader-overlay');
+  const rebuild = async () => {
+    await openArticle();
+    await page.locator('#synapse-fab').click();
+    await page.locator('#synapse-fab-menu').getByRole('menuitem', { name: /Rebuild this page/ }).click();
+  };
+  const message = "Rebuilding this page is temporarily unavailable. Please try again.";
+
+  // The backend's 502: its own plain detail is shown as is.
+  reformatQueue.push({ status: 502, type: 'application/json', body: JSON.stringify({ detail: message }) });
+  await rebuild();
+  await expect(reader.locator('.synapse-reader-content')).toHaveText(message);
+  await reader.getByRole('button', { name: 'Close the reader' }).click();
+  await expect(reader).toHaveCount(0);
+
+  // A proxy's HTML error page: no "Unexpected token" in the reader.
+  reformatQueue.push({ status: 502, type: 'text/html', body: '<html><body>Bad gateway</body></html>' });
+  await rebuild();
+  await expect(reader.locator('.synapse-reader-content')).toHaveText("Synapse couldn't rebuild this page. Please try again.");
   await reader.getByRole('button', { name: 'Close the reader' }).click();
   await expect(reader).toHaveCount(0);
 });

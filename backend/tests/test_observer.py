@@ -293,7 +293,7 @@ async def test_sq4r_is_recorded_even_when_the_reformat_fails(client, session_fac
     from app.services.ai import SQ4ROutput
 
     async def failing_gemini(page_text, profile, feedback_summary):
-        raise RuntimeError("provider down")
+        raise RuntimeError("Client error '400 Bad Request' for url 'https://api.anthropic.com/v1/messages'")
 
     async def fake_questions(page_text, profile_type):
         return SQ4ROutput(None, True, False, 600, 0, 80.0)
@@ -306,6 +306,8 @@ async def test_sq4r_is_recorded_even_when_the_reformat_fails(client, session_fac
             "page_text": "A page. " * 60, "mode": "fullpage", "fingerprint": "fp-sq4r-fail",
         })
         assert response.status_code == 502
+        # The reader sees plain copy, never the provider's error.
+        assert response.json()["detail"] == "Rebuilding this page is temporarily unavailable. Please try again."
 
     from app.models.models import UsageTracking
 

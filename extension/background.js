@@ -304,6 +304,8 @@ function normalizeBackendBaseUrl(raw) {
   return (raw || "").trim().replace(/\/+$/, "");
 }
 
+const UNREACHABLE_MESSAGE = "Synapse couldn't reach its server. Check your connection and try again.";
+
 async function callBackendReformat(pageText, profile, providerConfig, options = {}) {
   const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
   if (!baseUrl) throw new Error("Backend API URL is not configured.");
@@ -329,18 +331,19 @@ async function callBackendReformat(pageText, profile, providerConfig, options = 
       // feedback; only send the local copies for anonymous callers.
       ...(token ? {} : { profile, recent_feedback: await recentFeedbackForBackend() })
     })
-  });
+  }).catch(() => { throw new Error(UNREACHABLE_MESSAGE); });
 
-  const data = await response.json();
+  // A proxy error page isn't JSON; the reader shows plain copy, not a parse error.
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    return { error: data?.detail || `Backend reformat failed with HTTP ${response.status}` };
+    return { error: data?.detail || "Synapse couldn't rebuild this page. Please try again." };
   }
 
   await recordProviderUse(data?.model_used || "backend");
   return {
-    html: data.html || "",
-    questions: data.questions || null,
-    modelUsed: data.model_used || "backend"
+    html: data?.html || "",
+    questions: data?.questions || null,
+    modelUsed: data?.model_used || "backend"
   };
 }
 
@@ -385,13 +388,13 @@ async function callBackendDocument(base64Data, mediaType, profile, providerConfi
       fingerprint,
       ...(token ? {} : { profile, recent_feedback: await recentFeedbackForBackend() })
     })
-  });
+  }).catch(() => { throw new Error(UNREACHABLE_MESSAGE); });
 
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    return { error: data?.detail || "Document reformatting failed." };
+    return { error: data?.detail || "Synapse couldn't rebuild this document. Please try again." };
   }
-  return { html: data.html };
+  return { html: data?.html || "" };
 }
 
 // Counts a document opened in the PDF viewer. Sends nothing about the document.

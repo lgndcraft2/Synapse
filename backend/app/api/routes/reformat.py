@@ -200,13 +200,19 @@ async def reformat_page(
     )] if sq4r and sq4r.called else []
     questions = sq4r.questions if sq4r else None
     if isinstance(output, Exception):
+        # The provider's error names its endpoint and status; it stays in the
+        # server log, and the reader gets plain copy instead.
+        logger.error("page reformat (%s) failed", provider, exc_info=output)
         await _keep_failure_records(db, sq4r_events + [_ai_usage_event(
             user=user, provider=provider, operation="reformat", source="page",
             input_characters=len(body.page_text), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
             input_clipped=input_clipped,
         )])
-        raise HTTPException(status_code=502, detail=f"AI service error: {str(output)}")
+        raise HTTPException(
+            status_code=502,
+            detail="Rebuilding this page is temporarily unavailable. Please try again.",
+        )
     if isinstance(output, BaseException):
         raise output
     html, cut_off = output
