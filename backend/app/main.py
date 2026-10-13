@@ -34,6 +34,7 @@ from app.api.routes.profile import profile_router, feedback_router, stats_router
 from app.api.routes.support import router as support_router
 from app.api.routes.observer import router as observer_router
 from app.api.routes.explain import router as explain_router
+from app.api.routes.viewer import router as viewer_router
 from app.services.observability import measure_request
 
 # ── Request Size Limit Middleware ─────────────────────────────────
@@ -291,6 +292,7 @@ app.include_router(feedback_router,  prefix="/api/v1")
 app.include_router(support_router,   prefix="/api/v1")
 app.include_router(observer_router,  prefix="/api/v1")
 app.include_router(explain_router,   prefix="/api/v1")
+app.include_router(viewer_router,    prefix="/api/v1")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os

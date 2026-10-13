@@ -36,6 +36,7 @@ const requests = [];     // POST /explain bodies
 const ctxUploads = [];   // POST /explain/context bodies
 const docReads = [];     // POST /reformat/reformat-document bodies
 const pageReads = [];    // POST /reformat bodies ("Rebuild this page")
+const viewerOpens = [];  // POST /viewer/opened raw bodies (must stay empty)
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
 let reexplainsServed = 0;
@@ -151,6 +152,12 @@ function startServer() {
         // PDFs arrive as base64; the real backend extracts their text.
         const chars = (body.document_text || '').length || (body.document_base64 ? 4321 : 0);
         return json(res, 200, { context_id: `ctx-${ctxCounter}`, chars, truncated: false, expires_in: 3600 });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/viewer/opened') {
+        let raw = '';
+        req.on('data', (c) => { raw += c; });
+        req.on('end', () => { viewerOpens.push(raw); res.writeHead(204); res.end(); });
+        return;
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/reformat') {
         pageReads.push(await readBody(req));
@@ -390,6 +397,8 @@ test('"Rebuild this page" shows the page rebuilt in the reader and leaves the pa
   const req = pageReads[before];
   expect(req.mode).toBe('fullpage');
   expect(req.page_url).toBe(`${base}/article.html`);
+  // The full length rides along so the observer can count clipped pages.
+  expect(req.source_characters).toBeGreaterThanOrEqual(req.page_text.length);
   expect(req.page_text).toContain('Mitochondria are membrane-bound organelles');
   expect(req.page_text).toContain('Ribosomes read messenger RNA');
   // Navigation and form controls are not page content.
@@ -891,6 +900,7 @@ async function selectSpanText(v, needle) {
 
 test('viewer: renders pages with a text layer, marks the image-only page, warms PDF document context', async () => {
   const uploadsBefore = ctxUploads.length;
+  const opensBefore = viewerOpens.length;
   const v = await openViewer(`${base}/paper.pdf`);
   await expect(v.locator('#viewer .vw-page')).toHaveCount(4);
   await expect(v.locator('#pageCount')).toHaveText('of 4');
@@ -916,6 +926,10 @@ test('viewer: renders pages with a text layer, marks the image-only page, warms 
   expect(up.media_type).toBe('application/pdf');
   expect(up.source_url).toBe(`${base}/paper.pdf`);
   expect(Buffer.from(up.document_base64, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
+  // The open is counted once, and nothing about the document is sent.
+  await expect.poll(() => viewerOpens.length).toBe(opensBefore + 1);
+  expect(viewerOpens[viewerOpens.length - 1]).toBe('');
 
   // Zoom keeps the text layer and the page in step.
   const zoomBefore = await v.locator('#zoomLevel').textContent();

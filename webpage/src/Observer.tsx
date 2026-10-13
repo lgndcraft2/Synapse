@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Clock3, CreditCard, Gauge, ListTree, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
+import { Activity, BarChart3, Clock3, CreditCard, FileText, Gauge, ListTree, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from './component/AppShell';
 import { MultiLineChart, ShareBar, Sparkline, StackedColumns } from './component/observer-charts';
@@ -74,6 +74,22 @@ type Analytics = {
   pdf_breakdown: { explain_text: number; explain_image: number; document_reformat: number };
   feature_daily: { date: string; calls: Record<FeatureName, number>; users: Record<FeatureName, number> }[];
   feature_by_plan: ({ feature: FeatureName } & Record<PlanName, number>)[];
+  viewer: {
+    opens: number; users: number; anonymous_opens: number; ai_users: number; ai_share: number;
+    daily: { date: string; opens: number; users: number }[];
+  };
+  reformats: {
+    kind: ReformatKind; calls: number; users: number; anonymous_calls: number; failures: number;
+    cut_off: number; clipped: number; average_duration_ms: number;
+  }[];
+};
+
+type ReformatKind = 'page' | 'pdf' | 'document';
+
+const reformatMeta: Record<ReformatKind, { label: string; detail: string }> = {
+  page: { label: 'Rebuild this page', detail: 'Web pages rebuilt in the side reader' },
+  pdf: { label: 'PDF viewer reader', detail: 'PDFs rebuilt from the viewer’s Read button' },
+  document: { label: 'Document reformatter', detail: 'Text, CSV and Markdown files' },
 };
 
 const RANGES = [7, 30, 90] as const;
@@ -92,7 +108,7 @@ const PLAN_ORDER: PlanName[] = ['free', 'lite', 'premium', 'institutional'];
 const featureMeta: Record<FeatureName, { label: string; detail: string; color: string }> = {
   explain_text: { label: 'Highlight explain', detail: 'Selected text on web pages and in text, CSV or Markdown files', color: 'var(--viz-1)' },
   explain_image: { label: 'Circle explain', detail: 'Circled areas on web pages and in text, CSV or Markdown files', color: 'var(--viz-2)' },
-  pdf: { label: 'PDF viewer', detail: 'Highlights, circles and reformats in the Synapse PDF viewer', color: 'var(--viz-3)' },
+  pdf: { label: 'PDF viewer', detail: 'Highlights, circles and reformats in the Synapse PDF viewer. Opens are below.', color: 'var(--viz-3)' },
   document_reformat: { label: 'Document reformatter', detail: 'Reformatted text, CSV and Markdown files', color: 'var(--viz-4)' },
   page_reformat: { label: 'Page reformat', detail: 'Whole-page and section rebuilds', color: 'var(--viz-5)' },
 };
@@ -488,6 +504,54 @@ export default function Observer() {
               )}
             </section>
 
+            <section className="observer-table-card" aria-labelledby="viewer-title" aria-busy={analyticsLoading}>
+              <div className="observer-section-head">
+                <div>
+                  <span className="observer-eyebrow"><FileText aria-hidden="true" /> Document viewer and reformats</span>
+                  <h2 id="viewer-title">Who reads in the viewer, and how reformats come out</h2>
+                </div>
+                <span className="observer-updated">Last {rangeDays} days</span>
+              </div>
+              {!analyticsError && (
+                <>
+                  <div className="observer-feature-grid">
+                    <article className="observer-feature-tile">
+                      <span><i className="viz-swatch" style={{ background: featureMeta.pdf.color }} aria-hidden="true" />PDFs opened</span>
+                      <p className="observer-feature-scope">Every document opened in the Synapse PDF viewer, whether or not Synapse was used on it</p>
+                      <strong>{analytics ? number(analytics.viewer.opens) : '—'}<small> opens</small></strong>
+                      <p>{analytics ? `${number(analytics.viewer.users)} signed-in readers${analytics.viewer.anonymous_opens ? ` · ${number(analytics.viewer.anonymous_opens)} signed-out opens` : ''}` : 'Loading…'}</p>
+                      <Sparkline values={analytics?.viewer.daily.map((day) => day.opens) ?? []} color={featureMeta.pdf.color} />
+                    </article>
+                    <article className="observer-feature-tile">
+                      <span><i className="viz-swatch" style={{ background: featureMeta.pdf.color }} aria-hidden="true" />Readers who used Synapse</span>
+                      <p className="observer-feature-scope">Signed-in readers who highlighted, circled or reformatted in the viewer</p>
+                      <strong>{analytics ? percent(analytics.viewer.ai_share) : '—'}</strong>
+                      <p>{analytics ? `${number(analytics.viewer.ai_users)} of ${number(analytics.viewer.users)} readers` : 'Loading…'}</p>
+                    </article>
+                  </div>
+
+                  <h3 className="observer-subhead">Reformats</h3>
+                  <div className="observer-table-scroll">
+                    <table>
+                      <thead><tr><th>Reformat</th><th>Uses</th><th>Users</th><th>Signed out</th><th>Failed</th><th>Cut off*</th><th>Page clipped†</th><th>Avg. time</th></tr></thead>
+                      <tbody>
+                        {analytics ? analytics.reformats.map((row) => (
+                          <tr key={row.kind}>
+                            <td><strong>{reformatMeta[row.kind].label}</strong><br /><small>{reformatMeta[row.kind].detail}</small></td>
+                            <td>{number(row.calls)}</td><td>{number(row.users)}</td><td>{number(row.anonymous_calls)}</td><td>{number(row.failures)}</td>
+                            <td>{number(row.cut_off)}</td>
+                            <td>{row.kind === 'page' ? number(row.clipped) : '—'}</td>
+                            <td>{row.calls - row.failures > 0 ? duration(row.average_duration_ms) : '—'}</td>
+                          </tr>
+                        )) : <tr><td colSpan={8} className="observer-empty">Loading reformats…</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="observer-footnote">* The reply hit its output limit, so the reader got only part of the page. † The page was longer than the 12,000 characters the extension sends, so only its start was rebuilt. Opens, cut-off and clipped tracking start with this release; earlier reformats count as neither. Nothing about the document or page is stored.</p>
+                </>
+              )}
+            </section>
+
             <section className="observer-traffic" aria-labelledby="traffic-title">
               <div className="observer-section-head">
                 <div>
@@ -525,7 +589,7 @@ export default function Observer() {
                       <tr key={provider.provider}>
                         <td><strong>{provider.provider}</strong></td><td>{number(provider.calls)}</td><td>{number(provider.estimated_input_tokens)}</td><td>{number(provider.estimated_output_tokens)}</td><td>{duration(provider.average_duration_ms)}</td><td>{number(provider.failures)}</td><td>{overview.ai_usage.costs_configured ? `$${provider.estimated_cost_usd.toFixed(4)}` : 'Configure rates'}</td>
                       </tr>
-                    )) : <tr><td colSpan={7} className="observer-empty">No primary reformat calls have been recorded since this deployment.</td></tr>}
+                    )) : <tr><td colSpan={7} className="observer-empty">No AI calls have been recorded in the last 7 days.</td></tr>}
                   </tbody>
                 </table>
               </div>

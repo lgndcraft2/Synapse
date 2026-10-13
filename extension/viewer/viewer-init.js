@@ -41,6 +41,7 @@
   let title = fileUrl ? fileNameOf(fileUrl) : 'PDF';
   let paintTimer = null;
   let started = false;
+  let openReported = false;
 
   function localDocumentBase64() {
     if (!localBytes) return null;
@@ -193,9 +194,13 @@
       if (started) SX.H.configure({ document: { url: fileUrl, mediaType: MEDIA_TYPE, title } });
     },
 
-    /** The PDF opened: warm the document context (one upload, reused by explains). */
+    /** The PDF opened: count it, and warm the document context (one upload, reused by explains). */
     documentReady() {
       start();
+      if (!openReported) {
+        openReported = true;
+        try { chrome.runtime.sendMessage({ type: 'VIEWER_OPENED' }, () => void chrome.runtime.lastError); } catch (_) { /* uncounted */ }
+      }
       if (!SX || !fileUrl) return;
       SX.prepareDocument(isLocal ? { base64: localDocumentBase64() } : undefined).catch(() => {});
       if (readOnOpen) {

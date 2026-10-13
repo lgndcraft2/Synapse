@@ -28,8 +28,7 @@ logger = logging.getLogger("synapse.reformat")
 router = APIRouter(prefix="/reformat", tags=["reformat"])
 
 
-def _record_ai_usage(
-    db: AsyncSession,
+def _ai_usage_event(
     *,
     user: User | None,
     provider: str,
@@ -39,9 +38,11 @@ def _record_ai_usage(
     duration_ms: float,
     succeeded: bool,
     source: str | None = None,
-) -> None:
-    """Store provider telemetry without storing source or generated content."""
-    db.add(AIUsageEvent(
+    cut_off: bool | None = None,
+    input_clipped: bool | None = None,
+) -> AIUsageEvent:
+    """Provider telemetry without source or generated content."""
+    return AIUsageEvent(
         user_id=user.id if user else None,
         provider=provider,
         operation=operation,
@@ -50,7 +51,30 @@ def _record_ai_usage(
         output_characters=output_characters,
         duration_ms=max(0, round(duration_ms)),
         succeeded=succeeded,
-    ))
+        cut_off=cut_off,
+        input_clipped=input_clipped,
+    )
+
+
+def _record_ai_usage(db: AsyncSession, **fields) -> None:
+    """Store provider telemetry without storing source or generated content."""
+    db.add(_ai_usage_event(**fields))
+
+
+async def _keep_failure_records(db: AsyncSession, events: list[AIUsageEvent]) -> None:
+    """Save usage records for a request that is about to fail.
+
+    get_db rolls the session back on the error, which would drop these with
+    it. Roll back here instead, so the failed request's quota charge is still
+    undone as before, then commit only the records. The events are built
+    before the rollback, which expires `user`.
+    """
+    try:
+        await db.rollback()
+        db.add_all(events)
+        await db.commit()
+    except Exception:
+        logger.exception("Could not save usage records for a failed request")
 
 
 async def _validate_input_length(db: AsyncSession, user: User | None, text: str):
@@ -159,21 +183,40 @@ async def reformat_page(
     )
 
     provider = "claude" if is_premium else "gemini"
+    input_clipped = (
+        body.source_characters > len(body.page_text) if body.source_characters is not None else None
+    )
     ai_started = perf_counter()
-    try:
-        html, questions = await asyncio.gather(html_task, questions_task)
-    except Exception as e:
-        _record_ai_usage(
-            db, user=user, provider=provider, operation="reformat", source="page",
+    # return_exceptions: a failed reformat must not leave the questions call
+    # running after the request, and its database session, are gone.
+    output, sq4r = await asyncio.gather(html_task, questions_task, return_exceptions=True)
+    if isinstance(sq4r, BaseException):  # generate_sq4r_questions shouldn't raise
+        sq4r = None
+    # Always Gemini, whatever the plan; counted apart from the reformat.
+    sq4r_events = [_ai_usage_event(
+        user=user, provider="gemini", operation="sq4r_questions", source="page",
+        input_characters=sq4r.input_characters, output_characters=sq4r.output_characters,
+        duration_ms=sq4r.duration_ms, succeeded=sq4r.succeeded,
+    )] if sq4r and sq4r.called else []
+    questions = sq4r.questions if sq4r else None
+    if isinstance(output, Exception):
+        await _keep_failure_records(db, sq4r_events + [_ai_usage_event(
+            user=user, provider=provider, operation="reformat", source="page",
             input_characters=len(body.page_text), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
-        )
-        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+            input_clipped=input_clipped,
+        )])
+        raise HTTPException(status_code=502, detail=f"AI service error: {str(output)}")
+    if isinstance(output, BaseException):
+        raise output
+    html, cut_off = output
+    db.add_all(sq4r_events)
 
     _record_ai_usage(
         db, user=user, provider=provider, operation="reformat", source="page",
         input_characters=len(body.page_text), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+        cut_off=cut_off, input_clipped=input_clipped,
     )
 
     # ── 7. Log reading session ────────────────────────────────────
@@ -246,7 +289,7 @@ async def reformat_document_route(
     source = "pdf" if body.media_type == "application/pdf" else "document"
     ai_started = perf_counter()
     try:
-        html = await call_document(
+        html, cut_off = await call_document(
             body.base64_data,
             body.media_type,
             profile,
@@ -254,19 +297,19 @@ async def reformat_document_route(
             use_claude=is_premium
         )
     except HTTPException:
-        _record_ai_usage(
-            db, user=user, provider=provider, operation="document_reformat", source=source,
+        await _keep_failure_records(db, [_ai_usage_event(
+            user=user, provider=provider, operation="document_reformat", source=source,
             input_characters=len(body.base64_data), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
-        )
+        )])
         raise
     except Exception:
         logger.exception("reformat-document failed")
-        _record_ai_usage(
-            db, user=user, provider=provider, operation="document_reformat", source=source,
+        await _keep_failure_records(db, [_ai_usage_event(
+            user=user, provider=provider, operation="document_reformat", source=source,
             input_characters=len(body.base64_data), output_characters=0,
             duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=False,
-        )
+        )])
         raise HTTPException(
             status_code=502,
             detail="Document reformatting is temporarily unavailable. Please try again.",
@@ -276,6 +319,7 @@ async def reformat_document_route(
         db, user=user, provider=provider, operation="document_reformat", source=source,
         input_characters=len(body.base64_data), output_characters=len(html),
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
+        cut_off=cut_off,
     )
 
     return ReformatResponse(

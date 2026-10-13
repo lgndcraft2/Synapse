@@ -164,3 +164,186 @@ async def test_observer_queries_never_group_by_a_bound_parameter(client, verifie
     ]
     assert group_bys, "expected the observer to run grouped queries"
     assert not [clause for clause in group_bys if "?" in clause]
+
+
+async def test_viewer_opens_are_counted_without_content(client, verified_user, session_factory, fake_redis):
+    from sqlalchemy import select
+
+    from app.api.routes import viewer
+    from app.models.models import User, ViewerOpen
+
+    login = await client.post("/api/v1/auth/login", json=verified_user)
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    assert (await client.post("/api/v1/viewer/opened", headers=headers)).status_code == 204
+    assert (await client.post("/api/v1/viewer/opened")).status_code == 204
+
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.email == verified_user["email"]))
+        opens = (await session.scalars(select(ViewerOpen))).all()
+    assert sorted(str(o.user_id) for o in opens) == sorted([str(user.id), "None"])
+
+    # Past the hourly cap, opens still answer 204 but are not stored.
+    fake_redis.store[next(k for k in fake_redis.store if k.startswith("viewer:opens:"))] = str(viewer._OPENS_PER_HOUR)
+    assert (await client.post("/api/v1/viewer/opened")).status_code == 204
+    async with session_factory() as session:
+        assert len((await session.scalars(select(ViewerOpen))).all()) == 2
+
+
+async def test_observer_analytics_measures_the_viewer_and_reformats(client, verified_user, session_factory, monkeypatch):
+    import uuid
+
+    from app.models.models import AIUsageEvent, User, ViewerOpen
+
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", verified_user["email"])
+    login = await client.post("/api/v1/auth/login", json=verified_user)
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    reader = User(id=uuid.uuid4(), email="reader@example.com", plan="free")
+    explainer = User(id=uuid.uuid4(), email="explainer@example.com", plan="free")
+
+    def event(user, operation, source, **flags):
+        return AIUsageEvent(
+            user_id=user.id if user else None, provider="gemini", operation=operation,
+            source=source, duration_ms=1000, **flags,
+        )
+
+    async with session_factory() as session:
+        session.add_all([reader, explainer])
+        await session.flush()
+        session.add_all([
+            ViewerOpen(user_id=reader.id),
+            ViewerOpen(user_id=reader.id),
+            ViewerOpen(user_id=explainer.id),
+            ViewerOpen(user_id=None),
+            event(explainer, "explain_text", "pdf"),
+            event(explainer, "document_reformat", "pdf", cut_off=True),
+            event(None, "document_reformat", "document", cut_off=False),
+            event(reader, "reformat", "page", cut_off=False, input_clipped=True),
+            event(reader, "reformat", "page", cut_off=True, input_clipped=False),
+            event(None, "reformat", "page", succeeded=False),
+        ])
+        await session.commit()
+
+    body = (await client.get("/api/v1/observer/analytics?days=7", headers=headers)).json()
+
+    viewer = body["viewer"]
+    assert {k: viewer[k] for k in ("opens", "users", "anonymous_opens", "ai_users", "ai_share")} == {
+        "opens": 4, "users": 2, "anonymous_opens": 1, "ai_users": 1, "ai_share": 0.5,
+    }
+    assert len(viewer["daily"]) == 7
+    assert sum(day["opens"] for day in viewer["daily"]) == 4
+
+    reformats = {row["kind"]: row for row in body["reformats"]}
+    assert [row["kind"] for row in body["reformats"]] == ["page", "pdf", "document"]
+    assert reformats["page"] == {
+        "kind": "page", "calls": 3, "users": 1, "anonymous_calls": 1, "failures": 1,
+        "cut_off": 1, "clipped": 1, "average_duration_ms": 1000.0,
+    }
+    assert reformats["pdf"]["calls"] == 1 and reformats["pdf"]["cut_off"] == 1
+    assert reformats["document"]["calls"] == 1 and reformats["document"]["anonymous_calls"] == 1
+
+
+async def test_page_reformat_records_cut_off_and_clipped(client, session_factory, monkeypatch):
+    from sqlalchemy import select
+
+    from app.api.routes import reformat
+    from app.models.models import AIUsageEvent
+    from app.services.ai import ReformatOutput, SQ4ROutput
+
+    async def fake_gemini(page_text, profile, feedback_summary):
+        return ReformatOutput('<div class="syn"><p>Part</p></div>', True)
+
+    async def fake_questions(page_text, profile_type):
+        return SQ4ROutput(["Why?"], True, True, 600, 9, 150.0)
+
+    monkeypatch.setattr(reformat, "call_gemini", fake_gemini)
+    monkeypatch.setattr(reformat, "generate_sq4r_questions", fake_questions)
+
+    page = "A long page. " * 40
+    response = await client.post("/api/v1/reformat", json={
+        "page_text": page, "mode": "fullpage", "fingerprint": "fp-reformat-flags",
+        "source_characters": len(page) + 5000,
+    })
+    assert response.status_code == 200, response.text
+    # Older extensions don't say how long the page was: clipping is unknown.
+    response = await client.post("/api/v1/reformat", json={
+        "page_text": page, "mode": "fullpage", "fingerprint": "fp-reformat-flags",
+    })
+    assert response.status_code == 200, response.text
+
+    assert response.json()["questions"] == ["Why?"]
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent).order_by(AIUsageEvent.created_at))).all()
+    reformats = [e for e in events if e.operation == "reformat"]
+    assert [(e.cut_off, e.input_clipped) for e in reformats] == [(True, True), (True, None)]
+    # The SQ4R questions call is its own Gemini event, one per reformat.
+    sq4r = [e for e in events if e.operation == "sq4r_questions"]
+    assert [(e.provider, e.input_characters, e.output_characters, e.duration_ms, e.succeeded) for e in sq4r] == [
+        ("gemini", 600, 9, 150, True), ("gemini", 600, 9, 150, True),
+    ]
+
+
+async def test_sq4r_is_recorded_even_when_the_reformat_fails(client, session_factory, monkeypatch):
+    from sqlalchemy import select
+
+    from app.api.routes import reformat
+    from app.models.models import AIUsageEvent
+    from app.services.ai import SQ4ROutput
+
+    async def failing_gemini(page_text, profile, feedback_summary):
+        raise RuntimeError("provider down")
+
+    async def fake_questions(page_text, profile_type):
+        return SQ4ROutput(None, True, False, 600, 0, 80.0)
+
+    monkeypatch.setattr(reformat, "call_gemini", failing_gemini)
+    monkeypatch.setattr(reformat, "generate_sq4r_questions", fake_questions)
+
+    for _ in range(2):
+        response = await client.post("/api/v1/reformat", json={
+            "page_text": "A page. " * 60, "mode": "fullpage", "fingerprint": "fp-sq4r-fail",
+        })
+        assert response.status_code == 502
+
+    from app.models.models import UsageTracking
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+        charged = (await session.scalars(select(UsageTracking.lifetime_requests))).all()
+    assert sorted((e.operation, e.succeeded) for e in events) == [("reformat", False)] * 2 + [("sq4r_questions", False)] * 2
+    # Keeping the records doesn't keep the failed request's lifetime charge.
+    # The first request's row insert survives only because SQLite's driver
+    # mishandles the limiter's savepoint; Postgres rolls it back. The second
+    # request takes the update path, which must not stick.
+    assert charged == [1]
+
+
+async def test_failed_document_reformat_is_recorded(client, session_factory, monkeypatch):
+    import base64
+
+    from sqlalchemy import select
+
+    import app.services.ai as ai
+    from app.models.models import AIUsageEvent
+
+    async def failing_document(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(ai, "call_document", failing_document)
+    response = await client.post("/api/v1/reformat/reformat-document", json={
+        "base64_data": base64.b64encode(b"some notes").decode(), "media_type": "text/plain",
+        "fingerprint": "fp-doc-fail",
+    })
+    assert response.status_code == 502
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+    assert [(e.operation, e.source, e.succeeded) for e in events] == [("document_reformat", "document", False)]
+
+
+async def test_sq4r_skipped_for_hyperfocus_is_not_a_call():
+    from app.services.ai import generate_sq4r_questions
+
+    assert (await generate_sq4r_questions("Some text", "hyperfocus")).called is False

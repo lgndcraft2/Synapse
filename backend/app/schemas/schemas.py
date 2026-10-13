@@ -210,6 +210,9 @@ class ReformatRequest(BaseModel):
     page_title: Optional[str] = Field(None, max_length=500)
     session_difficulty: Literal["hard", "normal", "easy"] = "normal"
     mode: Literal["cards", "fullpage", "document"] = "cards"
+    # How long the page's text was before the extension cut it to fit. Only
+    # used to count clipped pages in the observer; older extensions omit it.
+    source_characters: Optional[int] = Field(None, ge=0, le=100_000_000)
     fingerprint: Optional[str] = Field(None, max_length=100)   # for anonymous/free users
     profile: Optional[CognitiveProfileSchema] = None
     # Anonymous callers only; ignored when signed in (the server log wins).

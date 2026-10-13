@@ -24,6 +24,7 @@ from app.models.models import (
     SupportTicket,
     UsageTracking,
     User,
+    ViewerOpen,
 )
 from app.services.observability import telemetry
 
@@ -208,7 +209,7 @@ async def overview(
             },
         },
         "ai_usage": {
-            "window": "last 7 days", "scope": "primary reformat calls recorded after this deployment",
+            "window": "last 7 days", "scope": "every recorded explain, reformat and SQ4R question call",
             "costs_configured": _costs_configured(), "providers": provider_usage,
         },
         "redis": {
@@ -256,17 +257,118 @@ def _feature_case():
 
 
 async def _active_users(db: AsyncSession, since: datetime) -> int:
-    """Distinct signed-in users with an AI call or reading session since `since`."""
+    """Distinct signed-in users with an AI call, reading session or viewer open since `since`."""
     ids = (
         select(AIUsageEvent.user_id.label("uid"))
         .where(AIUsageEvent.created_at >= since, AIUsageEvent.user_id.is_not(None))
         .union(
             select(ReadingSession.user_id.label("uid"))
-            .where(ReadingSession.created_at >= since, ReadingSession.user_id.is_not(None))
+            .where(ReadingSession.created_at >= since, ReadingSession.user_id.is_not(None)),
+            select(ViewerOpen.user_id.label("uid"))
+            .where(ViewerOpen.created_at >= since, ViewerOpen.user_id.is_not(None)),
         )
         .subquery()
     )
     return int(await db.scalar(select(func.count()).select_from(ids)) or 0)
+
+
+_REFORMAT_KINDS = ("page", "pdf", "document")
+
+
+def _reformat_kind_case():
+    # Page rebuilds, reformats from the PDF viewer's reader, and text, CSV or
+    # Markdown files. Document rows from before 0004 have no source; they were
+    # files opened in the browser, not the viewer.
+    return case(
+        (AIUsageEvent.operation == "reformat", "page"),
+        ((AIUsageEvent.operation == "document_reformat") & (AIUsageEvent.source == "pdf"), "pdf"),
+        (AIUsageEvent.operation == "document_reformat", "document"),
+        else_=None,
+    )
+
+
+async def _viewer_usage(db: AsyncSession, start: datetime, dates: list[str]) -> dict:
+    """Documents opened in the PDF viewer, and how many openers used Synapse on them."""
+    in_window = ViewerOpen.created_at >= start
+    opens, users, anonymous = (await db.execute(
+        select(
+            func.count(ViewerOpen.id),
+            func.count(func.distinct(ViewerOpen.user_id)),
+            func.coalesce(func.sum(case((ViewerOpen.user_id.is_(None), 1), else_=0)), 0),
+        ).where(in_window)
+    )).one()
+    # Signed-in openers who also highlighted, circled or reformatted in the viewer.
+    ai_users = await db.scalar(
+        select(func.count(func.distinct(ViewerOpen.user_id))).where(
+            in_window,
+            ViewerOpen.user_id.in_(
+                select(AIUsageEvent.user_id).where(
+                    AIUsageEvent.created_at >= start, AIUsageEvent.source == "pdf",
+                )
+            ),
+        )
+    ) or 0
+    daily = (
+        select(func.date(ViewerOpen.created_at).label("day"), ViewerOpen.user_id)
+        .where(in_window)
+        .subquery()
+    )
+    daily_rows = await db.execute(
+        select(daily.c.day, func.count(), func.count(func.distinct(daily.c.user_id))).group_by(daily.c.day)
+    )
+    by_day = {str(day): (int(count), int(people)) for day, count, people in daily_rows.all()}
+    return {
+        "opens": int(opens), "users": int(users), "anonymous_opens": int(anonymous),
+        "ai_users": int(ai_users),
+        "ai_share": round(int(ai_users) / int(users), 4) if users else 0.0,
+        "daily": [
+            {"date": day, "opens": by_day.get(day, (0, 0))[0], "users": by_day.get(day, (0, 0))[1]}
+            for day in dates
+        ],
+    }
+
+
+async def _reformat_usage(db: AsyncSession, start: datetime) -> list[dict]:
+    """Page rebuilds and document reformats, with how often they came out partial."""
+    events = (
+        select(
+            _reformat_kind_case().label("kind"),
+            AIUsageEvent.user_id,
+            AIUsageEvent.succeeded,
+            AIUsageEvent.cut_off,
+            AIUsageEvent.input_clipped,
+            AIUsageEvent.duration_ms,
+        )
+        .where(AIUsageEvent.created_at >= start)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(
+            events.c.kind,
+            func.count(),
+            func.count(func.distinct(events.c.user_id)),
+            func.coalesce(func.sum(case((events.c.user_id.is_(None), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((events.c.succeeded.is_(False), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((events.c.cut_off.is_(True), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((events.c.input_clipped.is_(True), 1), else_=0)), 0),
+            func.avg(case((events.c.succeeded.is_(True), events.c.duration_ms), else_=None)),
+        )
+        .group_by(events.c.kind)
+    )
+    kinds = {
+        kind: {"kind": kind, "calls": 0, "users": 0, "anonymous_calls": 0, "failures": 0,
+               "cut_off": 0, "clipped": 0, "average_duration_ms": 0.0}
+        for kind in _REFORMAT_KINDS
+    }
+    for kind, calls, users, anonymous, failures, cut_off, clipped, average_ms in rows.all():
+        if kind not in kinds:
+            continue
+        kinds[kind].update({
+            "calls": int(calls), "users": int(users), "anonymous_calls": int(anonymous),
+            "failures": int(failures), "cut_off": int(cut_off), "clipped": int(clipped),
+            "average_duration_ms": round(float(average_ms or 0), 1),
+        })
+    return [kinds[kind] for kind in _REFORMAT_KINDS]
 
 
 def _monthly_price(plan: str, period: str | None) -> float:
@@ -438,6 +540,8 @@ async def analytics(
             for day in dates
         ],
         "feature_by_plan": [by_plan[name] for name in _FEATURES],
+        "viewer": await _viewer_usage(db, start, dates),
+        "reformats": await _reformat_usage(db, start),
     }
 
 
