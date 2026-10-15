@@ -23,10 +23,10 @@ from app.services.paystack import PaystackError
 from tests.test_tenant_isolation import _sign_in
 
 PLANS = {
-    "PLN_lite_monthly": {"plan_code": "PLN_lite_monthly", "amount": 400, "interval": "monthly", "name": "Thinker Lite"},
-    "PLN_deep_monthly": {"plan_code": "PLN_deep_monthly", "amount": 800, "interval": "monthly", "name": "Deep Thinker"},
-    "PLN_lite_annual": {"plan_code": "PLN_lite_annual", "amount": 4000, "interval": "annually", "name": "Thinker Lite"},
-    "PLN_deep_annual": {"plan_code": "PLN_deep_annual", "amount": 8000, "interval": "annually", "name": "Deep Thinker"},
+    "PLN_lite_monthly": {"plan_code": "PLN_lite_monthly", "amount": 550000, "interval": "monthly", "name": "Thinker Lite"},
+    "PLN_deep_monthly": {"plan_code": "PLN_deep_monthly", "amount": 1100000, "interval": "monthly", "name": "Deep Thinker"},
+    "PLN_lite_annual": {"plan_code": "PLN_lite_annual", "amount": 5500000, "interval": "annually", "name": "Thinker Lite"},
+    "PLN_deep_annual": {"plan_code": "PLN_deep_annual", "amount": 11000000, "interval": "annually", "name": "Deep Thinker"},
 }
 
 
@@ -300,7 +300,7 @@ async def test_change_plan_in_trial_charges_new_plan_in_full(client, session_fac
     out = resp.json()
     assert out["plan"] == "premium" and out["status"] == "active"
     assert out["subscription_id"] != old_code
-    assert [c["amount"] for c in fake_paystack.charges] == ["800"]
+    assert [c["amount"] for c in fake_paystack.charges] == ["1100000"]
     assert fake_paystack.subscriptions[old_code]["status"] == "non-renewing"
 
 
@@ -327,8 +327,8 @@ async def test_upgrade_charges_prorated_difference_and_keeps_billing_date(client
     assert resp.status_code == 200, resp.text
 
     charged = int(fake_paystack.charges[0]["amount"])
-    # About half a month of the $4 difference.
-    assert 150 <= charged <= 250
+    # About half a month of the ₦5,500 difference.
+    assert 240000 <= charged <= 300000
     assert fake_paystack.created_subscriptions[-1]["start_date"] == period_end.replace(microsecond=period_end.microsecond)
     assert fake_paystack.subscriptions[old_code]["status"] == "non-renewing"
 
@@ -338,7 +338,7 @@ async def test_downgrade_refunds_prorated_credit(client, session_factory, fake_p
     # A real renewal payment for the refund to be taken from.
     customer = next(iter(c for c in fake_paystack.customers.values() if c["email"] == user["email"]))
     fake_paystack.transactions["renewal-1"] = {
-        "id": 99, "reference": "renewal-1", "status": "success", "amount": 800, "currency": "USD",
+        "id": 99, "reference": "renewal-1", "status": "success", "amount": 1100000, "currency": "NGN",
         "metadata": {}, "customer": {"customer_code": customer["customer_code"]},
         "paid_at": _iso(datetime.now(timezone.utc)), "plan": PLANS["PLN_deep_monthly"],
     }
@@ -349,7 +349,7 @@ async def test_downgrade_refunds_prorated_credit(client, session_factory, fake_p
     assert fake_paystack.charges == []
     refund = fake_paystack.refunds[-1]
     assert refund["transaction"] == "99"
-    assert 150 <= refund["amount"] <= 250
+    assert 240000 <= refund["amount"] <= 300000
 
 
 async def test_declined_upgrade_changes_nothing(client, session_factory, fake_paystack):
@@ -367,8 +367,8 @@ def test_prorate_cross_interval_credits_unused_time():
     now = datetime.now(timezone.utc)
     period_end = _add_months(now, 6)  # half of an annual period left
     net, start = _prorate(PLANS["PLN_lite_annual"], PLANS["PLN_deep_monthly"], period_end, trialing=False)
-    # ~$20 of credit against an $8 month: a refund of about $12.
-    assert -1300 <= net <= -1100
+    # ~₦27,500 of credit against an ₦11,000 month: a refund of about ₦16,500.
+    assert -1700000 <= net <= -1600000
     assert (start - _add_months(now, 1)).total_seconds() < 5
 
 
@@ -439,7 +439,7 @@ async def test_history_hides_card_checks_and_other_customers(client, session_fac
     assert resp.status_code == 200
     rows = resp.json()["data"]
     assert [r["description"] for r in rows] == ["Plan change"]
-    assert rows[0]["status"] == "paid" and rows[0]["currency"] == "USD"
+    assert rows[0]["status"] == "paid" and rows[0]["currency"] == "NGN"
     assert resp.headers["cache-control"] == "no-store, private"
 
 
@@ -482,3 +482,30 @@ async def test_status_asks_paystack_before_expiring_a_renewed_plan(client, sessi
     resp = await client.get("/api/v1/billing/status", headers=user["headers"])
     assert resp.status_code == 200
     assert resp.json()["plan"] == "lite" and resp.json()["status"] == "active"
+
+
+async def test_losing_a_concurrent_confirm_neither_errors_nor_refunds(client, session_factory, fake_paystack):
+    """Two confirms of one payment race (React runs effects twice in dev).
+    The loser's create is refused by Paystack; it must return the winner's
+    result, not report failure and refund a payment that became a subscription."""
+    user = await _sign_in(client, session_factory, "race")
+    resp = await client.post("/api/v1/billing/checkout", json={"price_id": "PLN_lite_monthly"}, headers=user["headers"])
+    reference = resp.json()["checkout_url"].rsplit("/", 1)[1]
+    fake_paystack.pay(reference)
+
+    async def winner_already_activated(customer, plan, authorization, start_date):
+        async with session_factory() as session:
+            billing = await session.scalar(select(Billing).where(Billing.user_id == user["id"]))
+            billing.checkout_reference = None
+            billing.paystack_subscription_code = "SUB_winner"
+            await session.commit()
+        raise PaystackError("This subscription is already in place.", 400)
+
+    fake_paystack.create_subscription = winner_already_activated
+    import app.services.paystack as module
+    module.create_subscription = winner_already_activated
+
+    resp = await client.post("/api/v1/billing/confirm", json={"reference": reference}, headers=user["headers"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["subscription_id"] == "SUB_winner"
+    assert fake_paystack.refunds == []

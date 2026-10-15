@@ -124,8 +124,8 @@ export default function Terms() {
         <p>
           Subscriptions are billed in advance, monthly or annually depending on the option you choose, and{' '}
           <strong>renew automatically</strong> at the end of each period at the then-current price until you cancel.
-          Prices are shown in US dollars unless stated otherwise. Your bank may charge currency conversion or
-          international transaction fees, which are your responsibility. Prices may not include taxes, which we will
+          Prices are shown and charged in Nigerian naira unless stated otherwise. If your card is not in naira, your
+          bank may charge currency conversion or international transaction fees, which are your responsibility. Prices may not include taxes, which we will
           add where the law requires.
         </p>
         <p>

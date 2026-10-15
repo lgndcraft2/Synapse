@@ -336,6 +336,14 @@ async def _complete_checkout(db, reference: str, expected_user_id=None) -> Billi
     try:
         sub = await paystack.create_subscription(customer_code, plan_code, auth["authorization_code"], start)
     except PaystackError as exc:
+        # A concurrent confirm of this same checkout may have won the race
+        # (Paystack: "This subscription is already in place"). Where the row
+        # lock is not enforced, that is the only sign, so re-read before
+        # treating this as a failure — abandoning would refund a payment that
+        # the winning request has already turned into a subscription.
+        await db.refresh(billing)
+        if billing.checkout_reference != reference:
+            return billing
         logger.error("Subscription create failed after checkout %s: %s", reference, exc.message)
         await _abandon("We couldn't set up your subscription. Any charge has been refunded.")
 

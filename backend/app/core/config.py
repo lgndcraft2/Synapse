@@ -85,21 +85,21 @@ class Settings(BaseSettings):
     # separate webhook secret. Plan codes (PLN_...) must match the frontend's
     # VITE_PAYSTACK_* values, and every plan must be priced in PAYSTACK_CURRENCY.
     PAYSTACK_SECRET_KEY: str
-    PAYSTACK_CURRENCY: str = "USD"
-    PAYSTACK_THINKER_LITE_PLAN_CODE: str = ""   # Thinker Lite ($4/mo) → "lite" plan
-    PAYSTACK_DEEP_THINKER_PLAN_CODE: str = ""   # Deep Thinker ($8/mo) → "premium" plan
+    PAYSTACK_CURRENCY: str = "NGN"
+    PAYSTACK_THINKER_LITE_PLAN_CODE: str = ""   # Thinker Lite (₦5,500/mo) → "lite" plan
+    PAYSTACK_DEEP_THINKER_PLAN_CODE: str = ""   # Deep Thinker (₦11,000/mo) → "premium" plan
     # Annual equivalents. Leave blank until the plans exist in Paystack — the
     # frontend hides the monthly/annual toggle unless both are configured.
-    PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE: str = ""   # Thinker Lite ($40/yr) → "lite"
-    PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE: str = ""   # Deep Thinker ($80/yr) → "premium"
+    PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE: str = ""   # Thinker Lite (₦55,000/yr) → "lite"
+    PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE: str = ""   # Deep Thinker (₦110,000/yr) → "premium"
     # Paystack has no built-in trial. Checkout charges this much (in the
     # currency's subunit) to save a reusable card, refunds it straight away,
     # and starts the subscription TRIAL_DAYS later. 0 days charges at checkout.
-    PAYSTACK_CARD_CHECK_AMOUNT: int = 100
+    PAYSTACK_CARD_CHECK_AMOUNT: int = 5000   # ₦50
     TRIAL_DAYS: int = 7
     # Prorated plan-change charges smaller than this (subunits) are waived
     # rather than sent, since card charges this small are often rejected.
-    PAYSTACK_MIN_CHARGE_AMOUNT: int = 100
+    PAYSTACK_MIN_CHARGE_AMOUNT: int = 5000   # ₦50
     # List prices, for the observer's estimated MRR only. Billing never reads these.
     LITE_MONTHLY_USD: float = 4.0
     LITE_ANNUAL_USD: float = 40.0

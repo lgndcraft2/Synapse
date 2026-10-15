@@ -455,7 +455,7 @@ export default function Billing() {
                     Due today
                   </span>
                   <span className="font-serif font-bold" style={{ fontSize: 40, lineHeight: 1, color: '#004635' }}>
-                    $0.00
+                    {formatPrice(0)}
                   </span>
                 </div>
                 <p className="text-sm mt-2" style={{ color: '#5e5f5b' }}>

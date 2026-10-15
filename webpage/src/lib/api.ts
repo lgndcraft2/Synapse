@@ -100,8 +100,22 @@ export async function createCheckoutSession(priceId: string) {
   return checkout_url;
 }
 
+// Confirms in flight, by reference. React runs mount effects twice in dev,
+// and two simultaneous confirms of one payment race to create its
+// subscription, so overlapping callers share a single request.
+const confirming = new Map<string, Promise<any>>();
+
 /** `reference` is the Paystack transaction reference on the callback URL. */
-export async function confirmCheckout(reference: string) {
+export function confirmCheckout(reference: string) {
+  let pending = confirming.get(reference);
+  if (!pending) {
+    pending = postConfirm(reference).finally(() => confirming.delete(reference));
+    confirming.set(reference, pending);
+  }
+  return pending;
+}
+
+async function postConfirm(reference: string) {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/confirm`, {
     method: 'POST',

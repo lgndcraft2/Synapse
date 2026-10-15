@@ -15,7 +15,7 @@ export type BillingPeriod = 'monthly' | 'annual';
 
 export interface PlanPrice {
   priceId: string;
-  /** Amount in cents, so the display never does float arithmetic. */
+  /** Amount in kobo (Paystack's NGN subunit), so the display never does float arithmetic. */
   amount: number;
 }
 
@@ -72,8 +72,8 @@ export const PLANS: Plan[] = [
     ],
     cta: 'Upgrade',
     featured: true,
-    monthly: { priceId: env.VITE_PAYSTACK_THINKER_LITE_PLAN_CODE || '', amount: 400 },
-    annual: { priceId: env.VITE_PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE || '', amount: 4000 },
+    monthly: { priceId: env.VITE_PAYSTACK_THINKER_LITE_PLAN_CODE || '', amount: 550000 },
+    annual: { priceId: env.VITE_PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE || '', amount: 5500000 },
   },
   {
     tier: 'premium',
@@ -88,8 +88,8 @@ export const PLANS: Plan[] = [
     ],
     cta: 'Go Deep',
     note: '$8/mo primary pricing, with local university pricing available in Nigeria.',
-    monthly: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_PLAN_CODE || '', amount: 800 },
-    annual: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE || '', amount: 8000 },
+    monthly: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_PLAN_CODE || '', amount: 1100000 },
+    annual: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE || '', amount: 11000000 },
   },
 ];
 
@@ -114,15 +114,22 @@ export function priceIdFor(plan: Plan, period: BillingPeriod): string {
   return priceFor(plan, period)?.priceId || '';
 }
 
-/** 800 → "$8.00" */
-export function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+/** Groups thousands by hand rather than with Intl, so the prerendered HTML
+ * and the browser can never format differently and break hydration. */
+function naira(kobo: number): string {
+  const value = kobo / 100;
+  const [whole, fraction] = (Number.isInteger(value) ? String(value) : value.toFixed(2)).split('.');
+  return `₦${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''}`;
 }
 
-/** 800 → "$8" — the compact form used on the pricing cards. */
-export function formatPriceShort(cents: number): string {
-  const value = cents / 100;
-  return `$${Number.isInteger(value) ? value : value.toFixed(2)}`;
+/** 1100000 → "₦11,000". Kobo only appear when there are some. */
+export function formatPrice(kobo: number): string {
+  return naira(kobo);
+}
+
+/** 1100000 → "₦11,000" — the compact form used on the pricing cards. */
+export function formatPriceShort(kobo: number): string {
+  return naira(kobo);
 }
 
 export function periodSuffix(period: BillingPeriod): string {
