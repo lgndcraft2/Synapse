@@ -2,7 +2,8 @@
  * The plan catalogue — one source of truth for the landing page's pricing
  * section, the /billing page and the post-checkout confirmation.
  *
- * `priceId` values must match the backend's STRIPE_* env vars exactly, or
+ * `priceId` values are Paystack plan codes and must match the backend's
+ * PAYSTACK_*_PLAN_CODE env vars exactly, or
  * POST /api/v1/billing/checkout rejects them with "Invalid or unauthorized
  * price ID." (see backend/app/core/config.py → allowed_price_ids).
  */
@@ -71,8 +72,8 @@ export const PLANS: Plan[] = [
     ],
     cta: 'Upgrade',
     featured: true,
-    monthly: { priceId: env.VITE_STRIPE_THINKER_LITE_PRICE_ID || '', amount: 400 },
-    annual: { priceId: env.VITE_STRIPE_THINKER_LITE_ANNUAL_PRICE_ID || '', amount: 4000 },
+    monthly: { priceId: env.VITE_PAYSTACK_THINKER_LITE_PLAN_CODE || '', amount: 400 },
+    annual: { priceId: env.VITE_PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE || '', amount: 4000 },
   },
   {
     tier: 'premium',
@@ -87,14 +88,14 @@ export const PLANS: Plan[] = [
     ],
     cta: 'Go Deep',
     note: '$8/mo primary pricing, with local university pricing available in Nigeria.',
-    monthly: { priceId: env.VITE_STRIPE_DEEP_THINKER_PRICE_ID || '', amount: 800 },
-    annual: { priceId: env.VITE_STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID || '', amount: 8000 },
+    monthly: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_PLAN_CODE || '', amount: 800 },
+    annual: { priceId: env.VITE_PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE || '', amount: 8000 },
   },
 ];
 
 /**
- * Annual billing only exists once both annual price IDs are configured in
- * Stripe and mirrored into the env. Until then the toggle stays hidden and
+ * Annual billing only exists once both annual plans are created in
+ * Paystack and their codes mirrored into the env. Until then the toggle stays hidden and
  * every checkout is monthly, so nothing half-wired reaches the user.
  */
 export const annualAvailable: boolean = PLANS.filter((p) => p.monthly).every(

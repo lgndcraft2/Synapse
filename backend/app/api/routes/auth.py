@@ -16,7 +16,6 @@ well-meaning edit:
     including failures, so a state value is usable exactly once.
 """
 
-import asyncio
 import json
 import logging
 import uuid
@@ -566,23 +565,25 @@ async def delete_account(
     first, so deletion can never strand a paying subscription with no way left
     to stop the charges.
     """
-    import stripe
-
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    from app.services import paystack
+    from app.services.paystack import PaystackError
 
     result = await db.execute(select(Billing).where(Billing.user_id == current_user.id))
     billing = result.scalar_one_or_none()
-    if billing and billing.stripe_subscription_id:
+    if billing and billing.paystack_subscription_code:
+        code = billing.paystack_subscription_code
         try:
-            await asyncio.to_thread(
-                stripe.Subscription.delete, billing.stripe_subscription_id
-            )
-        except stripe.error.StripeError as e:
+            # Disabling stops every future charge, which is what deletion needs.
+            subscription = await paystack.fetch_subscription(code)
+            if subscription.get("status") not in ("cancelled", "completed", "complete"):
+                await paystack.disable_subscription(code, subscription["email_token"])
+        except PaystackError as e:
+            logger.error("Subscription %s not disabled on account deletion: %s", code, e.message)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "We could not cancel your subscription, so your account was not "
-                    f"deleted. Please cancel it first. ({e.user_message or 'Stripe error'})"
+                    "deleted. Please cancel it first."
                 ),
             )
 

@@ -137,9 +137,9 @@ export const GUIDES: Guide[] = [
     title: "I paid but my plan hasn't changed",
     summary: 'Checkout completed but Synapse still shows you on the old plan.',
     steps: [
-      'Give it about a minute. Stripe notifies us separately from the page you were returned to, and that notification usually lands within seconds.',
+      'Give it about a minute. Paystack notifies us separately from the page you were returned to, and that notification usually lands within seconds.',
       'Reload your dashboard. The plan chip in the Plan Status card reflects the live subscription.',
-      'If it still has not moved after a few minutes, do not pay again — send us a ticket with diagnostics attached and we will reconcile it against Stripe.',
+      'If it still has not moved after a few minutes, do not pay again — send us a ticket with diagnostics attached and we will reconcile it against Paystack.',
     ],
   },
   {

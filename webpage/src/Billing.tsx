@@ -28,7 +28,7 @@ interface BillingInfo {
   cancel_at_period_end?: boolean;
   renews_at?: string | null;
   trial_ends_at?: string | null;
-  stripe_customer_id?: string | null;
+  customer_id?: string | null;
 }
 
 type Step = 'plans' | 'review';
@@ -121,7 +121,7 @@ export default function Billing() {
 
   const currentTier = billing?.plan || 'free';
   const isPaid = currentTier !== 'free';
-  const canManage = isPaid || Boolean(billing?.stripe_customer_id);
+  const canManage = isPaid || Boolean(billing?.customer_id);
 
   async function handleCheckout() {
     if (!selected || isRedirecting) return;
@@ -374,7 +374,7 @@ export default function Billing() {
           {[
             ['event_available', `${TRIAL_DAYS}-day free trial`],
             ['cancel', 'Cancel anytime'],
-            ['lock', 'Payments secured by Stripe'],
+            ['lock', 'Payments secured by Paystack'],
           ].map(([icon, label]) => (
             <span key={label} className="flex items-center gap-2 text-sm" style={{ color: '#5e5f5b' }}>
               <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#004635' }}>
@@ -407,8 +407,9 @@ export default function Billing() {
             Review your order.
           </h1>
           <p className="text-lg" style={{ lineHeight: 1.6, color: '#5e5f5b', maxWidth: 620 }}>
-            Nothing is charged today. We'll hand you to Stripe to save a payment method, and your
-            trial starts the moment you're back.
+            Nothing is charged today. We'll hand you to Paystack to save your card. Paystack makes a
+            small check on it that's refunded straight away, and your trial starts the moment you're
+            back.
           </p>
         </section>
 
@@ -477,7 +478,7 @@ export default function Billing() {
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                     lock
                   </span>
-                  {isRedirecting ? 'Redirecting to Stripe…' : 'Proceed to secure checkout'}
+                  {isRedirecting ? 'Redirecting to Paystack…' : 'Proceed to secure checkout'}
                 </button>
 
                 <p className="mt-3 text-xs" style={{ color: '#5e5f5b', lineHeight: 1.6 }}>

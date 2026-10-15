@@ -146,7 +146,7 @@ def alice_and_bob(client, session_factory):
             )
             bob_billing.plan = "premium"
             bob_billing.status = "active"
-            bob_billing.stripe_customer_id = f"cus_{BOB_MARKER}"
+            bob_billing.paystack_customer_code = f"CUS_{BOB_MARKER}"
             bob_billing.renews_at = datetime(2099, 1, 1)
 
             await session.commit()
@@ -301,10 +301,10 @@ async def test_billing_status_is_the_callers_own_record(client, alice_and_bob):
     assert a.status_code == b.status_code == 200
 
     assert a.json()["plan"] == "free"
-    assert a.json()["stripe_customer_id"] is None
+    assert a.json()["customer_id"] is None
 
     assert b.json()["plan"] == "premium"
-    assert b.json()["stripe_customer_id"] == f"cus_{BOB_MARKER}"
+    assert b.json()["customer_id"] == f"CUS_{BOB_MARKER}"
 
 
 @pytest.mark.parametrize("endpoint", READ_ENDPOINTS)

@@ -1,10 +1,8 @@
 """Privacy-preserving operational tooling for configured Synapse administrators."""
 
-import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import stripe
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import String, case, cast, func, or_, select
@@ -13,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.db.database import get_db
+from app.services import paystack
+from app.services.paystack import PaystackError
 from app.models.models import (
     AIUsageEvent,
     AdminAuditLog,
@@ -28,7 +28,6 @@ from app.models.models import (
 )
 from app.services.observability import telemetry
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
 router = APIRouter(prefix="/observer", tags=["observer"])
 
 _PROFILE_DEFAULTS = {
@@ -47,8 +46,9 @@ class TierUpdate(BaseModel):
     plan: str = Field(pattern="^(free|lite|premium|institutional)$")
 
 
-class StripeRefund(BaseModel):
-    payment_intent_id: str = Field(min_length=5, max_length=255)
+class PaymentRefund(BaseModel):
+    # The Paystack transaction reference (or numeric id) to refund.
+    transaction_reference: str = Field(min_length=5, max_length=255)
     reason: str = Field(default="requested_by_customer", pattern="^(duplicate|fraudulent|requested_by_customer)$")
     confirm: bool = False
 
@@ -97,7 +97,7 @@ def _profile_state(profile: CognitiveProfile) -> dict:
 
 
 def _audit(db: AsyncSession, actor: User, target_user_id: uuid.UUID | None, action: str, metadata: dict) -> None:
-    # Metadata is deliberately structural: IDs, plans, Stripe object IDs and
+    # Metadata is deliberately structural: IDs, plans, Paystack object codes and
     # result flags only. Never place email, reading material or feedback notes here.
     db.add(AdminAuditLog(
         actor_user_id=actor.id,
@@ -594,7 +594,7 @@ async def list_users(
                     "plan": billing.plan, "status": billing.status,
                     "renews_at": billing.renews_at.isoformat() if billing.renews_at else None,
                     "cancel_at_period_end": billing.cancel_at_period_end,
-                    "has_stripe_subscription": bool(billing.stripe_subscription_id),
+                    "has_subscription": bool(billing.paystack_subscription_code),
                 } if billing else None,
             }
             for user, billing, profile, lifetime_requests in rows
@@ -610,7 +610,7 @@ async def update_tier(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(_require_observer),
 ):
-    """Set local access entitlement only; Stripe subscriptions are never changed here."""
+    """Set local access entitlement only; Paystack subscriptions are never changed here."""
     user = await _target_user(db, user_id)
     billing = await db.scalar(select(Billing).where(Billing.user_id == user.id))
     old_plan = user.plan
@@ -622,9 +622,9 @@ async def update_tier(
         billing.updated_at = datetime.utcnow()
     else:
         db.add(Billing(user_id=user.id, plan=body.plan, status="active"))
-    _audit(db, actor, user.id, "tier_updated", {"from": old_plan, "to": body.plan, "stripe_unchanged": True})
+    _audit(db, actor, user.id, "tier_updated", {"from": old_plan, "to": body.plan, "paystack_unchanged": True})
     await db.flush()
-    return {"id": str(user.id), "plan": user.plan, "message": "Local entitlement updated. Stripe was not changed."}
+    return {"id": str(user.id), "plan": user.plan, "message": "Local entitlement updated. Paystack was not changed."}
 
 
 @router.post("/users/{user_id}/reset-profile")
@@ -659,21 +659,22 @@ async def cancel_subscription(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(_require_observer),
 ):
-    """Schedule a real Stripe cancellation at the current period end."""
+    """Schedule a real Paystack cancellation at the current period end."""
     user = await _target_user(db, user_id)
     billing = await db.scalar(select(Billing).where(Billing.user_id == user.id))
-    if not billing or not billing.stripe_subscription_id:
-        raise HTTPException(status_code=400, detail="This user has no Stripe subscription to cancel.")
+    if not billing or not billing.paystack_subscription_code:
+        raise HTTPException(status_code=400, detail="This user has no Paystack subscription to cancel.")
+    code = billing.paystack_subscription_code
     try:
-        subscription = await asyncio.to_thread(
-            stripe.Subscription.modify, billing.stripe_subscription_id, cancel_at_period_end=True,
-        )
-    except stripe.error.StripeError as exc:
-        raise HTTPException(status_code=400, detail=f"Stripe could not schedule the cancellation: {exc.user_message or 'unknown error'}")
-    billing.cancel_at_period_end = bool(subscription.get("cancel_at_period_end"))
+        subscription = await paystack.fetch_subscription(code)
+        await paystack.disable_subscription(code, subscription["email_token"])
+    except PaystackError as exc:
+        raise HTTPException(status_code=400, detail=f"Paystack could not schedule the cancellation: {exc.message}")
+    # Disabling makes the subscription non-renewing: access runs to the period end.
+    billing.cancel_at_period_end = True
     billing.cancelled_at = datetime.utcnow()
     billing.updated_at = datetime.utcnow()
-    _audit(db, actor, user.id, "subscription_cancel_scheduled", {"subscription_id": billing.stripe_subscription_id})
+    _audit(db, actor, user.id, "subscription_cancel_scheduled", {"subscription_id": code})
     await db.flush()
     return {"id": str(user.id), "cancel_at_period_end": billing.cancel_at_period_end}
 
@@ -681,19 +682,19 @@ async def cancel_subscription(
 @router.post("/users/{user_id}/refund")
 async def refund_payment(
     user_id: uuid.UUID,
-    body: StripeRefund,
+    body: PaymentRefund,
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(_require_observer),
 ):
-    """Refund one explicit Stripe PaymentIntent after a UI confirmation."""
+    """Refund one explicit Paystack transaction after a UI confirmation."""
     user = await _target_user(db, user_id)
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm to true to create a Stripe refund.")
+        raise HTTPException(status_code=400, detail="Set confirm to true to create a Paystack refund.")
     try:
-        refund = await asyncio.to_thread(stripe.Refund.create, payment_intent=body.payment_intent_id, reason=body.reason)
-    except stripe.error.StripeError as exc:
-        raise HTTPException(status_code=400, detail=f"Stripe could not create the refund: {exc.user_message or 'unknown error'}")
-    _audit(db, actor, user.id, "refund_created", {"payment_intent_id": body.payment_intent_id, "refund_id": refund.get("id"), "reason": body.reason})
+        refund = await paystack.refund(body.transaction_reference, merchant_note=body.reason)
+    except PaystackError as exc:
+        raise HTTPException(status_code=400, detail=f"Paystack could not create the refund: {exc.message}")
+    _audit(db, actor, user.id, "refund_created", {"transaction_reference": body.transaction_reference, "refund_id": refund.get("id"), "reason": body.reason})
     await db.flush()
     return {"id": str(user.id), "refund_id": refund.get("id"), "status": refund.get("status")}
 

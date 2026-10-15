@@ -9,7 +9,7 @@ import { TRIAL_DAYS } from './lib/plans';
  * the user experiences.
  */
 
-export const EFFECTIVE_DATE = '9 October 2026';
+export const EFFECTIVE_DATE = '15 October 2026';
 
 const SECTIONS = [
   { id: 'agreement', title: 'Agreeing to these terms' },
@@ -129,14 +129,15 @@ export default function Terms() {
           add where the law requires.
         </p>
         <p>
-          Payments are processed by our payment provider, Stripe, under its own terms. You authorise us and Stripe to
-          charge your payment method for each billing period, and for any plan change you make.
+          Payments are processed by our payment provider, Paystack, under its own terms. You authorise us and Paystack
+          to charge your payment method for each billing period, and for any plan change you make. When you start a
+          subscription, Paystack also makes a small check on your card, which is refunded straight away.
         </p>
 
         <h3>Changing plans</h3>
         <p>
           You can upgrade or downgrade at any time from your subscription page. When you change plans, the price
-          difference for the rest of the current period is adjusted on your next invoice.
+          difference for the rest of the current period is charged or refunded straight away.
         </p>
 
         <h3>Cancelling</h3>
@@ -230,7 +231,7 @@ export default function Terms() {
         <p>
           Synapse works on websites and documents owned by others. We do not control and are not responsible for
           them, and using Synapse on a site does not give you any extra rights to its content. The Service relies on
-          third-party providers, such as AI model providers, Google sign-in, and Stripe, whose own terms may also
+          third-party providers, such as AI model providers, Google sign-in, and Paystack, whose own terms may also
           apply to you.
         </p>
       </Section>

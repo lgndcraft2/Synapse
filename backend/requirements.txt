@@ -9,7 +9,6 @@ python-jose[cryptography]==3.3.0
 argon2-cffi==23.1.0
 httpx==0.27.0
 redis==5.0.4
-stripe==9.9.0
 python-dotenv==1.0.1
 # Verifies Google's id_token (signature, aud, iss, exp) in the OAuth
 # callback. google-auth-oauthlib was also pinned but never imported — the

@@ -67,7 +67,7 @@ export function Skeleton({
 /**
  * Prev / Next page control with a live-announced range.
  *
- * `total` and `pageCount` are optional on purpose: Stripe's invoice list is
+ * `total` and `pageCount` are optional on purpose: the payment history is
  * cursor-paginated and reports no total, so that list renders "Page 2" with
  * Next disabled once the cursor runs out, while offset-backed lists get the
  * full "Page 2 of 5" and "Showing 6-10 of 23". One control, both shapes.

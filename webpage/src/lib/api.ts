@@ -42,8 +42,8 @@ async function authedFetch(input: string, init?: RequestInit): Promise<Response>
 /**
  * One page of a list endpoint.
  *
- * `total` is null for sources that cannot count cheaply — Stripe's invoice
- * list is cursor-paginated and reports no total — so callers must handle its
+ * `total` is null for sources that cannot count cheaply — the payment
+ * history is filtered after Paystack pages it — so callers must handle its
  * absence rather than assume a page count. `next_cursor` is set only by those
  * cursor-paginated sources.
  */
@@ -100,7 +100,8 @@ export async function createCheckoutSession(priceId: string) {
   return checkout_url;
 }
 
-export async function confirmCheckout(sessionId: string) {
+/** `reference` is the Paystack transaction reference on the callback URL. */
+export async function confirmCheckout(reference: string) {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/confirm`, {
     method: 'POST',
@@ -108,7 +109,7 @@ export async function confirmCheckout(sessionId: string) {
       ...authHeaders,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({ reference }),
   });
 
   if (!response.ok) {
@@ -151,7 +152,7 @@ export async function resumeSubscription() {
   return response.json();
 }
 
-/** Moves an existing subscription to a different price, prorated by Stripe. */
+/** Moves an existing subscription to a different plan, prorated. */
 export async function changePlan(priceId: string) {
   const authHeaders = await getAuthHeader();
   const response = await authedFetch(`${BACKEND_URL}/api/v1/billing/change-plan`, {
@@ -307,10 +308,10 @@ export const resetObserverUserProfile = (userId: string) =>
 export const cancelObserverSubscription = (userId: string) =>
   observerMutation(`/users/${userId}/cancel-subscription`, { method: 'POST' });
 
-export const refundObserverPayment = (userId: string, paymentIntentId: string) =>
+export const refundObserverPayment = (userId: string, transactionReference: string) =>
   observerMutation(`/users/${userId}/refund`, {
     method: 'POST',
-    body: JSON.stringify({ payment_intent_id: paymentIntentId, confirm: true }),
+    body: JSON.stringify({ transaction_reference: transactionReference, confirm: true }),
   });
 
 export async function getObserverAuditLog() {
@@ -373,7 +374,7 @@ export async function updateProfile(update: Record<string, unknown>) {
   return response.json();
 }
 
-/** Permanently deletes the account: Stripe subscription, local rows, auth user. */
+/** Permanently deletes the account: Paystack subscription, local rows, auth user. */
 /**
  * Deletes every explanation saved to the account, across all sites.
  *

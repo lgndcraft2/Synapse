@@ -71,5 +71,5 @@ async def test_rate_limit_paid_plan_with_aware_renews_at(renews_at, expected):
 
 
 def test_plan_for_subscription_lapsed_is_free():
-    assert _plan_for_subscription({}, "active", PAST_AWARE) == "free"
-    assert _plan_for_subscription({}, "active", datetime.utcnow() - timedelta(days=1)) == "free"
+    assert _plan_for_subscription(None, "active", PAST_AWARE) == "free"
+    assert _plan_for_subscription(None, "active", datetime.utcnow() - timedelta(days=1)) == "free"

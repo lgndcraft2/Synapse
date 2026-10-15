@@ -12,7 +12,7 @@ import { OPERATOR } from './lib/legal';
  * and EFFECTIVE_DATE in the same change. Keep backend internals out of it.
  */
 
-export const EFFECTIVE_DATE = '9 October 2026';
+export const EFFECTIVE_DATE = '15 October 2026';
 
 const SECTIONS: { id: string; title: string }[] = [
   { id: 'summary', title: 'The short version' },
@@ -55,7 +55,7 @@ const RETENTION: [string, string][] = [
   ['Usage counters', 'Reset at the end of each limit period. Records used to prevent abuse may be kept after account deletion, but are no longer linked to you.'],
   ['Technical records of AI requests', 'Kept for cost and reliability reporting. They contain no page content and are unlinked from you when you delete your account.'],
   ['Support tickets', 'Kept so we can refer back to past conversations. Unlinked from your account when you delete it; ask us and we will delete them.'],
-  ['Billing records', 'Kept by Stripe and by us for as long as tax and accounting law requires.'],
+  ['Billing records', 'Kept by Paystack and by us for as long as tax and accounting law requires.'],
 ];
 
 export default function Privacy() {
@@ -158,7 +158,7 @@ export default function Privacy() {
 
           <h3>Payment information</h3>
           <p>
-            Payments are handled by Stripe. We never receive or store your full card number. We keep your Stripe
+            Payments are handled by Paystack. We never receive or store your full card number. We keep your Paystack
             customer and subscription identifiers, your plan, billing period, subscription status, and trial, renewal,
             and cancellation dates.
           </p>
@@ -256,7 +256,7 @@ export default function Privacy() {
           <ul>
             <li><strong>Google (Gemini API)</strong> and <strong>Anthropic (Claude API)</strong>: AI processing.</li>
             <li><strong>Google</strong>: sign in with Google, if you choose it.</li>
-            <li><strong>Stripe</strong>: payments and subscriptions.</li>
+            <li><strong>Paystack</strong>: payments and subscriptions.</li>
             <li><strong>Resend</strong>: sending account and support emails.</li>
             <li><strong>Upstash</strong>: temporary caching and rate-limit counters.</li>
             <li>

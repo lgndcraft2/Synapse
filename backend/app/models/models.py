@@ -181,13 +181,19 @@ class Billing(Base):
 
     id:                     Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id:                Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    stripe_customer_id:     Mapped[str]       = mapped_column(String, unique=True, nullable=True)
-    stripe_subscription_id: Mapped[str]       = mapped_column(String, unique=True, nullable=True)
+    # Paystack codes (CUS_..., SUB_...). The stripe_* columns from before the
+    # move are still in the table, unmapped, until a later migration drops them.
+    paystack_customer_code:     Mapped[str]   = mapped_column(String, unique=True, nullable=True)
+    paystack_subscription_code: Mapped[str]   = mapped_column(String, unique=True, nullable=True)
+    # The reference of a checkout that has been started but not yet turned into
+    # a subscription. Cleared on activation, so a webhook and the redirect
+    # confirming the same payment can only create one subscription between them.
+    checkout_reference:     Mapped[str]       = mapped_column(String, nullable=True)
     plan:                   Mapped[str]       = mapped_column(String, default="free")
     billing_period:         Mapped[str]       = mapped_column(String, default="monthly")
     status:                 Mapped[str]       = mapped_column(String, default="active")
-    # Mirrors Stripe's subscription.cancel_at_period_end. Lets the UI say
-    # "cancels on X" rather than "renews on X" without querying Stripe.
+    # True while a Paystack subscription is "non-renewing". Lets the UI say
+    # "cancels on X" rather than "renews on X" without querying Paystack.
     cancel_at_period_end:   Mapped[bool]      = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     trial_ends_at:          Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
     renews_at:              Mapped[datetime]  = mapped_column(DateTime(timezone=True), nullable=True)
