@@ -472,8 +472,14 @@ async def resume_subscription(
     """
     Clears a scheduled cancellation, so the subscription renews as normal.
 
-    Only valid while the period has not yet ended — once Paystack has disabled
-    the subscription for good the user must check out again.
+    Paystack cannot re-enable a subscription once it has been disabled ("has
+    been cancelled, and cannot be reactivated"), so resuming starts a
+    replacement on the same plan and card whose first charge falls on the date
+    the cancelled one ends. The billing date does not move, and the cancelled
+    one simply runs out.
+
+    Only valid while the period has not yet ended — after that the user must
+    check out again.
     """
     billing, code = await _live_subscription(db, current_user)
 
@@ -487,14 +493,23 @@ async def resume_subscription(
 
     try:
         sub = await paystack.fetch_subscription(code)
-        await paystack.enable_subscription(code, sub["email_token"])
-        sub = await paystack.fetch_subscription(code)
+        plan_code = (sub.get("plan") or {}).get("plan_code")
+        auth_code = (sub.get("authorization") or {}).get("authorization_code")
+        customer_code = (sub.get("customer") or {}).get("customer_code") or billing.paystack_customer_code
+        if not plan_code or not auth_code:
+            raise PaystackError("Subscription has no plan or saved card to resume with")
+        replacement = await paystack.create_subscription(
+            customer_code, plan_code, auth_code, as_aware(billing.renews_at)
+        )
     except PaystackError as exc:
         logger.error("Resume failed for %s: %s", current_user.id, exc.message)
         raise HTTPException(status_code=400, detail="We couldn't resume your subscription. Please try again.")
 
-    _sync_from_subscription(billing, sub)
+    # The status (trialing or active), plan and renewal date are unchanged.
+    billing.paystack_subscription_code = replacement["subscription_code"]
+    billing.cancel_at_period_end = False
     billing.cancelled_at = None
+    billing.updated_at = datetime.utcnow()
     await db.flush()
     return billing
 

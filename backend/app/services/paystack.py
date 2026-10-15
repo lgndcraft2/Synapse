@@ -160,9 +160,5 @@ async def disable_subscription(code: str, email_token: str) -> None:
     await _request("POST", "/subscription/disable", json_body={"code": code, "token": email_token})
 
 
-async def enable_subscription(code: str, email_token: str) -> None:
-    await _request("POST", "/subscription/enable", json_body={"code": code, "token": email_token})
-
-
 async def manage_link(code: str) -> str:
     return (await _data("GET", f"/subscription/{code}/manage/link"))["link"]

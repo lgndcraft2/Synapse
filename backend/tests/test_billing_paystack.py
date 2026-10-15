@@ -138,10 +138,6 @@ class FakePaystack:
         assert self.subscriptions[code]["email_token"] == email_token
         self.subscriptions[code]["status"] = "non-renewing"
 
-    async def enable_subscription(self, code, email_token):
-        assert self.subscriptions[code]["email_token"] == email_token
-        self.subscriptions[code]["status"] = "active"
-
     async def manage_link(self, code):
         return f"https://paystack.com/manage/subscriptions/{code}"
 
@@ -154,7 +150,7 @@ def fake_paystack(monkeypatch):
     for name in (
         "create_customer", "fetch_customer", "fetch_plan", "initialize_transaction", "verify_transaction",
         "charge_authorization", "list_transactions", "refund", "create_subscription", "fetch_subscription",
-        "disable_subscription", "enable_subscription", "manage_link",
+        "disable_subscription", "manage_link",
     ):
         monkeypatch.setattr(module, name, getattr(fake, name))
     return fake
@@ -281,8 +277,15 @@ async def test_cancel_keeps_access_then_resume(client, session_factory, fake_pay
 
     resp = await client.post("/api/v1/billing/resume", headers=user["headers"])
     assert resp.status_code == 200
-    assert resp.json()["cancel_at_period_end"] is False
-    assert fake_paystack.subscriptions[code]["status"] == "active"
+    out = resp.json()
+    assert out["cancel_at_period_end"] is False and out["plan"] == "lite"
+    # Paystack cannot re-enable a disabled subscription, so resume starts a
+    # replacement whose first charge is the date the cancelled one ends.
+    assert out["subscription_id"] != code
+    assert fake_paystack.subscriptions[code]["status"] == "non-renewing"
+    replacement = fake_paystack.created_subscriptions[-1]
+    assert replacement["plan"] == "PLN_lite_monthly"
+    assert replacement["start_date"].isoformat()[:19] == out["renews_at"][:19]
 
 
 # ── Plan changes ──────────────────────────────────────────────────
