@@ -5,7 +5,9 @@ import pytest
 from app.services.ai import (
     _build_explain_prompt,
     _build_system_prompt,
+    _strip_code_fences,
     clean_reformat_html,
+    markdown_emphasis_to_html,
     reformat_output_budget,
 )
 
@@ -84,6 +86,41 @@ def test_explain_prompt_still_gets_the_strategy_and_note():
 )
 def test_clean_reformat_html(raw, expected):
     assert clean_reformat_html(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("<p>A **key term** here</p>", "<p>A <strong>key term</strong> here</p>"),
+        ("<p>A __key term__ here</p>", "<p>A <strong>key term</strong> here</p>"),
+        ("<p>An *aside* and an _aside_</p>", "<p>An <em>aside</em> and an <em>aside</em></p>"),
+        ("<p>***Both***</p>", "<p><strong><em>Both</em></strong></p>"),
+        ("<p>**see *this***</p>", "<p><strong>see <em>this</em></strong></p>"),
+        ("<p>**One** and **two**</p>", "<p><strong>One</strong> and <strong>two</strong></p>"),
+        ("<li>**Term:** meaning</li>", "<li><strong>Term:</strong> meaning</li>"),
+        # Not emphasis: arithmetic, mid-word marks, snake_case, lone markers.
+        ("<p>2 * 3 * 4</p>", "<p>2 * 3 * 4</p>"),
+        ("<p>a*b*c and snake_case_name</p>", "<p>a*b*c and snake_case_name</p>"),
+        ("<p>* not a list</p>", "<p>* not a list</p>"),
+        ("<p>** spaced **</p>", "<p>** spaced **</p>"),
+        # Attributes and code are left exactly as written.
+        ('<a href="/a_b_c/*x*">link</a>', '<a href="/a_b_c/*x*">link</a>'),
+        ("<p><code>**kwargs</code> and <code>*args*</code></p>", "<p><code>**kwargs</code> and <code>*args*</code></p>"),
+        ("<pre>_x_ <b>*y*</b></pre> *z*", "<pre>_x_ <b>*y*</b></pre> <em>z</em>"),
+        ("<p>Already <strong>bold</strong></p>", "<p>Already <strong>bold</strong></p>"),
+    ],
+)
+def test_markdown_emphasis_to_html(raw, expected):
+    assert markdown_emphasis_to_html(raw) == expected
+
+
+def test_reformat_and_explain_output_convert_markdown_emphasis():
+    assert clean_reformat_html('```html\n<div class="syn"><p>**Key**</p></div>\n```') == (
+        '<div class="syn"><p><strong>Key</strong></p></div>'
+    )
+    assert _strip_code_fences("```html\n<div><p>An *aside*</p></div>\n```") == (
+        "<div><p>An <em>aside</em></p></div>"
+    )
 
 
 @pytest.mark.parametrize("chars, expected", [(0, 2000), (12000, 5600), (100000, 8192)])

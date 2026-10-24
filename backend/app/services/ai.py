@@ -450,6 +450,45 @@ Apply these inside the layout above. Where one conflicts with the layout, the la
 
 _FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*\s*\n?|\n?\s*```\s*$")
 
+# Markdown emphasis a model slips into its HTML despite the rules. The inner
+# text must hug its markers and the markers must not touch a word character,
+# so "2 * 3 * 4", "a*b*c" and snake_case are left alone.
+_MD_EMPHASIS = (
+    (re.compile(r"\*\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*\*"), r"<strong><em>\1</em></strong>"),
+    # Bold may hold a whole *italic* run, so "**see *this***" nests properly.
+    (re.compile(r"\*\*(?=\S)((?:[^*]|\*[^*\s][^*]*\*)+?)(?<=\S)\*\*"), r"<strong>\1</strong>"),
+    (re.compile(r"(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)"), r"<strong>\1</strong>"),
+    (re.compile(r"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])"), r"<em>\1</em>"),
+    (re.compile(r"(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])"), r"<em>\1</em>"),
+)
+_HTML_TAG_RE = re.compile(r"(<[^>]*>)")
+_LITERAL_TAGS = {"code", "pre"}
+
+
+def markdown_emphasis_to_html(html: str) -> str:
+    """
+    Turn leftover **bold**, __bold__, *italic* and _italic_ into tags.
+
+    Only text between tags is touched, never attributes, and text inside
+    <code> or <pre> is left as written. Emphasis that spans a tag
+    (**a <a>link</a>**) stays as it is.
+    """
+    if "*" not in html and "_" not in html:
+        return html
+    out: list[str] = []
+    literal_depth = 0
+    for part in _HTML_TAG_RE.split(html):
+        if part.startswith("<"):
+            m = re.match(r"<\s*(/?)\s*([a-zA-Z0-9]+)", part)
+            if m and m.group(2).lower() in _LITERAL_TAGS:
+                literal_depth += -1 if m.group(1) else 1
+                literal_depth = max(literal_depth, 0)
+        elif part and not literal_depth:
+            for pattern, repl in _MD_EMPHASIS:
+                part = pattern.sub(repl, part)
+        out.append(part)
+    return "".join(out)
+
 
 def clean_reformat_html(text: str) -> str:
     """
@@ -460,17 +499,17 @@ def clean_reformat_html(text: str) -> str:
     </div> is dropped too, but markup after it is kept: that is an answer cut
     off at the output limit, and trimming it back to the last </div> threw
     away everything after the first complete block. The browser closes the
-    open tags when the HTML is inserted.
+    open tags when the HTML is inserted. Stray markdown emphasis becomes tags.
     """
     text = _FENCE_RE.sub("", (text or "").strip())
     start = text.find("<div")
     if start == -1:
-        return text.strip()
+        return markdown_emphasis_to_html(text.strip())
     text = text[start:]
     end = text.rfind("</div>")
     if end != -1 and "<" not in text[end + len("</div>"):]:
-        return text[:end + len("</div>")]
-    return text.strip()
+        return markdown_emphasis_to_html(text[:end + len("</div>")])
+    return markdown_emphasis_to_html(text.strip())
 
 
 # Output room for a reformat, in tokens. A rebuilt page runs about as long as
@@ -893,12 +932,13 @@ def _explain_user_text(
 
 
 def _strip_code_fences(html: str) -> str:
-    """Models occasionally wrap HTML in ```html fences despite the rules."""
+    """Models occasionally wrap HTML in ```html fences, or use markdown
+    emphasis, despite the rules."""
     cleaned = html.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    return cleaned.strip()
+    return markdown_emphasis_to_html(cleaned.strip())
 
 
 async def call_explain(
