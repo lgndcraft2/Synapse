@@ -566,7 +566,7 @@ box-shadow:0 3px 14px rgba(29,158,117,.4)!important;animation:synapse-bubble-pul
 transition:transform .15s ease!important}
 #synapse-bubble:hover{transform:scale(1.08)!important;background:${C.greenDark}!important}
 #synapse-bubble:focus-visible{outline:3px solid ${C.greenMid}!important;outline-offset:2px!important}
-#synapse-bubble svg{width:17px!important;height:17px!important;fill:white!important;display:block!important}
+#synapse-bubble svg{width:22px!important;height:22px!important;display:block!important}
 @keyframes synapse-bubble-pulse{0%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 0 rgba(29,158,117,.45)}
 70%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 10px rgba(29,158,117,0)}
 100%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 0 rgba(29,158,117,0)}}
