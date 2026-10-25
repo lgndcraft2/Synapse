@@ -87,7 +87,7 @@ function StatusChip({ billing, loading }: { billing: BillingInfo | null; loading
     cancelled: { label: 'Cancelled', bg: '#5e5f5b', fg: '#ffffff' },
   };
   const chip = cancelling
-    ? { label: 'Ending', bg: '#8a4b24', fg: '#ffffff' }
+    ? { label: 'Cancelled', bg: '#8a4b24', fg: '#ffffff' }
     : map[billing.status] || { label: billing.status, bg: '#5e5f5b', fg: '#ffffff' };
 
   return (
@@ -298,10 +298,11 @@ export default function Subscription() {
                     </div>
                   ) : isCancelling ? (
                     <p className="text-base" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
-                      <span className="font-semibold">Your subscription is ending.</span> You keep{' '}
+                      <span className="font-semibold">Your subscription is cancelled.</span> You keep{' '}
                       {PLAN_LABELS[tier] || tier} until{' '}
                       <span className="font-semibold">{formatDate(billing?.renews_at)}</span>, then you'll
                       move to Explorer. You won't be charged again.
+                      {hasSubscription && <> Changed your mind? Resume to keep your plan.</>}
                     </p>
                   ) : billing?.status === 'past_due' ? (
                     <p className="text-base" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>

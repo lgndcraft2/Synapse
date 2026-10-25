@@ -146,6 +146,12 @@ async def _is_premium_active(user: User | None, db: AsyncSession) -> bool:
     return False
 
 
+async def _uses_claude(user: User | None, db: AsyncSession) -> bool:
+    """True when this call should go to Claude: an active premium or
+    institutional account, and PREMIUM_AI_PROVIDER set to "claude"."""
+    return settings.PREMIUM_AI_PROVIDER == "claude" and await _is_premium_active(user, db)
+
+
 @router.post("", response_model=ReformatResponse)
 async def reformat_page(
     request: Request,
@@ -171,9 +177,9 @@ async def reformat_page(
     feedback_summary = apply_session_difficulty(profile, feedback_summary, body.session_difficulty)
 
     # ── 6. Call AI + SQ4R in parallel ────────────────────────────
-    is_premium = await _is_premium_active(user, db)
+    use_claude = await _uses_claude(user, db)
 
-    if is_premium:
+    if use_claude:
         html_task = call_claude(body.page_text, profile, feedback_summary)
     else:
         html_task = call_gemini(body.page_text, profile, feedback_summary)
@@ -182,7 +188,7 @@ async def reformat_page(
         body.page_text, profile["profile_type"]
     )
 
-    provider = "claude" if is_premium else "gemini"
+    provider = "claude" if use_claude else "gemini"
     input_clipped = (
         body.source_characters > len(body.page_text) if body.source_characters is not None else None
     )
@@ -241,7 +247,7 @@ async def reformat_page(
     return ReformatResponse(
         html=html,
         questions=questions,
-        model_used="claude-sonnet" if is_premium else "gemini-flash",
+        model_used="claude-sonnet" if use_claude else "gemini-flash",
     )
 
 
@@ -288,10 +294,10 @@ async def reformat_document_route(
     feedback_summary = await load_feedback_summary(db, user, body.recent_feedback)
     feedback_summary = apply_session_difficulty(profile, feedback_summary, body.session_difficulty)
 
-    is_premium = await _is_premium_active(user, db)
-    
+    use_claude = await _uses_claude(user, db)
+
     from app.services.ai import call_document
-    provider = "claude" if is_premium else "gemini"
+    provider = "claude" if use_claude else "gemini"
     source = "pdf" if body.media_type == "application/pdf" else "document"
     ai_started = perf_counter()
     try:
@@ -300,7 +306,7 @@ async def reformat_document_route(
             body.media_type,
             profile,
             feedback_summary,
-            use_claude=is_premium
+            use_claude=use_claude
         )
     except HTTPException:
         await _keep_failure_records(db, [_ai_usage_event(
@@ -331,5 +337,5 @@ async def reformat_document_route(
     return ReformatResponse(
         html=html,
         questions=None,
-        model_used="claude-sonnet" if is_premium else "gemini-flash"
+        model_used="claude-sonnet" if use_claude else "gemini-flash"
     )

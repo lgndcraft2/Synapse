@@ -1,6 +1,6 @@
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Literal
 
 # Where each part of Synapse lives. FRONTEND_URL, ALLOWED_ORIGINS and
 # GOOGLE_REDIRECT_URI default to these by APP_ENV ("development" picks the
@@ -72,6 +72,10 @@ class Settings(BaseSettings):
 
     # AI — premium Claude
     ANTHROPIC_API_KEY: str
+    # Which model Deep Thinker (premium) and institutional accounts get.
+    # "gemini" (default) gives them the same model as everyone else; set
+    # "claude" to route them to Claude. Everyone else always gets Gemini.
+    PREMIUM_AI_PROVIDER: Literal["gemini", "claude"] = "gemini"
 
     # Observer cost estimates. Set these to the contracted USD price per one
     # million tokens for the exact models in use. They default to zero so the

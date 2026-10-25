@@ -359,6 +359,7 @@ async def test_premium_with_context_is_unlimited(client, ai_calls, session_facto
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "FREE_DAILY_LIMIT", 1)
+    monkeypatch.setattr(settings, "PREMIUM_AI_PROVIDER", "claude")
     user = await _sign_in(client, session_factory, "premctx", plan="premium")
     for _ in range(3):
         resp = await _explain(client, _text_body(context={"page": PAGE}), user["headers"])

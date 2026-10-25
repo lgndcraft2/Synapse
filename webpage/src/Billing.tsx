@@ -201,7 +201,7 @@ export default function Billing() {
                 <>
                   <p className="font-medium" style={{ color: '#1b1c1c' }}>
                     {billing?.cancel_at_period_end
-                      ? 'Ending soon'
+                      ? 'Cancelled'
                       : billing?.status === 'trialing'
                         ? 'Free trial'
                         : billing?.status === 'past_due'
@@ -212,7 +212,7 @@ export default function Billing() {
                   </p>
                   <p className="text-sm mt-1" style={{ color: '#5e5f5b' }}>
                     {billing?.cancel_at_period_end && billing?.renews_at
-                      ? `Access ends ${formatDate(billing.renews_at)}`
+                      ? `Access until ${formatDate(billing.renews_at)}. You can resume before then.`
                       : billing?.renews_at
                         ? `Renews on ${formatDate(billing.renews_at)}`
                         : billing?.trial_ends_at

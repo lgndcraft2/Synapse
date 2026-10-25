@@ -29,7 +29,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.reformat import _is_premium_active, _record_ai_usage, _validate_input_length
+from app.api.routes.reformat import _record_ai_usage, _uses_claude, _validate_input_length
 from app.core.config import settings
 from app.core.dependencies import get_optional_user
 from app.core.timeutils import as_aware, now as utc_now
@@ -281,8 +281,8 @@ async def explain(
     feedback_summary = apply_session_difficulty(profile, feedback_summary, body.session_difficulty)
 
     # ── 5. Call the model ─────────────────────────────────────────
-    is_premium = await _is_premium_active(user, db)
-    provider = "claude" if is_premium else "gemini"
+    use_claude = await _uses_claude(user, db)
+    provider = "claude" if use_claude else "gemini"
     operation = f"{body.mode}_{body.kind}"
     # Older extensions don't send a source; a document context implies one.
     source = body.source or ("document" if body.context_id else "page")
@@ -299,7 +299,7 @@ async def explain(
             # A follow-up carries the user's ask as the re-explain request.
             respond_out = await ai.call_respond(
                 text, *image_args, profile, feedback_summary,
-                use_claude=is_premium,
+                use_claude=use_claude,
                 context_text=context_text,
                 document_text=document_text,
                 question=(reexplain.request if reexplain else None) or body.question,
@@ -309,7 +309,7 @@ async def explain(
         else:
             html = await ai.call_explain(
                 text, *image_args, profile, feedback_summary,
-                use_claude=is_premium,
+                use_claude=use_claude,
                 context_text=context_text,
                 document_text=document_text,
                 reexplain=reexplain.model_dump(include={"mode", "request", "previous_html"}) if reexplain else None,
@@ -412,7 +412,7 @@ async def explain(
     return ExplainResponse(
         html=html,
         kind=body.kind,
-        model_used="claude-sonnet" if is_premium else "gemini-flash",
+        model_used="claude-sonnet" if use_claude else "gemini-flash",
         history_entry=history_entry,
         usage=usage,
         reexplain=reexplain_status,

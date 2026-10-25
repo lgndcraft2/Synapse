@@ -271,6 +271,7 @@ async def test_premium_images_are_unlimited_and_use_claude(client, ai_calls, ses
 
     monkeypatch.setattr(settings, "FREE_IMAGE_DAILY_LIMIT", 1)
     monkeypatch.setattr(settings, "LITE_IMAGE_MONTHLY_LIMIT", 1)
+    monkeypatch.setattr(settings, "PREMIUM_AI_PROVIDER", "claude")
     user = await _sign_in(client, session_factory, "premium", plan="premium")
     for _ in range(4):
         resp = await _explain(client, _image_body(), user["headers"])
@@ -804,7 +805,10 @@ async def test_paid_image_respond_uses_image_quota_and_refunds(client, respond_c
     assert resp.json()["usage"]["image_captures_used"] == 2
 
 
-async def test_premium_respond_uses_claude(client, respond_calls, session_factory):
+async def test_premium_respond_uses_claude(client, respond_calls, session_factory, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "PREMIUM_AI_PROVIDER", "claude")
     user = await _sign_in(client, session_factory, "premresp", plan="premium")
     resp = await _explain(client, _text_body(mode="respond"), user["headers"])
     assert resp.status_code == 200, resp.text
@@ -843,3 +847,17 @@ async def test_explain_reports_when_respond_fits(client, ai_calls, html, expecte
     assert resp.json()["html"] == expected_html
     assert resp.json()["suggests_respond"] == suggests
     assert resp.json()["mode"] == "explain"
+
+
+async def test_premium_uses_gemini_unless_the_switch_says_claude(client, ai_calls, respond_calls, session_factory):
+    """PREMIUM_AI_PROVIDER defaults to gemini: Deep Thinker gets the same
+    model as everyone else until it is set to "claude"."""
+    from app.core.config import settings
+
+    assert settings.PREMIUM_AI_PROVIDER == "gemini"
+    user = await _sign_in(client, session_factory, "premgem", plan="premium")
+    for body, calls in ((_text_body(), ai_calls), (_image_body(), ai_calls), (_text_body(mode="respond"), respond_calls)):
+        resp = await _explain(client, body, user["headers"])
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["model_used"] == "gemini-flash"
+        assert calls[-1]["use_claude"] is False
