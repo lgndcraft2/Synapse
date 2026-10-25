@@ -54,6 +54,7 @@
         "content.js",
         "explain/host.js",
         "explain/core.js",
+        "explain/insert.js",
         "explain/context.js",
         "explain/panel.js",
         "explain/highlight.js",

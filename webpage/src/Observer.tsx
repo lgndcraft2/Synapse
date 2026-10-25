@@ -59,7 +59,7 @@ type Overview = {
 };
 
 type PlanName = 'free' | 'lite' | 'premium' | 'institutional';
-type FeatureName = 'explain_text' | 'explain_image' | 'pdf' | 'document_reformat' | 'page_reformat';
+type FeatureName = 'explain_text' | 'explain_image' | 'pdf' | 'document_reformat' | 'page_reformat' | 'respond';
 
 type Analytics = {
   generated_at: string;
@@ -111,8 +111,9 @@ const featureMeta: Record<FeatureName, { label: string; detail: string; color: s
   pdf: { label: 'PDF viewer', detail: 'Highlights, circles and reformats in the Synapse PDF viewer. Opens are below.', color: 'var(--viz-3)' },
   document_reformat: { label: 'Document reformatter', detail: 'Reformatted text, CSV and Markdown files', color: 'var(--viz-4)' },
   page_reformat: { label: 'Page reformat', detail: 'Whole-page and section rebuilds', color: 'var(--viz-5)' },
+  respond: { label: 'Respond', detail: 'Suggested replies, answers, moves and tips from highlights and circles', color: 'var(--viz-6)' },
 };
-const FEATURE_ORDER: FeatureName[] = ['explain_text', 'explain_image', 'pdf', 'document_reformat', 'page_reformat'];
+const FEATURE_ORDER: FeatureName[] = ['explain_text', 'explain_image', 'pdf', 'document_reformat', 'page_reformat', 'respond'];
 
 function percent(value: number) {
   return `${(value * 100).toFixed(value > 0 && value < 0.1 ? 1 : 0)}%`;

@@ -37,6 +37,8 @@ Explain a highlighted text selection or a circled area.
 | `fingerprint`, `profile` | Same as `/reformat` |
 | `recent_feedback` | Anonymous callers only: up to 20 local feedback entries (same shape as `POST /feedback` entries), oldest first. Ignored when signed in; the server's feedback log is used instead |
 | `reexplain` | Optional. Asks for another version of an explanation the user already has: `{mode, request?, previous_html, parent_entry_id?}`. `mode` is `simpler`, `more_detail` or `specific`; `request` (max 500 chars) is required for `specific`; `previous_html` (max 40,000 chars) is the version on screen; `parent_entry_id` is the paid `HistoryEntry` to add the version to. Send the same `kind`, `text`, `context` and `context_id` as the original. For a circle, the extension re-sends the crop it kept (for an hour); after that it sends `kind=text` with the circled text. A re-explain is never written to the feedback log |
+| `mode` | `explain` (default) or `respond`. `respond` suggests a reply, an answer, game moves or tips instead of explaining. Paid plans only (see Respond below) |
+| `question` | `respond` only, optional, max 500 chars: the user's own ask, e.g. "how do I say no politely?". 400 `INVALID_REQUEST` with `mode=explain`. A Respond follow-up is a `reexplain` with `mode=specific`; its `request` is the follow-up question and `previous_html` the help on screen. Other `reexplain` modes are 400 with `mode=respond` |
 
 ### Quota and rate limits
 
@@ -70,6 +72,18 @@ All Redis failures fail open, like `check_rate_limit`.
 - `history_entry` is the saved `HistoryEntry` (below) when the caller has an active paid plan (lite, premium, institutional), otherwise `null`.
 - `usage` is present for `kind=image`; `image_captures_limit` and `image_period` are `null` for unlimited plans. For `kind=text`, `usage` is `null`. A free re-explain uses no image unit, so `usage` is `null` for it.
 - `reexplain` is present for re-explains: `{free, free_remaining, free_limit}`. `free` says whether this one cost nothing; `free_remaining` is `null` if the counter was unavailable. For a paid re-explain with a `parent_entry_id` the caller owns, `history_entry` is that entry with the new version appended; otherwise a new entry is saved as usual.
+- `mode` echoes the request.
+- `suggests_respond` (`mode=explain` only) is `reply` or `answer` when the material looks like a message to reply to or a question to answer, else `null`. The model marks its root `<div data-respond="...">`; the server strips the attribute from `html`.
+- `respond_kind` and `draft` (`mode=respond` only): see Respond below.
+
+### Respond (`mode=respond`)
+
+- **Who:** signed-in users on an active paid plan (lite, premium, institutional). Signed out: 401 `RESPOND_REQUIRES_SIGN_IN`. Free or lapsed: 403 `RESPOND_REQUIRES_PAID`. Both are checked before any quota is touched.
+- **Cost:** the same as an explain: steps 1 to 5 above apply unchanged (text: reformat units, 4 with context; image: one image capture, refunded if the AI call fails; follow-ups use the free re-explain allowance first).
+- **Model:** Claude for premium, Gemini otherwise, as for explain. Gemini gets a 1,024-token thinking budget here so quizzes and game positions are reasoned through.
+- **Response:** `html` is the guidance (for an answer: the reasoning, then the answer last). `respond_kind` is `reply` (a message to reply to), `answer` (a question, quiz item or form field), `moves` (a game position: candidate moves with the idea behind each) or `tips` (anything else). `draft` is plain text ready to insert, or `null` when there is nothing to type (always `null` for `moves`); at most 5,000 chars. Unparseable model output is returned as `respond_kind=tips` with `draft=null`.
+- **Never saved:** `history_entry` is always `null`, and the extension keeps no local entry. Results are one-off and may contain private mail.
+- **Usage:** `ai_usage_events.operation` is `respond_text` or `respond_image`; the observer counts both as the `respond` feature.
 
 ### Errors
 
@@ -78,6 +92,8 @@ Errors use FastAPI's `detail`. Structured ones are objects with `code` and `mess
 | Status | `detail.code` | When |
 |---|---|---|
 | 400 | `INVALID_REQUEST` | Kind/image mismatch, empty text, bad media type, oversized image or thumbnail, oversized anchor |
+| 401 | `RESPOND_REQUIRES_SIGN_IN` | `mode=respond` while signed out |
+| 403 | `RESPOND_REQUIRES_PAID` | `mode=respond` without an active paid plan |
 | 403 | `LENGTH_EXCEEDED` | Existing text length limit |
 | 429 | `EXPLAIN_BURST` | Burst cap |
 | 429 | `IMAGE_LIMIT` | Image-capture quota |
@@ -219,7 +235,8 @@ On explain, the backend sends the model the document's opening (about 2,000 char
 |---|---|---|
 | `CAPTURE_REGION` | `{ capture: { rect, hull, devicePixelRatio, viewport } }`, sent when a trace ends | `{ ok, captureId, hasImage, preview }`. The crop is held for 2 minutes and nothing is sent to the API |
 | `DISCARD_CAPTURE` | `{ captureId }`, sent on Retry or Cancel | `{ ok }` |
-| `EXPLAIN` | `{ kind, text, anchor, pageUrl, pageTitle, sessionDifficulty, context?, document?, localOnly?, captureId? }`. Confirmed circles send `captureId` (no second screenshot). `document = { url, mediaType, text? }` when the source is a document. `localOnly` drops page context (used by "Explain without page context") | `{ ok: true, html, kind, modelUsed, historyEntry, usage, localEntry?, contextUsed, contextNote }` where `contextUsed` is `page`, `document` or `local`; or `{ ok: false, error, code? }` with codes including `CAPTURE_EXPIRED`, `EMPTY_CAPTURE`, `QUOTA_INSUFFICIENT_FOR_CONTEXT` |
+| `EXPLAIN` | `{ kind, text, anchor, pageUrl, pageTitle, sessionDifficulty, context?, document?, localOnly?, captureId?, relookId?, mode?, question? }`. Confirmed circles send `captureId` (no second screenshot). `relookId` (with `kind=image`) reuses a circle's kept crop, for Respond offered on an explained circle. `document = { url, mediaType, text? }` when the source is a document. `localOnly` drops page context (used by "Explain without page context"). `mode: "respond"` asks for a reply, answer, moves or tips | `{ ok: true, html, kind, modelUsed, historyEntry, usage, localEntry?, contextUsed, contextNote, mode, respondKind, draft, suggestsRespond }` where `contextUsed` is `page`, `document` or `local`; or `{ ok: false, error, code? }` with codes including `CAPTURE_EXPIRED`, `EMPTY_CAPTURE`, `QUOTA_INSUFFICIENT_FOR_CONTEXT`, `RESPOND_REQUIRES_PAID`, `RESPOND_REQUIRES_SIGN_IN` |
+| `OPEN_DASHBOARD` | `{ page: "billing" \| "signin" }`, from the panel's See plans and Sign in actions | Opens the dashboard page in a new tab; `{ ok }` |
 | `PREPARE_DOCUMENT_CONTEXT` | `{ url, mediaType, text?, documentBase64? }` (`text`/`documentBase64` carry local `file://` documents, which the worker can't read) | `{ ok, contextId, chars }` or `{ ok: false, code }`. Cached per document URL until expiry; `chars: 0` is cached as "no document context" |
 | `GET_EXPLAIN_HISTORY` | `{ hostname }` | `{ ok: true, entries, source: "server" \| "local" }` |
 | `DELETE_EXPLAIN_HISTORY` | `{ id }` or `{ hostname }` | `{ ok: true }` |

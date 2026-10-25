@@ -203,6 +203,11 @@ async def explain(
     reexplain = body.reexplain
     if reexplain and reexplain.mode == "specific" and not (reexplain.request or "").strip():
         raise _invalid("Say what you'd like changed for a specific re-explain.")
+    respond = body.mode == "respond"
+    if respond and reexplain and reexplain.mode != "specific":
+        raise _invalid("A respond follow-up must be a specific request.")
+    if body.question and not respond:
+        raise _invalid("question is only for mode \"respond\".")
 
     anchor = body.anchor or {}
     if len(json.dumps(anchor, separators=(",", ":"))) > _MAX_ANCHOR_BYTES:
@@ -218,6 +223,22 @@ async def explain(
 
     # ── 2. Identify user, length check, document context ──────────
     user = await get_optional_user(request, db)
+    # Respond is a paid feature, refused before any quota is touched.
+    if respond:
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "RESPOND_REQUIRES_SIGN_IN", "message": "Sign in to use Respond."},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not await _active_paid_plan(db, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "RESPOND_REQUIRES_PAID",
+                    "message": "Respond is part of the paid plans.",
+                },
+            )
     if body.kind == "text":
         await _validate_input_length(db, user, text)
 
@@ -262,23 +283,38 @@ async def explain(
     # ── 5. Call the model ─────────────────────────────────────────
     is_premium = await _is_premium_active(user, db)
     provider = "claude" if is_premium else "gemini"
-    operation = f"explain_{body.kind}"
+    operation = f"{body.mode}_{body.kind}"
     # Older extensions don't send a source; a document context implies one.
     source = body.source or ("document" if body.context_id else "page")
     input_characters = len(text) + len(context_text) + len(document_text)
+    image_args = (
+        body.image_base64 if image_bytes is not None else None,
+        body.image_media_type if image_bytes is not None else None,
+    )
+    respond_out = None
+    suggests_respond = None
     ai_started = perf_counter()
     try:
-        html = await ai.call_explain(
-            text,
-            body.image_base64 if image_bytes is not None else None,
-            body.image_media_type if image_bytes is not None else None,
-            profile,
-            feedback_summary,
-            use_claude=is_premium,
-            context_text=context_text,
-            document_text=document_text,
-            reexplain=reexplain.model_dump(include={"mode", "request", "previous_html"}) if reexplain else None,
-        )
+        if respond:
+            # A follow-up carries the user's ask as the re-explain request.
+            respond_out = await ai.call_respond(
+                text, *image_args, profile, feedback_summary,
+                use_claude=is_premium,
+                context_text=context_text,
+                document_text=document_text,
+                question=(reexplain.request if reexplain else None) or body.question,
+                previous_html=reexplain.previous_html if reexplain else None,
+            )
+            html = respond_out.html
+        else:
+            html = await ai.call_explain(
+                text, *image_args, profile, feedback_summary,
+                use_claude=is_premium,
+                context_text=context_text,
+                document_text=document_text,
+                reexplain=reexplain.model_dump(include={"mode", "request", "previous_html"}) if reexplain else None,
+            )
+            html, suggests_respond = ai.pop_respond_marker(html)
     except Exception:
         # The traceback may name the provider endpoint; it stays server-side.
         logger.exception("explain (%s) provider call failed", body.kind)
@@ -309,9 +345,10 @@ async def explain(
     )
 
     # ── 6. Paid history ───────────────────────────────────────────
+    # Respond results are one-off and may hold private mail, so never saved.
     history_entry = None
     hostname = _hostname_for(body.page_url)
-    paid = bool(user and hostname and await _active_paid_plan(db, user))
+    paid = bool(not respond and user and hostname and await _active_paid_plan(db, user))
     parent = None
     if paid and reexplain and reexplain.parent_entry_id:
         # Owner-filtered like every history query: someone else's id is
@@ -379,6 +416,10 @@ async def explain(
         history_entry=history_entry,
         usage=usage,
         reexplain=reexplain_status,
+        mode=body.mode,
+        respond_kind=respond_out.kind if respond_out else None,
+        draft=respond_out.draft if respond_out else None,
+        suggests_respond=suggests_respond,
     )
 
 
