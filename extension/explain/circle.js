@@ -487,27 +487,48 @@
       : sel.hasImage ? 'Explain this circled area?' : 'Explain the text in this area?';
     const actions = document.createElement('div');
     actions.className = 'sxc-actions';
-    if (canConfirm) actions.appendChild(button('Confirm', 'Enter', 's-primary sxc-confirm', confirmCircle));
+    if (canConfirm) actions.appendChild(button('Confirm', 'Enter', 's-primary sxc-confirm', () => confirmCircle('explain')));
+    if (canConfirm) {
+      const respondBtn = button('Respond', 'P', 'sxc-respond', () => confirmCircle('respond'));
+      respondBtn.title = 'Suggest a reply, an answer, moves or tips for this area';
+      actions.appendChild(respondBtn);
+    }
     actions.appendChild(button('Retry', 'R', 'sxc-retry', retryCircle));
     actions.appendChild(button('Cancel', 'Esc', 'sxc-cancel', () => cancelConfirm()));
     const live = document.createElement('span');
     live.className = 'sxc-live';
     live.setAttribute('role', 'status');
     live.setAttribute('aria-live', 'polite');
-    main.append(title, actions, live);
+    main.append(title, actions);
+    let question = null;
+    if (canConfirm) {
+      // Optional ask for Respond, e.g. "how do I reply politely?"
+      question = document.createElement('input');
+      question.type = 'text';
+      question.className = 'sxc-question';
+      question.maxLength = 300;
+      question.placeholder = 'Ask something specific (optional)';
+      question.setAttribute('aria-label', 'Ask something specific about this area (optional, for Respond)');
+      question.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirmCircle('respond'); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelConfirm(); }
+      });
+      main.appendChild(question);
+    }
+    main.appendChild(live);
     bar.appendChild(main);
     document.body.appendChild(bar);
 
     placeBar(bar, sel.box);
     bar.style.removeProperty('visibility');
-    confirmState = { ...sel, canConfirm, bar, outline };
+    confirmState = { ...sel, canConfirm, bar, outline, question };
 
     const first = bar.querySelector(canConfirm ? '.sxc-confirm' : '.sxc-retry');
     first?.focus({ preventScroll: true });
     setTimeout(() => {
       if (!live.isConnected) return;
       live.textContent = canConfirm
-        ? 'Circled area ready. Press Enter to explain it, R to circle again, or Escape to cancel.'
+        ? 'Circled area ready. Press Enter to explain it, P for a suggested response, R to circle again, or Escape to cancel.'
         : "Couldn't read that area. Press R to circle again or Escape to cancel.";
     }, 60);
   }
@@ -557,6 +578,12 @@
       cancelConfirm();
       return true;
     }
+    if (e.code === 'KeyP' && !e.shiftKey && confirmState.canConfirm) {
+      if (e.repeat) return true;
+      e.preventDefault(); e.stopPropagation();
+      confirmCircle('respond');
+      return true;
+    }
     if (e.code === 'KeyR' && !e.shiftKey) {
       if (e.repeat) return true;
       e.preventDefault(); e.stopPropagation();
@@ -567,17 +594,22 @@
       // A focused bar button activates itself natively.
       if (confirmState.bar.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON') return true;
       e.preventDefault(); e.stopPropagation();
-      if (confirmState.canConfirm) confirmCircle();
+      if (confirmState.canConfirm) confirmCircle('explain');
       return true;
     }
     return false;
   }
 
-  /** Sends the stored crop (by id) and text. Never takes a second screenshot. */
-  function confirmCircle() {
+  /**
+   * Sends the stored crop (by id) and text. Never takes a second screenshot.
+   * mode 'respond' asks for a reply, answer, moves or tips instead.
+   */
+  function confirmCircle(mode) {
+    const question = confirmState?.question ? String(confirmState.question.value || '').trim() : '';
     const c = teardownConfirm({ discard: false });
     if (!c || !c.canConfirm) return;
     focusBefore = null;
+    const respond = mode === 'respond';
     const snippet = c.text ? G.truncate(c.text, 140) : 'Circled area';
     const payload = {
       kind: c.hasImage ? 'image' : 'text',
@@ -585,10 +617,16 @@
       anchor: c.anchor,
       context: c.context,
       document: c.document,
-      ...(c.hasImage ? { captureId: c.captureId } : {})
+      ...(c.hasImage ? { captureId: c.captureId } : {}),
+      ...(respond ? { mode: 'respond', question: question || null } : {})
     };
+    const rect = c.docRect
+      ? { x: c.docRect.x - window.scrollX, y: c.docRect.y - window.scrollY, width: c.docRect.width, height: c.docRect.height }
+      : null;
     SX.requestExplain(payload, {
       snippet,
+      insertSource: rect,
+      insertTarget: SX.findInsertTarget ? SX.findInsertTarget(rect) : null,
       onRetry: () => restartIn(c.how),
       onResult(res) {
         if (!res || !res.ok) return;

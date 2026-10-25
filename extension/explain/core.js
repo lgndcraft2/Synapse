@@ -39,7 +39,7 @@
   SX.UI_SELECTOR = [
     '#synapse-fab', '#synapse-panel', '#synapse-dock', '.synapse-card', '.synapse-badge',
     '#synapse-fullpage-bar', '#synapse-reader-overlay', '#synapse-explain-panel',
-    '#synapse-fab-menu', '#synapse-history-btn', '#synapse-bubble',
+    '#synapse-fab-menu', '#synapse-history-btn', '#synapse-bubble', '#synapse-respond-bubble',
     '#synapse-circle-overlay', '#synapse-circle-tip', '.synapse-emphasis', '#synapse-styles',
     '#synapse-explain-styles', '#synapse-confirm-bar', '#synapse-circle-outline', '#synapse-host-styles'
   ].join(',');
@@ -500,7 +500,7 @@
     if (document.getElementById('synapse-explain-styles')) return;
     const st = document.createElement('style');
     st.id = 'synapse-explain-styles';
-    const ROOTS = '#synapse-explain-panel,#synapse-fab-menu,#synapse-history-btn,#synapse-bubble,#synapse-circle-overlay,#synapse-circle-tip,.synapse-emphasis,#synapse-confirm-bar,#synapse-circle-outline';
+    const ROOTS = '#synapse-explain-panel,#synapse-fab-menu,#synapse-history-btn,#synapse-bubble,#synapse-respond-bubble,#synapse-circle-overlay,#synapse-circle-tip,.synapse-emphasis,#synapse-confirm-bar,#synapse-circle-outline';
     const FONT = "-apple-system,'Segoe UI',system-ui,sans-serif";
     st.textContent = `
 ${ROOTS}{all:initial;box-sizing:border-box;font-family:${FONT}}
@@ -570,6 +570,20 @@ transition:transform .15s ease!important}
 @keyframes synapse-bubble-pulse{0%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 0 rgba(29,158,117,.45)}
 70%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 10px rgba(29,158,117,0)}
 100%{box-shadow:0 3px 14px rgba(29,158,117,.4),0 0 0 0 rgba(29,158,117,0)}}
+/* Respond button beside the bubble: quieter, unless the selection looks like
+   it expects a reply or answer (then it leads and takes the pulse). */
+#synapse-respond-bubble{position:fixed!important;z-index:${Z.bubble}!important;width:34px!important;height:34px!important;
+border-radius:50%!important;background:${C.white}!important;border:2px solid ${C.green}!important;cursor:pointer!important;
+display:flex!important;align-items:center!important;justify-content:center!important;
+box-shadow:0 3px 14px rgba(0,0,0,.14)!important;transition:transform .15s ease!important}
+#synapse-respond-bubble svg{width:18px!important;height:18px!important;fill:${C.green}!important;display:block!important}
+#synapse-respond-bubble:hover{transform:scale(1.08)!important;background:${C.greenLight}!important}
+#synapse-respond-bubble:focus-visible{outline:3px solid ${C.greenMid}!important;outline-offset:2px!important}
+#synapse-respond-bubble.s-suggested{background:${C.green}!important;border-color:${C.white}!important;
+animation:synapse-bubble-pulse 2s ease-out infinite!important}
+#synapse-respond-bubble.s-suggested svg{fill:${C.white}!important}
+#synapse-respond-bubble.s-suggested:hover{background:${C.greenDark}!important}
+#synapse-bubble.s-quiet{animation:none!important}
 
 /* Circle overlay */
 #synapse-circle-overlay{position:fixed!important;inset:0!important;z-index:${Z.overlay}!important;cursor:crosshair!important;
@@ -729,6 +743,15 @@ font:500 12px/1.3 ${FONT}!important;color:${C.g600}!important}
 #synapse-explain-panel .sxp-note{display:block!important;margin-top:8px!important;font:400 11px/1.4 ${FONT}!important;color:${C.g400}!important}
 #synapse-explain-panel .sxp-note.s-error{color:#b42318!important}
 
+/* Respond draft */
+#synapse-explain-panel .sxp-draft{display:block!important;padding:4px 18px 0!important}
+#synapse-explain-panel .sxp-draft-text{display:block!important;width:100%!important;margin-top:6px!important;padding:9px 10px!important;
+border-radius:8px!important;border:1.5px solid ${C.g200}!important;background:${C.g50}!important;resize:vertical!important;
+font:400 13px/1.45 ${FONT}!important;color:${C.g900}!important;outline:none!important;text-transform:none!important;letter-spacing:normal!important;
+white-space:pre-wrap!important}
+#synapse-explain-panel .sxp-draft-text:focus{border-color:${C.green}!important;background:${C.white}!important}
+#synapse-explain-panel .sxp-draft .sxp-tools-row{margin-top:8px!important}
+
 /* Circle confirm step: outline of the circled hull + the confirm bar */
 #synapse-circle-outline{position:absolute!important;z-index:${Z.panel}!important;pointer-events:none!important;display:block!important;overflow:visible!important}
 #synapse-circle-outline svg{display:block!important;width:100%!important;height:100%!important;overflow:visible!important}
@@ -756,6 +779,10 @@ background:${C.white}!important;color:${C.g900}!important}
 #synapse-confirm-bar kbd{font:600 10px/1 ui-monospace,Consolas,monospace!important;padding:2px 4px!important;border-radius:4px!important;
 background:rgba(0,0,0,.08)!important;color:inherit!important;display:inline-block!important}
 #synapse-confirm-bar button.s-primary kbd{background:rgba(255,255,255,.22)!important}
+#synapse-confirm-bar .sxc-question{all:unset;box-sizing:border-box!important;display:block!important;width:100%!important;
+padding:7px 9px!important;border-radius:8px!important;border:1px solid ${C.g200}!important;background:${C.g50}!important;
+font:400 12px/1.3 ${FONT}!important;color:${C.g900}!important}
+#synapse-confirm-bar .sxc-question:focus{border-color:${C.green}!important;background:${C.white}!important}
 #synapse-confirm-bar .sxc-live{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;
 clip:rect(0 0 0 0)!important;white-space:nowrap!important}
 
@@ -763,7 +790,7 @@ clip:rect(0 0 0 0)!important;white-space:nowrap!important}
 #synapse-explain-panel{right:16px!important;width:calc(100vw - 32px)!important}
 }
 @media (prefers-reduced-motion:reduce){
-#synapse-bubble,.synapse-emphasis,#synapse-fab-menu,#synapse-confirm-bar{animation:none!important}
+#synapse-bubble,#synapse-respond-bubble,.synapse-emphasis,#synapse-fab-menu,#synapse-confirm-bar{animation:none!important}
 #synapse-explain-panel,#synapse-explain-panel.s-visible,#synapse-circle-tip,#synapse-history-btn{transition:none!important}
 }
 

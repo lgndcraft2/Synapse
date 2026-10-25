@@ -82,6 +82,28 @@ const SETTINGS_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>S
 </main>
 </body></html>`;
 
+const REPLY_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Inbox</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main>
+<h1>Message from Ada</h1>
+<p id="q">Can you make the planning meeting on Friday at 3pm?</p>
+<textarea id="reply" rows="4" cols="50"></textarea>
+</main>
+<script>window.__inputs = 0; document.getElementById('reply').addEventListener('input', () => { window.__inputs += 1; });</script>
+</body></html>`;
+
+// A mail-style compose box: contenteditable, like Gmail and Outlook.
+const COMPOSE_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Compose</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main>
+<p id="msg">Hi, are you free for a call tomorrow morning?</p>
+<div id="compose" contenteditable="true" role="textbox" aria-label="Message body" style="min-height:80px;border:1px solid #ccc;padding:8px"></div>
+</main>
+<script>window.__inputs = 0; document.getElementById('compose').addEventListener('input', () => { window.__inputs += 1; });</script>
+</body></html>`;
+
+const RESPOND_DRAFT = 'Hi Ada,\nYes, Friday at 3pm works for me.';
+
 const NOTES = 'Plain text notes.\nLine two of the notes about mitochondria and ribosomes.\nA third line to make the file longer.\n';
 
 function json(res, status, body) {
@@ -109,6 +131,14 @@ function startServer() {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(SETTINGS_PAGE);
       }
+      if (req.method === 'GET' && url.pathname === '/compose.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(COMPOSE_PAGE);
+      }
+      if (req.method === 'GET' && url.pathname === '/reply.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(REPLY_PAGE);
+      }
       if (req.method === 'GET' && url.pathname === '/notes.txt') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end(NOTES);
@@ -130,7 +160,20 @@ function startServer() {
         requests.push(body);
         const re = body.reexplain;
         if (re) reexplainsServed += 1;
-        const reply = explainQueue.shift() || {
+        const reply = explainQueue.shift() || (body.mode === 'respond' ? {
+          status: 200,
+          body: {
+            html: re ? `<p>Mock follow-up help for ${body.kind}</p>` : `<p>Mock help for ${body.kind}</p>`,
+            kind: body.kind,
+            model_used: 'mock',
+            history_entry: null,
+            usage: null,
+            reexplain: re ? { free: true, free_remaining: Math.max(0, 10 - reexplainsServed), free_limit: 10 } : null,
+            mode: 'respond',
+            respond_kind: 'reply',
+            draft: RESPOND_DRAFT,
+          },
+        } : {
           status: 200,
           body: {
             html: re
@@ -142,7 +185,7 @@ function startServer() {
             usage: null,
             reexplain: re ? { free: true, free_remaining: Math.max(0, 10 - reexplainsServed), free_limit: 10 } : null,
           },
-        };
+        });
         setTimeout(() => json(res, reply.status, reply.body), 150);
         return;
       }
@@ -859,7 +902,7 @@ test('explain scripts load on an extension page without content.js', async () =>
   const errors = [];
   ext.on('pageerror', (e) => errors.push(String(e)));
   await ext.goto(`chrome-extension://${extensionId}/popup.html`);
-  for (const f of ['purify.min.js', 'lib/geometry.js', 'explain/host.js', 'explain/core.js', 'explain/context.js',
+  for (const f of ['purify.min.js', 'lib/geometry.js', 'explain/host.js', 'explain/core.js', 'explain/insert.js', 'explain/context.js',
     'explain/panel.js', 'explain/highlight.js', 'explain/circle.js', 'explain/main.js']) {
     await ext.addScriptTag({ url: `chrome-extension://${extensionId}/${f}` });
   }
@@ -1440,6 +1483,181 @@ test('re-explain a circle: re-looks at the crop kept for an hour; after that it 
   await panel.getByRole('button', { name: 'Simpler' }).click();
   await expect(panel.locator('.sxp-note.s-error')).toContainText('only kept for an hour');
   expect(requests.length).toBe(before + 2);
+});
+
+// ── Respond ───────────────────────────────────────────────────────
+
+/** Selects an element's text and waits for both bubbles. */
+async function selectForBubbles(selector) {
+  await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  }, selector);
+  await expect(page.locator('#synapse-bubble')).toBeVisible();
+  await expect(page.locator('#synapse-respond-bubble')).toBeVisible();
+}
+
+test('respond: a question by an empty box leads with Respond; Insert types the draft, Ctrl+Z undoes it', async () => {
+  await page.bringToFront();
+  await page.goto(`${base}/reply.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  const historyBefore = (await readStorage(worker(), 'explainHistoryLocal')).explainHistoryLocal?.length || 0;
+
+  await selectForBubbles('#q');
+  const respondBtn = page.locator('#synapse-respond-bubble');
+  await expect(respondBtn).toHaveClass(/s-suggested/);
+  const [rb, eb] = [await respondBtn.boundingBox(), await page.locator('#synapse-bubble').boundingBox()];
+  expect(rb.x).toBeLessThan(eb.x);
+
+  const before = requests.length;
+  await respondBtn.click();
+  const req = await waitForRequests(before + 1);
+  expect(req.mode).toBe('respond');
+  expect(req.kind).toBe('text');
+  expect(req.text).toContain('planning meeting');
+  expect(req.question).toBeNull();
+
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-result')).toContainText('Mock help for text');
+  await expect(panel.locator('.sxp-kind')).toHaveText('Reply');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  await expect(panel.locator('.sxp-clearer')).toHaveCount(0);
+  // Not painted green, and never saved.
+  await expect.poll(() => page.evaluate(() => CSS.highlights.has('synapse-explained'))).toBe(false);
+  const stored = await readStorage(worker(), 'explainHistoryLocal');
+  expect(stored.explainHistoryLocal?.length || 0).toBe(historyBefore);
+
+  // The user edits the draft, then inserts it. Nothing is submitted.
+  await panel.locator('.sxp-draft-text').fill(`${RESPOND_DRAFT}\nSee you then.`);
+  await panel.locator('.sxp-insert').click();
+  await expect(page.locator('#reply')).toHaveValue(`${RESPOND_DRAFT}\nSee you then.`);
+  expect(await page.evaluate(() => window.__inputs)).toBeGreaterThan(0);
+  await expect(panel.locator('.sxp-draft .sxp-note')).toContainText('Check it before you send it');
+
+  await page.locator('#reply').focus();
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('#reply')).toHaveValue('');
+});
+
+test('respond: a follow-up resends with the request and the previous help', async () => {
+  const panel = page.locator('#synapse-explain-panel');
+  const before = requests.length;
+  await panel.locator('.sxp-ask-input').fill('Make it more formal');
+  await panel.locator('.sxp-ask-input').press('Enter');
+  const req = await waitForRequests(before + 1);
+  expect(req.mode).toBe('respond');
+  expect(req.reexplain.mode).toBe('specific');
+  expect(req.reexplain.request).toBe('Make it more formal');
+  expect(req.reexplain.previous_html).toContain('Mock help for text');
+  expect(req.reexplain.parent_entry_id).toBeNull();
+  await expect(panel.locator('.sxp-result')).toContainText('Mock follow-up help');
+  await expect(panel.locator('.sxp-ver')).toHaveCount(2);
+  await expect(panel.locator('.sxp-ver').nth(1)).toContainText('Follow-up');
+});
+
+test('respond: Alt+Shift+R on plain text; Respond is the second button there', async () => {
+  await openArticle();
+  await selectForBubbles('#p2');
+  const respondBtn = page.locator('#synapse-respond-bubble');
+  await expect(respondBtn).not.toHaveClass(/s-suggested/);
+  const [rb, eb] = [await respondBtn.boundingBox(), await page.locator('#synapse-bubble').boundingBox()];
+  expect(rb.x).toBeGreaterThan(eb.x);
+
+  const before = requests.length;
+  await page.keyboard.press('Alt+Shift+R');
+  const req = await waitForRequests(before + 1);
+  expect(req.mode).toBe('respond');
+  expect(req.text).toContain('Ribosomes');
+});
+
+test('respond: free and signed-out users get friendly copy and a way forward', async () => {
+  await openArticle();
+  explainQueue.push({ status: 403, body: { detail: { code: 'RESPOND_REQUIRES_PAID', message: 'Respond is part of the paid plans.' } } });
+  await selectForBubbles('#p3');
+  await page.locator('#synapse-respond-bubble').click();
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-error')).toContainText('Thinker Lite and Deep Thinker');
+  // No dashboard runs during the suite, so check where the new tab was sent.
+  const asked = context.waitForEvent('request', (r) => r.url().endsWith('/billing'));
+  const opened = context.waitForEvent('page');
+  await panel.locator('.sxp-action', { hasText: 'See plans' }).click();
+  await asked;
+  await (await opened).close();
+
+  await page.bringToFront();
+  explainQueue.push({ status: 401, body: { detail: { code: 'RESPOND_REQUIRES_SIGN_IN', message: 'Sign in to use Respond.' } } });
+  await selectForBubbles('#p1');
+  await page.locator('#synapse-respond-bubble').click();
+  await expect(panel.locator('.sxp-error')).toContainText('Sign in to Synapse');
+  await expect(panel.locator('.sxp-action', { hasText: 'Sign in' })).toBeVisible();
+});
+
+test('explain: when the answer flags a reply, "Draft a reply" sends a respond request for the same text', async () => {
+  await page.bringToFront();
+  await page.goto(`${base}/reply.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  explainQueue.push({
+    status: 200,
+    body: {
+      html: '<p>Ada is asking whether you can attend.</p>', kind: 'text', model_used: 'mock',
+      history_entry: null, usage: null, reexplain: null, mode: 'explain', suggests_respond: 'reply',
+    },
+  });
+  await selectForBubbles('#q');
+  let before = requests.length;
+  await page.locator('#synapse-bubble').click();
+  const explainReq = await waitForRequests(before + 1);
+  expect(explainReq.mode).toBe('explain');
+
+  const panel = page.locator('#synapse-explain-panel');
+  const offer = panel.locator('.sxp-respond-offer');
+  await expect(offer).toHaveText('Draft a reply');
+  before = requests.length;
+  await offer.click();
+  const req = await waitForRequests(before + 1);
+  expect(req.mode).toBe('respond');
+  expect(req.text).toBe(explainReq.text);
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  // Insert finds the empty reply box near the explained text.
+  await panel.locator('.sxp-insert').click();
+  await expect(page.locator('#reply')).toHaveValue(RESPOND_DRAFT);
+});
+
+test('respond: Insert types into a contenteditable compose box, line by line', async () => {
+  await page.bringToFront();
+  await page.goto(`${base}/compose.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  await selectForBubbles('#msg');
+  const before = requests.length;
+  await page.locator('#synapse-respond-bubble').click();
+  await waitForRequests(before + 1);
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  await panel.locator('.sxp-insert').click();
+  await expect.poll(() => page.locator('#compose').innerText()).toBe(RESPOND_DRAFT);
+  expect(await page.evaluate(() => window.__inputs)).toBeGreaterThan(0);
+});
+
+test('circle confirm bar: Respond sends the crop with mode respond and the optional question', async () => {
+  await openArticle();
+  await chordAround(page.locator('#chart'), 8);
+  const bar = page.locator('#synapse-confirm-bar');
+  await expect(bar).toBeVisible();
+  await expect(bar.locator('.sxc-respond')).toBeVisible();
+  const before = requests.length;
+  await bar.locator('.sxc-question').fill('What should I do next?');
+  await bar.locator('.sxc-question').press('Enter');
+  const req = await waitForRequests(before + 1);
+  expect(req.mode).toBe('respond');
+  expect(req.kind).toBe('image');
+  expect(req.image_base64.length).toBeGreaterThan(100);
+  expect(req.question).toBe('What should I do next?');
+  await expect(page.locator('#synapse-explain-panel .sxp-result')).toContainText('Mock help for image');
 });
 
 test('viewer: no page errors', async () => {

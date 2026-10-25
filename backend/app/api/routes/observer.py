@@ -220,7 +220,7 @@ async def overview(
 
 
 _PLANS = ("free", "lite", "premium", "institutional")
-_FEATURES = ("explain_text", "explain_image", "pdf", "document_reformat", "page_reformat")
+_FEATURES = ("explain_text", "explain_image", "pdf", "document_reformat", "page_reformat", "respond")
 
 
 def _paid_case(now: datetime):
@@ -252,6 +252,7 @@ def _feature_case():
         (AIUsageEvent.operation == "explain_image", "explain_image"),
         (AIUsageEvent.operation == "document_reformat", "document_reformat"),
         (AIUsageEvent.operation == "reformat", "page_reformat"),
+        (AIUsageEvent.operation.in_(("respond_text", "respond_image")), "respond"),
         else_=None,
     )
 

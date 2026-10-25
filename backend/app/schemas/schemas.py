@@ -428,6 +428,11 @@ class ExplainRequest(BaseModel):
     reexplain: Optional[ExplainReexplain] = None
     # Where the explain happened, for aggregate feature telemetry only.
     source: Optional[Literal["page", "pdf", "document"]] = None
+    # "respond" suggests a reply, answer, moves or tips instead of explaining
+    # (paid plans only). A follow-up is a respond with reexplain mode "specific".
+    mode: Literal["explain", "respond"] = "explain"
+    # Respond only: the user's own ask, e.g. "how do I say no politely?"
+    question: Optional[str] = Field(None, max_length=500)
 
 
 class ExplainContextUploadRequest(BaseModel):
@@ -492,6 +497,14 @@ class ExplainResponse(BaseModel):
     reexplain: Optional[ExplainReexplainStatus] = None
     history_entry: Optional[ExplanationHistoryOut] = None
     usage: Optional[ExplainUsage] = None
+    mode: Literal["explain", "respond"] = "explain"
+    # Respond only: what the material was, and text ready to insert (null when
+    # there is nothing to type, e.g. game moves).
+    respond_kind: Optional[Literal["reply", "answer", "moves", "tips"]] = None
+    draft: Optional[str] = None
+    # Explain only: the material looks like it expects a reply or an answer,
+    # so the extension can offer Respond.
+    suggests_respond: Optional[Literal["reply", "answer"]] = None
 
 
 class ExplanationHistoryPage(BaseModel):

@@ -17,7 +17,9 @@
   //   actions?: [{ label, onClick, secondary? }], contextUsed?, contextNote?,
   //   versions?: [{ mode, request?, html }] (index 0 is the original), vi?,
   //   request?: what a re-explain resends, entrySource?, relookId?,
-  //   redoing?, redoError?, askOpen?, askDraft?, reexplainStatus?, shownAt? }
+  //   redoing?, redoError?, askOpen?, askDraft?, reexplainStatus?, shownAt?,
+  //   mode?: 'explain'|'respond', suggestsRespond?, insertSource?, insertTarget?,
+  //   insertNote? } — a respond version also has { respondKind, draft }.
   let current = null;
   const expanded = new Set();
 
@@ -47,6 +49,8 @@
 
   const KIND_LABEL = { text: 'Text', image: 'Circle' };
   const MODE_LABEL = { simpler: 'Simpler', more_detail: 'More detail', specific: 'Your request' };
+  const RESPOND_LABEL = { reply: 'Reply', answer: 'Answer', moves: 'Moves', tips: 'Tips' };
+  const SUGGEST_LABEL = { reply: 'Draft a reply', answer: 'Answer this' };
   const ASK_MAX = 300;
 
   /** [{ mode, request, html }] with the original first, from an entry's fields. */
@@ -64,10 +68,16 @@
     return extra.length ? extra[extra.length - 1].result_html : entry.result_html;
   }
 
+  function shownVersion(view) {
+    return (view.versions && view.versions[view.vi || 0]) || null;
+  }
+
   function shownHtml(view) {
-    const v = view.versions && view.versions[view.vi || 0];
+    const v = shownVersion(view);
     return v ? v.html : view.html;
   }
+
+  const isRespond = (view) => !!view && view.mode === 'respond';
   const ICON_TEXT = 'Aa';
   const ICON_IMAGE = '◎';
 
@@ -137,6 +147,7 @@
           <div class="sxp-actions synapse-hide"></div>
           <div class="sxp-versions synapse-hide" role="group" aria-label="Versions of this explanation"></div>
           <div class="sc-body s-ready sxp-result synapse-hide"></div>
+          <div class="sxp-draft synapse-hide"></div>
           <span class="sxp-ctx-used synapse-hide"></span>
           <div class="sxp-tools synapse-hide"></div>
         </section>
@@ -252,7 +263,10 @@
     section.classList.toggle('synapse-hide', !current);
     if (!current) return;
 
-    el('.sxp-kind').textContent = KIND_LABEL[current.kind] || 'Explain';
+    el('.sxp-kind').textContent = isRespond(current)
+      ? (RESPOND_LABEL[shownVersion(current)?.respondKind] || 'Respond')
+      : (KIND_LABEL[current.kind] || 'Explain');
+    el('.sc-loading-text').textContent = isRespond(current) ? 'Working on a response…' : 'Explaining…';
     el('.sxp-snippet').textContent = current.snippet || (current.kind === 'image' ? 'Circled area' : '');
     el('.sxp-loading').classList.toggle('synapse-hide', current.status !== 'loading');
 
@@ -283,8 +297,74 @@
     body.classList.toggle('synapse-hide', !done);
     if (done) renderHTML(body, shownHtml(current));
     else body.innerHTML = '';
+    renderDraft(done);
     renderVersions(done);
     renderTools(done);
+  }
+
+  // ── Respond draft: edit, Insert, Copy ──────────────────────────
+  function renderDraft(done) {
+    const box = el('.sxp-draft');
+    box.innerHTML = '';
+    const version = done && isRespond(current) ? shownVersion(current) : null;
+    const draft = version && typeof version.draft === 'string' ? version.draft : null;
+    box.classList.toggle('synapse-hide', draft == null);
+    if (draft == null) return;
+    const view = current;
+
+    const label = document.createElement('label');
+    label.className = 'sxp-tools-label sxp-draft-label';
+    label.textContent = version.respondKind === 'answer' ? 'Answer to type' : 'Suggested reply';
+    const area = document.createElement('textarea');
+    area.className = 'sxp-draft-text';
+    area.rows = Math.min(10, Math.max(3, draft.split('\n').length + 1));
+    area.value = version.edited ?? draft;
+    area.setAttribute('aria-label', 'Draft you can edit before inserting');
+    area.addEventListener('input', () => { version.edited = area.value; });
+    label.appendChild(area);
+
+    const row = document.createElement('div');
+    row.className = 'sxp-tools-row';
+    const insert = button('sxp-action sxp-insert', 'Insert', () => insertDraft(view, area.value));
+    insert.title = 'Put this into the text box on the page. Nothing is sent.';
+    const copy = button('sxp-action s-secondary sxp-copy', 'Copy', () => copyDraft(view, area));
+    row.append(insert, copy);
+    box.append(label, row);
+
+    if (view.insertNote) {
+      const note = document.createElement('span');
+      note.className = 'sxp-note' + (view.insertNote.error ? ' s-error' : '');
+      note.setAttribute('role', 'status');
+      note.textContent = view.insertNote.text;
+      box.appendChild(note);
+    }
+  }
+
+  function insertDraft(view, text) {
+    let target = SX.insertTargetUsable?.(view.insertTarget) ? view.insertTarget : null;
+    if (!target && SX.findInsertTarget) target = SX.findInsertTarget(view.insertSource || null);
+    if (!target) {
+      view.insertNote = { text: 'Click into the box you want filled, then press Insert.', error: true };
+    } else if (SX.insertText(target, String(text || '').trim())) {
+      view.insertTarget = target;
+      view.insertNote = { text: 'Inserted. Check it before you send it.' };
+    } else {
+      view.insertNote = { text: "Couldn't type into that box. Use Copy and paste it instead.", error: true };
+    }
+    if (current === view) renderCurrent();
+  }
+
+  async function copyDraft(view, area) {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(area.value);
+      ok = true;
+    } catch (_) {
+      area.select();
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    }
+    view.insertNote = ok ? { text: 'Copied.' } : { text: "Couldn't copy. Select the text and copy it yourself.", error: true };
+    if (current === view) renderCurrent();
   }
 
   function button(className, label, onClick) {
@@ -304,7 +384,9 @@
     const versions = done && view.versions ? view.versions : [];
     bar.classList.toggle('synapse-hide', versions.length < 2);
     versions.forEach((v, i) => {
-      const label = i === 0 ? 'Original' : `${i + 1} · ${MODE_LABEL[v.mode] || 'Re-explained'}`;
+      const label = i === 0 ? 'Original'
+        : isRespond(view) ? `${i + 1} · Follow-up`
+        : `${i + 1} · ${MODE_LABEL[v.mode] || 'Re-explained'}`;
       const b = button('sxp-ver', label, () => {
         view.vi = i;
         renderCurrent();
@@ -328,6 +410,7 @@
     tools.classList.toggle('synapse-hide', !done);
     if (!done) return;
     const view = current;
+    if (isRespond(view)) { renderRespondTools(tools, view); return; }
 
     const rate = document.createElement('div');
     rate.className = 'sxp-tools-row';
@@ -363,6 +446,16 @@
     ask.setAttribute('aria-expanded', String(!!view.askOpen));
     for (const b of [simpler, deeper, ask]) { b.disabled = !!view.redoing; row.appendChild(b); }
     tools.appendChild(row);
+
+    // The explanation says this expects a reply or an answer: offer Respond.
+    if (SUGGEST_LABEL[view.suggestsRespond]) {
+      const offer = document.createElement('div');
+      offer.className = 'sxp-tools-row';
+      const chip = button('sxp-chip s-good sxp-respond-offer', SUGGEST_LABEL[view.suggestsRespond], () => respondFrom(view));
+      chip.title = 'Suggest a reply or answer you can insert (paid plans)';
+      offer.appendChild(chip);
+      tools.appendChild(offer);
+    }
 
     if (view.askOpen) {
       const form = document.createElement('div');
@@ -407,6 +500,64 @@
       note.textContent = noteText;
       tools.appendChild(note);
     }
+  }
+
+  /** Respond results: a follow-up box instead of rating and re-explain chips. */
+  function renderRespondTools(tools, view) {
+    if (!view.request) return;
+    const form = document.createElement('div');
+    form.className = 'sxp-ask';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sxp-ask-input';
+    input.maxLength = ASK_MAX;
+    input.placeholder = 'Ask a follow-up, e.g. make it more formal';
+    input.setAttribute('aria-label', 'Ask a follow-up about this response');
+    input.value = view.askDraft || '';
+    input.disabled = !!view.redoing;
+    const send = button('sxp-action sxp-ask-send', 'Ask', () => submitAsk(view, input));
+    send.disabled = !!view.redoing;
+    input.addEventListener('input', () => { view.askDraft = input.value; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitAsk(view, input); }
+    });
+    form.append(input, send);
+    tools.appendChild(form);
+
+    if (view.redoing) {
+      const busy = document.createElement('div');
+      busy.className = 'sxp-redo';
+      busy.setAttribute('role', 'status');
+      busy.innerHTML = '<div class="sc-spinner"></div><span>Working on it…</span>';
+      tools.appendChild(busy);
+    }
+    if (view.redoError) {
+      const note = document.createElement('span');
+      note.className = 'sxp-note s-error';
+      note.setAttribute('role', 'alert');
+      note.textContent = view.redoError;
+      tools.appendChild(note);
+    }
+  }
+
+  /** Re-sends an explanation's source as a Respond request. */
+  function respondFrom(view) {
+    const req = view.request;
+    if (!req) return;
+    SX.requestExplain({
+      kind: view.kind,
+      text: req.text,
+      anchor: req.anchor,
+      context: req.context,
+      document: req.document,
+      localOnly: req.localOnly,
+      ...(view.kind === 'image' && view.relookId ? { relookId: view.relookId } : {}),
+      mode: 'respond'
+    }, {
+      snippet: view.snippet,
+      insertSource: view.insertSource || null,
+      insertTarget: view.insertTarget || null
+    });
   }
 
   function reexplainNote(view) {
@@ -470,6 +621,7 @@
       context: req.context || null,
       document: req.localOnly ? null : (req.document || null),
       localOnly: !!req.localOnly,
+      ...(isRespond(view) ? { mode: 'respond' } : {}),
       reexplain: {
         mode,
         request: requestText || null,
@@ -482,7 +634,11 @@
 
     view.redoing = false;
     if (res && res.ok) {
-      view.versions.push({ mode, request: requestText || null, html: res.html });
+      view.versions.push({
+        mode, request: requestText || null, html: res.html,
+        ...(isRespond(view) ? { respondKind: res.respondKind || 'tips', draft: res.draft ?? null } : {})
+      });
+      view.insertNote = null;
       view.vi = view.versions.length - 1;
       view.reexplainStatus = res.reexplain || view.reexplainStatus || null;
       view.relookFellBack = view.kind === 'image' && res.kind === 'text';
@@ -495,7 +651,7 @@
         SX.upsertHistory(entry, { skipPaint: true });
       }
     } else {
-      view.redoError = (res && res.error) || "Couldn't re-explain that. Try again.";
+      view.redoError = (res && res.error) || (isRespond(view) ? "Couldn't answer that. Try again." : "Couldn't re-explain that. Try again.");
     }
     if (current === view) {
       renderCurrent();
@@ -550,15 +706,17 @@
    * finishes after a newer one still lands in history, it just doesn't take
    * over the "current" slot.
    *
-   * payload: { kind?, text, anchor, captureId?, capture?, context?, document?, localOnly? }
-   * opts: { snippet, onResult?(res, entry), onRetry?() }
+   * payload: { kind?, text, anchor, captureId?, capture?, relookId?, context?, document?,
+   *            localOnly?, mode?: 'explain'|'respond', question? }
+   * opts: { snippet, onResult?(res, entry), onRetry?(), insertSource?, insertTarget? }
    */
   SX.requestExplain = async function (payload, opts = {}) {
     const requestId = ++st.requestSeq;
     st.currentRequestId = requestId;
     const kind = payload.kind || (payload.capture || payload.captureId ? 'image' : 'text');
+    const mode = payload.mode === 'respond' ? 'respond' : 'explain';
 
-    SX.showCurrent({ kind, snippet: opts.snippet || '', status: 'loading' });
+    SX.showCurrent({ kind, mode, snippet: opts.snippet || '', status: 'loading' });
     SX.openPanel({ skipRefresh: true });
 
     const res = await SX.send({
@@ -574,7 +732,10 @@
       document: payload.localOnly ? null : (payload.document || null),
       localOnly: !!payload.localOnly,
       ...(payload.captureId ? { captureId: payload.captureId } : {}),
-      ...(payload.capture ? { capture: payload.capture } : {})
+      ...(payload.capture ? { capture: payload.capture } : {}),
+      // An explained circle offered for Respond re-looks at its kept crop.
+      ...(payload.relookId ? { relookId: payload.relookId } : {}),
+      ...(mode === 'respond' ? { mode, question: payload.question || null } : {})
     });
 
     if (res && res.ok && res.contextUsed === 'document') st.documentContextReady = true;
@@ -585,10 +746,16 @@
     if (requestId === st.currentRequestId) {
       if (res && res.ok) {
         SX.showCurrent({
-          kind: res.kind || kind, snippet: opts.snippet || '', status: 'done',
+          kind: res.kind || kind, mode, snippet: opts.snippet || '', status: 'done',
           html: res.html, entryId: entry?.id, entrySource: entry?.source || null,
           contextUsed: res.contextUsed, contextNote: payload.localOnly ? 'fallback' : res.contextNote,
-          versions: [{ mode: null, request: null, html: res.html }], vi: 0,
+          versions: [{
+            mode: null, request: payload.question || null, html: res.html,
+            ...(mode === 'respond' ? { respondKind: res.respondKind || 'tips', draft: res.draft ?? null } : {})
+          }], vi: 0,
+          suggestsRespond: mode === 'explain' ? res.suggestsRespond || null : null,
+          insertSource: opts.insertSource || null,
+          insertTarget: opts.insertTarget || null,
           // Kept so a re-explain sends the same source and context again.
           request: {
             text: payload.text || '', anchor: payload.anchor || null,
@@ -626,6 +793,12 @@
     }
     if (code === 'CAPTURE_EXPIRED' && opts.onRetry) {
       return [{ label: 'Retry', onClick: () => opts.onRetry() }];
+    }
+    if (code === 'RESPOND_REQUIRES_PAID') {
+      return [{ label: 'See plans', onClick: () => SX.send({ type: 'OPEN_DASHBOARD', page: 'billing' }) }];
+    }
+    if (code === 'RESPOND_REQUIRES_SIGN_IN') {
+      return [{ label: 'Sign in', onClick: () => SX.send({ type: 'OPEN_DASHBOARD', page: 'signin' }) }];
     }
     return [];
   }

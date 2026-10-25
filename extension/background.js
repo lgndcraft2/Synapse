@@ -1059,6 +1059,15 @@ function explainErrorMessage(status, data) {
   if (code === "EXPLAIN_BURST") {
     return { code, error: "That's a lot of explanations at once. Give it a minute, then try again." };
   }
+  if (code === "RESPOND_REQUIRES_SIGN_IN") {
+    return { code, error: "Sign in to Synapse to get suggested replies and answers." };
+  }
+  if (code === "RESPOND_REQUIRES_PAID") {
+    return {
+      code,
+      error: "Suggested replies, answers and tips are part of Thinker Lite and Deep Thinker. Explaining still works on every plan."
+    };
+  }
   if (detail && typeof detail === "object" && detail.message) return { code, error: detail.message };
   if (typeof detail === "string" && detail) return { code: null, error: detail };
   if (Array.isArray(detail)) return { code: "INVALID_REQUEST", error: "Synapse couldn't read that request. Try again." };
@@ -1149,6 +1158,8 @@ async function handleExplain(msg, sender) {
   if (!baseUrl) return { ok: false, error: "Backend API URL is not configured." };
 
   const text = String(msg.text || "").trim();
+  // "respond" suggests a reply, answer, moves or tips; results are never saved.
+  const respond = msg.mode === "respond";
   let kind = "text";
   let crop = null;
   // { mode, request?, previousHtml, entryId?, entrySource?, relookId? }
@@ -1171,6 +1182,19 @@ async function handleExplain(msg, sender) {
       }
     } else if (!text) {
       return { ok: false, code: "EMPTY_TEXT", error: "There's nothing to re-explain." };
+    }
+  } else if (msg.relookId && msg.kind === "image") {
+    // Respond offered on an explained circle: look at the crop kept for an
+    // hour, else fall back to the text found in the circle.
+    relookId = msg.relookId;
+    crop = await getRelookCrop(relookId);
+    if (crop) kind = "image";
+    else if (!text) {
+      return {
+        ok: false,
+        code: "RELOOK_EXPIRED",
+        error: "The circled image is only kept for an hour. Circle it again to get a response."
+      };
     }
   } else if (msg.captureId) {
     // Confirmed circle: use the crop taken before the confirm bar. Never recapture.
@@ -1242,9 +1266,11 @@ async function handleExplain(msg, sender) {
           request: reexplain.request || null,
           previous_html: String(reexplain.previousHtml || "").slice(0, 40000),
           // Server entries get the version appended; local ones are updated below.
-          parent_entry_id: reexplain.entrySource === "server" ? reexplain.entryId || null : null
+          parent_entry_id: !respond && reexplain.entrySource === "server" ? reexplain.entryId || null : null
         }
-      : null
+      : null,
+    mode: respond ? "respond" : "explain",
+    question: respond ? String(msg.question || "").trim().slice(0, 500) || null : null
   };
 
   let { response, data, networkError } = await postExplain(baseUrl, headers, body);
@@ -1284,8 +1310,10 @@ async function handleExplain(msg, sender) {
   // history_entry is null for free/anonymous callers, who get a local entry.
   // Local files count as one site ("local-files") like any other; other
   // non-web pages (no hostname) save no history, only show the result.
-  const savesHistory = /^(https?|file):/i.test(msg.pageUrl || "") && !!hostname;
-  if (reexplain) {
+  const savesHistory = !respond && /^(https?|file):/i.test(msg.pageUrl || "") && !!hostname;
+  if (respond) {
+    // Never saved: one-off, and it may hold private mail.
+  } else if (reexplain) {
     // A new version of an existing entry, never a new entry.
     if (!historyEntry && reexplain.entryId && reexplain.entrySource !== "server") {
       const version = {
@@ -1339,6 +1367,10 @@ async function handleExplain(msg, sender) {
     contextNote,
     relookId,
     reexplain: data.reexplain || null,
+    mode: data.mode || "explain",
+    respondKind: data.respond_kind || null,
+    draft: typeof data.draft === "string" ? data.draft : null,
+    suggestsRespond: data.suggests_respond || null,
     ...(localEntry ? { localEntry } : {})
   };
 }
@@ -1450,6 +1482,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.tabs.update(sender.tab.id, { url: target })
       .then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false, error: "Couldn't open the Synapse viewer." }));
+    return true;
+  }
+
+  if (msg.type === "OPEN_DASHBOARD") {
+    // Upgrade and sign-in links from the explain panel. Only known pages.
+    const path = { billing: "/billing", signin: "/auth?tab=login" }[msg.page];
+    if (!path) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    chrome.tabs.create({ url: self.SynapseConfig.DASHBOARD_URL + path })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
 

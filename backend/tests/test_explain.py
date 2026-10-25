@@ -29,6 +29,7 @@ def ai_calls(monkeypatch):
 
     class Recorder(list):
         fail = False
+        html = "<div><p>Explained.</p></div>"
 
     calls = Recorder()
 
@@ -41,9 +42,33 @@ def ai_calls(monkeypatch):
         })
         if calls.fail:
             raise RuntimeError("provider exploded at https://provider.example/?key=secret")
-        return "<div><p>Explained.</p></div>"
+        return calls.html
 
     monkeypatch.setattr(ai, "call_explain", fake_call_explain)
+    return calls
+
+
+@pytest.fixture
+def respond_calls(monkeypatch):
+    """Stub the respond model call, like ai_calls does for explain."""
+    import app.services.ai as ai
+
+    class Recorder(list):
+        fail = False
+
+    calls = Recorder()
+
+    async def fake_call_respond(text, image_base64, media_type, profile, feedback_summary, use_claude=False,
+                                context_text="", document_text="", question=None, previous_html=None):
+        calls.append({
+            "text": text, "image": image_base64, "use_claude": use_claude,
+            "question": question, "previous_html": previous_html,
+        })
+        if calls.fail:
+            raise RuntimeError("provider exploded")
+        return ai.RespondOutput("reply", "<div><p>Be warm and brief.</p></div>", "Hi Ada,\n\nYes, Friday works.")
+
+    monkeypatch.setattr(ai, "call_respond", fake_call_respond)
     return calls
 
 
@@ -719,3 +744,102 @@ async def test_reexplain_is_not_written_to_the_feedback_log(client, ai_calls, se
     await _explain(client, _text_body(reexplain=_reexplain()), user["headers"])
     async with session_factory() as session:
         assert (await session.scalars(select(FeedbackLog))).all() == []
+
+
+# ── Respond ───────────────────────────────────────────────────────
+
+async def test_respond_requires_sign_in(client, respond_calls, fake_redis):
+    resp = await _explain(client, _text_body(mode="respond"))
+    assert resp.status_code == 401
+    assert resp.json()["detail"]["code"] == "RESPOND_REQUIRES_SIGN_IN"
+    assert respond_calls == []
+    assert not any(k.startswith("rl:") for k in fake_redis.store)
+
+
+async def test_respond_requires_a_paid_plan(client, respond_calls, session_factory, fake_redis):
+    user = await _sign_in(client, session_factory, "freeresp")
+    for body in (_text_body(mode="respond"), _image_body(mode="respond")):
+        resp = await _explain(client, body, user["headers"])
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["code"] == "RESPOND_REQUIRES_PAID"
+    assert respond_calls == []
+    assert not any(k.startswith("rl:") for k in fake_redis.store)
+
+
+async def test_paid_text_respond(client, respond_calls, ai_calls, session_factory):
+    from app.models.models import AIUsageEvent, ExplanationHistory
+
+    user = await _sign_in(client, session_factory, "literesp", plan="lite")
+    resp = await _explain(client, _text_body(mode="respond", question="Say yes politely"), user["headers"])
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["mode"] == "respond"
+    assert data["respond_kind"] == "reply"
+    assert data["draft"] == "Hi Ada,\n\nYes, Friday works."
+    assert data["html"] == "<div><p>Be warm and brief.</p></div>"
+    assert data["suggests_respond"] is None
+    assert data["history_entry"] is None  # respond results are never saved
+    assert ai_calls == []
+    assert respond_calls[0]["question"] == "Say yes politely"
+    assert respond_calls[0]["use_claude"] is False
+
+    async with session_factory() as session:
+        events = (await session.scalars(select(AIUsageEvent))).all()
+        assert (await session.scalars(select(ExplanationHistory))).all() == []
+    assert [(e.operation, e.succeeded) for e in events] == [("respond_text", True)]
+
+
+async def test_paid_image_respond_uses_image_quota_and_refunds(client, respond_calls, session_factory, fake_redis):
+    user = await _sign_in(client, session_factory, "imgresp", plan="lite")
+    resp = await _explain(client, _image_body(mode="respond"), user["headers"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["usage"]["image_captures_used"] == 1
+    assert respond_calls[0]["image"] == PNG
+
+    respond_calls.fail = True
+    resp = await _explain(client, _image_body(mode="respond"), user["headers"])
+    assert resp.status_code == 502
+    respond_calls.fail = False
+    resp = await _explain(client, _image_body(mode="respond"), user["headers"])
+    assert resp.json()["usage"]["image_captures_used"] == 2
+
+
+async def test_premium_respond_uses_claude(client, respond_calls, session_factory):
+    user = await _sign_in(client, session_factory, "premresp", plan="premium")
+    resp = await _explain(client, _text_body(mode="respond"), user["headers"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["model_used"] == "claude-sonnet"
+    assert respond_calls[0]["use_claude"] is True
+
+
+async def test_respond_follow_up_sends_previous_help_and_request(client, respond_calls, session_factory):
+    user = await _sign_in(client, session_factory, "followup", plan="lite")
+    body = _text_body(mode="respond", reexplain=_reexplain("specific", request="Make it shorter"))
+    resp = await _explain(client, body, user["headers"])
+    assert resp.status_code == 200, resp.text
+    assert respond_calls[0]["question"] == "Make it shorter"
+    assert respond_calls[0]["previous_html"] == "<div><p>First version.</p></div>"
+    assert resp.json()["history_entry"] is None
+
+    bad = await _explain(client, _text_body(mode="respond", reexplain=_reexplain("simpler")), user["headers"])
+    assert bad.status_code == 400
+
+
+async def test_question_is_only_for_respond(client, ai_calls):
+    resp = await _explain(client, _text_body(question="What should I say?"))
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize("html, expected_html, suggests", [
+    ('<div data-respond="reply"><p>A request.</p></div>', "<div><p>A request.</p></div>", "reply"),
+    ("<div data-respond='answer' class=\"x\"><p>Q</p></div>", '<div class="x"><p>Q</p></div>', "answer"),
+    ("<div><p>Plain.</p></div>", "<div><p>Plain.</p></div>", None),
+])
+async def test_explain_reports_when_respond_fits(client, ai_calls, html, expected_html, suggests):
+    ai_calls.html = html
+    resp = await _explain(client, _text_body())
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["html"] == expected_html
+    assert resp.json()["suggests_respond"] == suggests
+    assert resp.json()["mode"] == "explain"

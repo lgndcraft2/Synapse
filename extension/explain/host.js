@@ -174,6 +174,7 @@ animation:synapse-host-spin .7s linear infinite}
  *   <script src="../lib/geometry.js"></script>
  *   <script src="../explain/host.js"></script>
  *   <script src="../explain/core.js"></script>
+ *   <script src="../explain/insert.js"></script>
  *   <script src="../explain/context.js"></script>
  *   <script src="../explain/panel.js"></script>
  *   <script src="../explain/highlight.js"></script>
