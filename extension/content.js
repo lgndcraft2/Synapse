@@ -98,8 +98,8 @@ justify-content:center!important;
 transition:transform .22s cubic-bezier(.16,1,.3,1),background .18s!important;
 box-shadow:0 4px 20px rgba(29,158,117,.35)!important}
 #synapse-fab:hover{background:${C.greenDark}!important;transform:scale(1.07)!important}
-#synapse-fab.open{transform:rotate(45deg) scale(1.05)!important;background:${C.greenDark}!important}
-#synapse-fab svg{width:24px!important;height:24px!important;fill:white!important;display:block!important}
+#synapse-fab.open{transform:scale(1.05)!important;background:${C.greenDark}!important}
+#synapse-fab svg{width:30px!important;height:30px!important;display:block!important}
 #synapse-fab .s-dot{position:absolute!important;top:5px!important;right:5px!important;
 width:11px!important;height:11px!important;border-radius:50%!important;
 background:${C.gold}!important;border:2px solid white!important;display:none!important}
@@ -1533,11 +1533,21 @@ function buildFloatingUI() {
   const fab = document.createElement('button');
   fab.id = 'synapse-fab';
   fab.title = 'Synapse';
+  // The Synapse mark: three bars, each laid over the one below. A mask cuts a
+  // thin seam into the lower bar so the overlap reads like the logo's.
   fab.innerHTML = `
-    <svg viewBox="0 0 24 24">
-      <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14
-        2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0
-        1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4.8">
+      <mask id="synapse-fab-cut-1" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+        <rect width="24" height="24" fill="#fff" stroke="none"/>
+        <path d="M7.2 8 16.8 4.4" stroke="#000" stroke-width="5.7"/>
+      </mask>
+      <mask id="synapse-fab-cut-2" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+        <rect width="24" height="24" fill="#fff" stroke="none"/>
+        <path d="M7.2 12.5 16.8 14.6" stroke="#000" stroke-width="5.7"/>
+      </mask>
+      <path d="M7.2 19.6 16.8 17" mask="url(#synapse-fab-cut-2)"/>
+      <path d="M7.2 12.5 16.8 14.6" mask="url(#synapse-fab-cut-1)"/>
+      <path d="M7.2 8 16.8 4.4"/>
     </svg>
     <span class="s-dot"></span>`;
 

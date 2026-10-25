@@ -33,8 +33,8 @@ interface BillingInfo {
   trial_ends_at?: string | null;
   renews_at?: string | null;
   cancelled_at?: string | null;
-  stripe_customer_id?: string | null;
-  stripe_subscription_id?: string | null;
+  customer_id?: string | null;
+  subscription_id?: string | null;
 }
 
 interface Invoice {
@@ -108,7 +108,7 @@ export default function Subscription() {
   const [checkedAuth, setCheckedAuth] = useState(false);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  // Stripe pages by cursor and reports no total, so Prev is served by keeping
+  // The history pages by cursor and reports no total, so Prev is served by keeping
   // the cursor that opened each page we have visited. cursors[0] is page 1's
   // (always undefined); its length is the current page number.
   const [invoiceCursors, setInvoiceCursors] = useState<(string | undefined)[]>([undefined]);
@@ -117,7 +117,7 @@ export default function Subscription() {
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [card, setCard] = useState<PaymentMethod | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
-  // Each panel tracks its own load, so a slow Stripe call can't hold the whole
+  // Each panel tracks its own load, so a slow Paystack call can't hold the whole
   // screen on "Loading…" the way a single shared flag would.
   const [loading, setLoading] = useState({
     billing: true,
@@ -142,7 +142,7 @@ export default function Subscription() {
       setUser(user);
       setCheckedAuth(true);
 
-      // Fire all four together but render each as it lands, so a slow Stripe
+      // Fire all four together but render each as it lands, so a slow Paystack
       // round trip doesn't hold up the panels that are already answerable.
       const done = (key: keyof typeof loading) =>
         setLoading((prev) => ({ ...prev, [key]: false }));
@@ -171,7 +171,7 @@ export default function Subscription() {
   const plan = planByTier(tier);
   const period: BillingPeriod = billing?.billing_period === 'annual' ? 'annual' : 'monthly';
   const price = plan ? priceFor(plan, period) : undefined;
-  const hasSubscription = Boolean(billing?.stripe_subscription_id);
+  const hasSubscription = Boolean(billing?.subscription_id);
   const isCancelling = Boolean(billing?.cancel_at_period_end);
   const isPaid = tier !== 'free';
 
@@ -494,9 +494,9 @@ export default function Subscription() {
                 </h2>
                 <p className="text-base mb-4" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
                   This takes effect{' '}
-                  <span className="font-semibold">immediately</span>. Stripe credits the unused part
+                  <span className="font-semibold">immediately</span>. We credit the unused part
                   of {PLAN_LABELS[tier] || tier} against {confirmingPlan.name}, so you're charged
-                  only the difference.
+                  only the difference, or refunded it if the new plan costs less.
                 </p>
                 {billing?.status === 'trialing' && (
                   <p className="text-base mb-4" style={{ color: '#1b1c1c', lineHeight: 1.6 }}>
@@ -514,7 +514,7 @@ export default function Subscription() {
                       await run(
                         target.tier,
                         () => changePlan(target.priceId),
-                        `You're now on ${target.name}. Stripe has prorated the difference.`,
+                        `You're now on ${target.name}. The difference has been prorated.`,
                       );
                       setConfirmingPlan(null);
                     }}
@@ -613,7 +613,7 @@ export default function Subscription() {
                   rangeEnd={
                     invoices.length ? (invoicePage - 1) * INVOICES_PER_PAGE + invoices.length : 0
                   }
-                  /* Stripe reports no total, so no "of N" here. */
+                  /* The history reports no total, so no "of N" here. */
                   hasMore={invoiceHasMore}
                   busy={invoicesBusy}
                   onPrev={() => loadInvoicePage(invoicePage - 1)}
@@ -724,7 +724,7 @@ export default function Subscription() {
                   No card on file.
                 </p>
               )}
-              {(billing?.stripe_customer_id || isPaid) && (
+              {billing?.subscription_id && (
                 <button
                   className="subscription-action rounded px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors hover:opacity-80 flex items-center justify-center gap-2"
                   style={{ border: '1px solid #004635', color: '#004635', backgroundColor: 'transparent' }}
@@ -738,7 +738,7 @@ export default function Subscription() {
                 </button>
               )}
               <p className="text-xs mt-3" style={{ color: '#5e5f5b', lineHeight: 1.5 }}>
-                Card details are entered on Stripe's secure page — they never touch Synapse's
+                Card details are entered on Paystack's secure page — they never touch Synapse's
                 servers.
               </p>
             </section>

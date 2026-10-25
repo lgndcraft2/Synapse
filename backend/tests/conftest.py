@@ -28,6 +28,12 @@ os.environ.setdefault(
 # during module import and still require syntactically valid placeholders.
 os.environ.setdefault("UPSTASH_REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("UPSTASH_REDIS_TOKEN", "test-redis-token")
+# Billing tests replace the Paystack client, so these only need to be stable.
+os.environ.setdefault("PAYSTACK_SECRET_KEY", "sk_test_paystack_placeholder")
+os.environ.setdefault("PAYSTACK_THINKER_LITE_PLAN_CODE", "PLN_lite_monthly")
+os.environ.setdefault("PAYSTACK_DEEP_THINKER_PLAN_CODE", "PLN_deep_monthly")
+os.environ.setdefault("PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE", "PLN_lite_annual")
+os.environ.setdefault("PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE", "PLN_deep_annual")
 
 import pytest
 import pytest_asyncio

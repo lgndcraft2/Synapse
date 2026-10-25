@@ -1,6 +1,6 @@
 # Synapse Backend
 
-FastAPI backend for Synapse. It handles authentication sync, cognitive profiles, AI reformatting, document processing, feedback ingestion, dashboard stats, rate limiting, and Stripe billing.
+FastAPI backend for Synapse. It handles authentication sync, cognitive profiles, AI reformatting, document processing, feedback ingestion, dashboard stats, rate limiting, and Paystack billing.
 
 ## Stack
 
@@ -9,7 +9,7 @@ FastAPI backend for Synapse. It handles authentication sync, cognitive profiles,
 - Async SQLAlchemy
 - Supabase Auth/JWT verification
 - Upstash Redis for rate limiting and cache
-- Stripe for subscriptions and billing portal
+- Paystack for subscriptions, card updates and payment history
 - Gemini and Claude provider calls through server-side credentials
 
 ## Project Structure
@@ -22,7 +22,7 @@ backend/
 |   |   |-- auth.py              # Supabase user sync and current-user endpoint
 |   |   |-- reformat.py          # Page, section, and document AI proxy endpoints
 |   |   |-- profile.py           # Profile CRUD, feedback ingestion, dashboard stats
-|   |   `-- billing.py           # Stripe status, checkout, portal, confirm, webhooks
+|   |   `-- billing.py           # Paystack status, checkout, card link, confirm, webhooks
 |   |-- core/
 |   |   |-- config.py            # Environment settings
 |   |   |-- dependencies.py      # Authenticated user dependencies
@@ -59,7 +59,7 @@ backend/
 - `POST /api/v1/billing/checkout`
 - `POST /api/v1/billing/confirm`
 - `POST /api/v1/billing/portal`
-- `POST /api/v1/webhooks/stripe`
+- `POST /api/v1/webhooks/paystack`
 - `GET /health`
 
 ## Setup
@@ -87,7 +87,7 @@ See `.env.example` for the full list. The main groups are:
 - Redis: `UPSTASH_REDIS_URL`, `UPSTASH_REDIS_TOKEN` (the Upstash REST `https://` URL and REST token are supported)
 - Observer panel: `ADMIN_EMAILS` (comma-separated internal operator email addresses)
 - AI: `GEMINI_KEY_1` through `GEMINI_KEY_5`, `ANTHROPIC_API_KEY`
-- Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_THINKER_LITE_PRICE_ID`, `STRIPE_DEEP_THINKER_PRICE_ID`
+- Paystack: `PAYSTACK_SECRET_KEY`, `PAYSTACK_CURRENCY`, `PAYSTACK_THINKER_LITE_PLAN_CODE`, `PAYSTACK_DEEP_THINKER_PLAN_CODE`
 - App/CORS: `APP_ENV`, `FRONTEND_URL`, `ALLOWED_ORIGINS`, `ALLOWED_ORIGIN_REGEX`
 - Limits: `FREE_DAILY_LIMIT`, `FREE_LIFETIME_LIMIT`, `LITE_MONTHLY_LIMIT`
 

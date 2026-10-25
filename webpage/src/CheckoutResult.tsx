@@ -45,13 +45,13 @@ export default function CheckoutResult() {
       setUser(user);
       setCheckedAuth(true);
 
-      // Stripe sends cancellations to /billing/cancelled with no session.
+      // Paystack sends cancellations to /billing/cancelled with no reference.
       if (window.location.pathname.startsWith('/billing/cancelled')) {
         setState('cancelled');
         return;
       }
 
-      const id = new URLSearchParams(window.location.search).get('session_id');
+      const id = new URLSearchParams(window.location.search).get('reference');
       if (!id) {
         setError('We could not find a checkout session in this link.');
         setState('failed');
@@ -76,7 +76,7 @@ export default function CheckoutResult() {
       // without the user having to sign in again there.
       pushSessionToExtension(getSession());
 
-      // Drop session_id from the URL so a refresh doesn't re-confirm.
+      // Drop the reference from the URL so a refresh doesn't re-confirm.
       window.history.replaceState({}, '', '/billing/success');
     } catch (err: any) {
       setError(err?.message || 'We could not confirm your payment.');
@@ -155,7 +155,7 @@ export default function CheckoutResult() {
                 Go to dashboard
               </a>
               <p className="text-sm mt-4" style={{ color: '#5e5f5b' }}>
-                A receipt is on its way to your inbox from Stripe.
+                Paystack may email you about the small card check. It has already been refunded.
               </p>
             </>
           )}
@@ -173,7 +173,7 @@ export default function CheckoutResult() {
                 className="text-sm mb-8 p-4 rounded text-left"
                 style={{ backgroundColor: '#f0eded', color: '#5e5f5b', lineHeight: 1.6 }}
               >
-                If you were charged, don't pay again — Stripe notifies us separately and your plan
+                If you were charged, don't pay again — Paystack notifies us separately and your plan
                 will update on its own within a minute. Refresh your dashboard to check.
               </p>
               <div className="flex flex-col gap-3">

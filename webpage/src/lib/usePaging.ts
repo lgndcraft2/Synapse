@@ -5,7 +5,7 @@ import type { Paged } from './api';
  * Offset-paged list state for the endpoints that can count their rows
  * (/profile/history, /dashboard/sessions, /support/tickets).
  *
- * The invoice list is deliberately not served by this hook: Stripe pages by
+ * The invoice list is deliberately not served by this hook: it pages by
  * cursor and reports no total, so it keeps its own small cursor stack in
  * Subscription.tsx rather than bending this one out of shape.
  */

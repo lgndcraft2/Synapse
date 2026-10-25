@@ -8,7 +8,7 @@ Synapse is a cognitive-accessibility product: a Chrome extension reshapes web co
 - Three reading profiles: Load Reducer, Comprehension Gap, and Hyperfocus Reader.
 - First-party account flows: password registration, email verification, password recovery, Google OAuth, short-lived access tokens, and rotating refresh tokens with reuse detection.
 - Dashboard management for profiles, validated preset avatars, usage, billing, invoices, payment methods, support tickets, and subscription changes.
-- Stripe Checkout, customer portal, cancellation, resumption, plan changes, and signed webhook handling.
+- Paystack checkout with a free trial, card updates, cancellation, resumption, prorated plan changes, and signed webhook handling.
 - An access-controlled Observer panel with privacy-safe request telemetry, AI provider usage/cost estimates, user actions, and an audit log.
 - Gemini and Claude calls kept server-side, with tier-aware rate limits and usage caps backed by Redis or Upstash REST.
 
@@ -47,7 +47,7 @@ Synapse is a cognitive-accessibility product: a Chrome extension reshapes web co
 Chrome extension <--> FastAPI API <--> PostgreSQL
        ^                    |              |
        |                    +--> Redis / Upstash
-React dashboard ------------+--> Gemini / Claude / Stripe / Resend
+React dashboard ------------+--> Gemini / Claude / Paystack / Resend
 ```
 
 The dashboard authenticates against the API and passes its session to the extension through Chrome's externally-connectable messaging. The extension refreshes its own token family and calls the API; it does not contain AI-provider credentials or a standalone sign-in flow. The API owns prompt construction, input limits, persistence, billing, email, and access control.
@@ -64,7 +64,7 @@ alembic upgrade head
 python -m uvicorn app.main:app --reload
 ```
 
-Set the values in `backend/.env` before starting. At minimum, configure `DATABASE_URL`, a strong `APP_SECRET_KEY`, Redis/Upstash credentials, Gemini keys, the Anthropic key, Stripe credentials, frontend/CORS origins, and the plan price IDs. `GOOGLE_CLIENT_*` values enable Google OAuth; `RESEND_API_KEY` enables support-email delivery; `ADMIN_EMAILS` grants access to `/observer`. The template documents optional annual pricing, provider cost estimates, and production migration configuration.
+Set the values in `backend/.env` before starting. At minimum, configure `DATABASE_URL`, a strong `APP_SECRET_KEY`, Redis/Upstash credentials, Gemini keys, the Anthropic key, Paystack credentials, frontend/CORS origins, and the plan codes. `GOOGLE_CLIENT_*` values enable Google OAuth; `RESEND_API_KEY` enables support-email delivery; `ADMIN_EMAILS` grants access to `/observer`. The template documents optional annual pricing, provider cost estimates, and production migration configuration.
 
 ### 2. Web app
 
@@ -75,7 +75,7 @@ npm install
 npm run dev
 ```
 
-The API URL needs no setting: `npm run dev` uses `http://localhost:8000` and a production build (Vercel) uses `https://api.usesynapse.cv` (`webpage/src/lib/config.ts`); `VITE_BACKEND_URL` overrides both. Add matching Stripe price IDs and `VITE_SUPPORT_EMAIL` as needed. `VITE_EXTENSION_ID` is optional for normal web development, but required for dashboard-to-extension session handoff.
+The API URL needs no setting: `npm run dev` uses `http://localhost:8000` and a production build (Vercel) uses `https://api.usesynapse.cv` (`webpage/src/lib/config.ts`); `VITE_BACKEND_URL` overrides both. Add matching Paystack plan codes and `VITE_SUPPORT_EMAIL` as needed. `VITE_EXTENSION_ID` is optional for normal web development, but required for dashboard-to-extension session handoff.
 
 ### 3. Chrome extension
 
@@ -108,12 +108,12 @@ The Playwright setup loads `extension/`, discovers its path-derived ID, temporar
 
 ## Deployment
 
-The root `Dockerfile` builds `webpage/`, installs the backend, runs `alembic upgrade head`, and serves the API plus compiled SPA on `$PORT`. Configure production URLs, Chrome extension origin restrictions (`CHROME_EXTENSION_ID` or `ALLOWED_ORIGIN_REGEX`), Stripe webhooks, and direct migration connectivity before deploying.
+The root `Dockerfile` builds `webpage/`, installs the backend, runs `alembic upgrade head`, and serves the API plus compiled SPA on `$PORT`. Configure production URLs, Chrome extension origin restrictions (`CHROME_EXTENSION_ID` or `ALLOWED_ORIGIN_REGEX`), Paystack webhooks, and direct migration connectivity before deploying.
 
 ## Technology
 
 - Extension: Chrome Manifest V3, vanilla JavaScript, HTML/CSS, DOMPurify
 - Dashboard: React, TypeScript, Vite, Lucide
 - API: FastAPI, SQLAlchemy async, Alembic, PostgreSQL
-- Services: Redis/Upstash, Gemini, Claude, Stripe, Resend, Google OAuth
+- Services: Redis/Upstash, Gemini, Claude, Paystack, Resend, Google OAuth
 - Validation: pytest and Playwright

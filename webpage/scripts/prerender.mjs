@@ -54,7 +54,7 @@ function withStructuredData(html) {
           '@type': 'Offer',
           name: p.name,
           price: ((p.monthly?.amount ?? 0) / 100).toFixed(2),
-          priceCurrency: 'USD',
+          priceCurrency: 'NGN',
           description: p.tagline,
           url: `${SITE_URL}/#pricing`,
         }));

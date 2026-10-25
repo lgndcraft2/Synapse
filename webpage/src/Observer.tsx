@@ -136,7 +136,7 @@ type ObserverUser = {
   id: string; email: string; name: string | null; plan: string; signup_at: string; last_login_at: string | null;
   profile_status: string; profile_type: string | null; lifetime_requests: number; rate_limit_status: string;
   ai_usage_24h: Record<string, number>;
-  billing: { plan: string; status: string; renews_at: string | null; cancel_at_period_end: boolean; has_stripe_subscription: boolean } | null;
+  billing: { plan: string; status: string; renews_at: string | null; cancel_at_period_end: boolean; has_subscription: boolean } | null;
 };
 
 type AuditEntry = { id: string; at: string; action: string; actor_user_id: string | null; target_user_id: string | null; metadata: Record<string, unknown> };
@@ -429,7 +429,7 @@ export default function Observer() {
                       )}
                     </table>
                   </div>
-                  <p className="observer-footnote">Paid access means institutional, or Lite/Premium with an active or trialing, unexpired subscription. Est. MRR uses list prices (annual ÷ 12) and leaves out institutional contracts. It is an estimate, not Stripe revenue.</p>
+                  <p className="observer-footnote">Paid access means institutional, or Lite/Premium with an active or trialing, unexpired subscription. Est. MRR uses list prices (annual ÷ 12) and leaves out institutional contracts. It is an estimate, not Paystack revenue.</p>
                 </>
               )}
             </section>
@@ -650,8 +650,8 @@ export default function Observer() {
                               <option value="free">Free</option><option value="lite">Lite</option><option value="premium">Premium</option><option value="institutional">Institutional</option>
                             </select>
                             <button className="button button-secondary" type="button" disabled={actionPending} onClick={() => { if (window.confirm(`Reset ${account.email}'s cognitive profile?`)) void runAction(() => resetObserverUserProfile(account.id), 'Cognitive profile reset.'); }}>Reset profile</button>
-                            {account.billing?.has_stripe_subscription && <button className="button button-danger" type="button" disabled={actionPending} onClick={() => { if (window.confirm(`Schedule cancellation for ${account.email}'s Stripe subscription at the period end?`)) void runAction(() => cancelObserverSubscription(account.id), 'Stripe cancellation scheduled.'); }}>Cancel Stripe</button>}
-                            {account.billing?.has_stripe_subscription && <button className="button button-secondary" type="button" disabled={actionPending} onClick={() => { const paymentIntent = window.prompt('Paste the Stripe PaymentIntent ID to refund. This creates a real refund.'); if (paymentIntent && window.confirm(`Create a Stripe refund for ${paymentIntent}?`)) void runAction(() => refundObserverPayment(account.id, paymentIntent), 'Stripe refund created.'); }}>Refund</button>}
+                            {account.billing?.has_subscription && <button className="button button-danger" type="button" disabled={actionPending} onClick={() => { if (window.confirm(`Schedule cancellation for ${account.email}'s Paystack subscription at the period end?`)) void runAction(() => cancelObserverSubscription(account.id), 'Paystack cancellation scheduled.'); }}>Cancel Paystack</button>}
+                            {account.billing?.has_subscription && <button className="button button-secondary" type="button" disabled={actionPending} onClick={() => { const reference = window.prompt('Paste the Paystack transaction reference to refund. This creates a real refund.'); if (reference && window.confirm(`Create a Paystack refund for ${reference}?`)) void runAction(() => refundObserverPayment(account.id, reference), 'Paystack refund created.'); }}>Refund</button>}
                           </div>
                         </td>
                       </tr>
@@ -659,7 +659,7 @@ export default function Observer() {
                   </tbody>
                 </table>
               </div>
-              <p className="observer-footnote">Tier changes are local entitlements and do not edit Stripe. Cancellation and refund controls explicitly call Stripe and are written to the audit log.</p>
+              <p className="observer-footnote">Tier changes are local entitlements and do not edit Paystack. Cancellation and refund controls explicitly call Paystack and are written to the audit log.</p>
             </section>
 
             <section className="observer-table-card" aria-labelledby="audit-title">

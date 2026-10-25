@@ -7,7 +7,7 @@ import { TRIAL_DAYS } from './lib/plans';
  * with the "Plans, trials, and payment" section of Terms.tsx.
  */
 
-export const EFFECTIVE_DATE = '9 October 2026';
+export const EFFECTIVE_DATE = '15 October 2026';
 
 /** Days after a renewal charge in which a forgotten renewal can be refunded. */
 const RENEWAL_GRACE_DAYS = 7;
@@ -103,8 +103,9 @@ export default function Refunds() {
 
       <Section id="plan-changes">
         <p>
-          When you upgrade or downgrade, the price difference for the rest of your current billing period is adjusted
-          on your next invoice, so you only pay for what you use on each plan. Changing plans is not treated as a
+          When you upgrade or downgrade, the price difference for the rest of your current billing period is charged to
+          your card straight away, or refunded to it if the new plan costs less, so you only pay for what you use on
+          each plan. Changing plans is not treated as a
           refund request.
         </p>
       </Section>

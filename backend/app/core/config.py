@@ -81,23 +81,30 @@ class Settings(BaseSettings):
     CLAUDE_INPUT_USD_PER_MILLION: float = 0.0
     CLAUDE_OUTPUT_USD_PER_MILLION: float = 0.0
 
-    # Stripe — paid tier price IDs (must match the frontend VITE_STRIPE_* values)
-    STRIPE_SECRET_KEY: str
-    STRIPE_WEBHOOK_SECRET: str
-    STRIPE_THINKER_LITE_PRICE_ID: str = ""   # Thinker Lite ($4/mo) → "lite" plan
-    STRIPE_DEEP_THINKER_PRICE_ID: str = ""   # Deep Thinker ($8/mo) → "premium" plan
-    # Annual equivalents. Leave blank until the prices exist in Stripe — the
+    # Paystack. Webhooks are signed with the secret key, so there is no
+    # separate webhook secret. Plan codes (PLN_...) must match the frontend's
+    # VITE_PAYSTACK_* values, and every plan must be priced in PAYSTACK_CURRENCY.
+    PAYSTACK_SECRET_KEY: str
+    PAYSTACK_CURRENCY: str = "NGN"
+    PAYSTACK_THINKER_LITE_PLAN_CODE: str = ""   # Thinker Lite (₦5,500/mo) → "lite" plan
+    PAYSTACK_DEEP_THINKER_PLAN_CODE: str = ""   # Deep Thinker (₦11,000/mo) → "premium" plan
+    # Annual equivalents. Leave blank until the plans exist in Paystack — the
     # frontend hides the monthly/annual toggle unless both are configured.
-    STRIPE_THINKER_LITE_ANNUAL_PRICE_ID: str = ""   # Thinker Lite ($40/yr) → "lite"
-    STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID: str = ""   # Deep Thinker ($80/yr) → "premium"
+    PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE: str = ""   # Thinker Lite (₦55,000/yr) → "lite"
+    PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE: str = ""   # Deep Thinker (₦110,000/yr) → "premium"
+    # Paystack has no built-in trial. Checkout charges this much (in the
+    # currency's subunit) to save a reusable card, refunds it straight away,
+    # and starts the subscription TRIAL_DAYS later. 0 days charges at checkout.
+    PAYSTACK_CARD_CHECK_AMOUNT: int = 5000   # ₦50
+    TRIAL_DAYS: int = 7
+    # Prorated plan-change charges smaller than this (subunits) are waived
+    # rather than sent, since card charges this small are often rejected.
+    PAYSTACK_MIN_CHARGE_AMOUNT: int = 5000   # ₦50
     # List prices, for the observer's estimated MRR only. Billing never reads these.
     LITE_MONTHLY_USD: float = 4.0
     LITE_ANNUAL_USD: float = 40.0
     PREMIUM_MONTHLY_USD: float = 8.0
     PREMIUM_ANNUAL_USD: float = 80.0
-    # Deprecated aliases — kept so existing deployments keep working. Both map to premium.
-    STRIPE_PREMIUM_PRICE_ID: str = ""
-    STRIPE_PREMIUM_ANNUAL_PRICE_ID: str = ""
 
     # App
     APP_ENV: str = "development"
@@ -149,7 +156,7 @@ class Settings(BaseSettings):
     # whenever either document changes materially: every signed-in user whose
     # recorded version differs is then asked to accept again. Must match
     # EFFECTIVE_DATE in webpage/src/Terms.tsx and Privacy.tsx (as YYYY-MM-DD).
-    TERMS_VERSION: str = "2026-10-09"
+    TERMS_VERSION: str = "2026-10-15"
 
     # S3-compatible object storage for history thumbnails. Leave any of the
     # required values blank and thumbnails are simply not stored; explaining
@@ -232,50 +239,37 @@ class Settings(BaseSettings):
 
     @property
     def price_plan_map(self) -> dict:
-        """Maps each configured Stripe price ID to the internal plan tier it grants."""
+        """Maps each configured Paystack plan code to the internal tier it grants."""
         mapping: dict = {}
-        if self.STRIPE_THINKER_LITE_PRICE_ID:
-            mapping[self.STRIPE_THINKER_LITE_PRICE_ID] = "lite"
-        if self.STRIPE_DEEP_THINKER_PRICE_ID:
-            mapping[self.STRIPE_DEEP_THINKER_PRICE_ID] = "premium"
-        if self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID:
-            mapping[self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID] = "lite"
-        if self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID:
-            mapping[self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID] = "premium"
-        # Backward-compatible aliases — both grant Deep Thinker / premium.
-        if self.STRIPE_PREMIUM_PRICE_ID:
-            mapping.setdefault(self.STRIPE_PREMIUM_PRICE_ID, "premium")
-        if self.STRIPE_PREMIUM_ANNUAL_PRICE_ID:
-            mapping.setdefault(self.STRIPE_PREMIUM_ANNUAL_PRICE_ID, "premium")
+        if self.PAYSTACK_THINKER_LITE_PLAN_CODE:
+            mapping[self.PAYSTACK_THINKER_LITE_PLAN_CODE] = "lite"
+        if self.PAYSTACK_DEEP_THINKER_PLAN_CODE:
+            mapping[self.PAYSTACK_DEEP_THINKER_PLAN_CODE] = "premium"
+        if self.PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE:
+            mapping[self.PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE] = "lite"
+        if self.PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE:
+            mapping[self.PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE] = "premium"
         return mapping
 
     @property
     def price_period_map(self) -> dict:
-        """Maps each configured Stripe price ID to its billing cadence.
+        """Maps each configured Paystack plan code to its billing cadence.
 
         Anything not listed here is treated as monthly, which matches the
         default on the Billing model.
         """
         mapping: dict = {}
-        for price_id in (
-            self.STRIPE_THINKER_LITE_ANNUAL_PRICE_ID,
-            self.STRIPE_DEEP_THINKER_ANNUAL_PRICE_ID,
-            self.STRIPE_PREMIUM_ANNUAL_PRICE_ID,
-        ):
-            if price_id:
-                mapping[price_id] = "annual"
-        for price_id in (
-            self.STRIPE_THINKER_LITE_PRICE_ID,
-            self.STRIPE_DEEP_THINKER_PRICE_ID,
-            self.STRIPE_PREMIUM_PRICE_ID,
-        ):
-            if price_id:
-                mapping.setdefault(price_id, "monthly")
+        for code in (self.PAYSTACK_THINKER_LITE_ANNUAL_PLAN_CODE, self.PAYSTACK_DEEP_THINKER_ANNUAL_PLAN_CODE):
+            if code:
+                mapping[code] = "annual"
+        for code in (self.PAYSTACK_THINKER_LITE_PLAN_CODE, self.PAYSTACK_DEEP_THINKER_PLAN_CODE):
+            if code:
+                mapping.setdefault(code, "monthly")
         return mapping
 
     @property
     def allowed_price_ids(self) -> List[str]:
-        """Price IDs a client is allowed to start a checkout for."""
+        """Plan codes a client is allowed to start a checkout for."""
         return list(self.price_plan_map.keys())
 
     @property

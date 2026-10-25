@@ -16,7 +16,14 @@
   const st = SX.state;
 
   const SHORTCUT_LABEL = 'Alt+Shift+E';
-  const BULB = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`;
+  // The Synapse mark, as on the FAB (content.js); own mask ids so the two
+  // never collide when both are on the page.
+  const MARK = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4.8">` +
+    `<mask id="synapse-bubble-cut-1" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><path d="M7.2 8 16.8 4.4" stroke="#000" stroke-width="5.7"/></mask>` +
+    `<mask id="synapse-bubble-cut-2" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><path d="M7.2 12.5 16.8 14.6" stroke="#000" stroke-width="5.7"/></mask>` +
+    `<path d="M7.2 19.6 16.8 17" mask="url(#synapse-bubble-cut-2)"/>` +
+    `<path d="M7.2 12.5 16.8 14.6" mask="url(#synapse-bubble-cut-1)"/>` +
+    `<path d="M7.2 8 16.8 4.4"/></svg>`;
 
   let bubble = null;
   let pending = null;  // { range, text }
@@ -45,7 +52,7 @@
     bubble.type = 'button';
     bubble.setAttribute('aria-label', `Explain selection with Synapse (${SHORTCUT_LABEL})`);
     bubble.title = `Explain with Synapse (${SHORTCUT_LABEL})`;
-    bubble.innerHTML = BULB;
+    bubble.innerHTML = MARK;
     // Keep the page selection alive: a mousedown on a button would collapse it.
     bubble.addEventListener('mousedown', (e) => e.preventDefault());
     bubble.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); SX.explainSelection(); });

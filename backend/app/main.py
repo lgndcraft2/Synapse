@@ -361,6 +361,6 @@ if os.path.exists(static_path):
 # POST /api/v1/feedback               — submit feedback batch
 # GET  /api/v1/dashboard/stats        — dashboard stats
 # GET  /api/v1/billing/status         — billing status
-# POST /api/v1/billing/checkout       — create Stripe checkout session
-# POST /api/v1/billing/portal         — open Stripe billing portal
-# POST /api/v1/webhooks/stripe        — Stripe webhook handler
+# POST /api/v1/billing/checkout       — start a Paystack checkout
+# POST /api/v1/billing/portal         — Paystack update-card link
+# POST /api/v1/webhooks/paystack      — Paystack webhook handler

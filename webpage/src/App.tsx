@@ -137,7 +137,7 @@ function App() {
     return subscribeAuth((session) => setIsLoggedIn(Boolean(session)));
   }, []);
 
-  // Send everyone to /billing to review the order before Stripe. Signed-out
+  // Send everyone to /billing to review the order before Paystack. Signed-out
   // visitors sign up first and land back on the same plan.
   async function handleUpgrade(tier: string) {
     const target = `/billing?plan=${tier}`;

@@ -131,12 +131,12 @@ export default function Dashboard() {
       // Hand the current session to the extension so it stays signed in.
       pushSessionToExtension(getSession());
 
-      // Returning from Stripe Checkout: confirm the session directly so the plan
+      // Returning from Paystack checkout: confirm the payment directly so the plan
       // reflects immediately, without waiting on the webhook. Then clean the URL.
-      const checkoutSessionId = new URLSearchParams(window.location.search).get("session_id");
-      if (checkoutSessionId) {
+      const checkoutReference = new URLSearchParams(window.location.search).get("reference");
+      if (checkoutReference) {
         try {
-          await confirmCheckout(checkoutSessionId);
+          await confirmCheckout(checkoutReference);
         } catch (err) {
           console.error("Checkout confirmation failed", err);
         }

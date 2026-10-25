@@ -14,9 +14,10 @@ T = TypeVar("T")
 class Page(BaseModel, Generic[T]):
     """One page of a list endpoint.
 
-    `total` is None for sources that cannot count cheaply — Stripe's list API
-    is cursor-paginated and reports no total — so clients must treat it as
-    optional and fall back to "Page N" instead of "Page N of M".
+    `total` is None for sources that cannot count cheaply — the payment
+    history is filtered after Paystack pages it, so its count is not the
+    page's — and clients must treat it as optional and fall back to "Page N"
+    instead of "Page N of M".
     `next_cursor` is likewise only set by cursor-paginated sources.
     """
     data: list[T]
@@ -537,10 +538,10 @@ class BillingOut(BaseModel):
     trial_ends_at: Optional[datetime]
     renews_at: Optional[datetime]
     cancelled_at: Optional[datetime] = None
-    stripe_customer_id: Optional[str]
-    # Present only when there is a live Stripe subscription to act on, so the
+    customer_id: Optional[str] = Field(default=None, validation_alias="paystack_customer_code")
+    # Present only when there is a live Paystack subscription to act on, so the
     # UI knows whether cancel / resume / change-plan are available at all.
-    stripe_subscription_id: Optional[str] = None
+    subscription_id: Optional[str] = Field(default=None, validation_alias="paystack_subscription_code")
 
     class Config:
         from_attributes = True
@@ -551,21 +552,21 @@ class ChangePlanRequest(BaseModel):
 
 
 class InvoiceOut(BaseModel):
-    """One past invoice, straight from Stripe."""
+    """One past payment, straight from Paystack."""
     id: str
     number: Optional[str] = None
     created: datetime
     amount_paid: int          # in the currency's smallest unit (cents)
     amount_due: int
     currency: str
-    status: Optional[str]     # paid | open | void | uncollectible | draft
+    status: Optional[str]     # paid | refunded | failed
     description: Optional[str] = None
     hosted_invoice_url: Optional[str] = None
     invoice_pdf: Optional[str] = None
 
 
 class PaymentMethodOut(BaseModel):
-    """The card on file. Card data never touches our servers — Stripe returns
+    """The card on file. Card data never touches our servers — Paystack returns
     only these display-safe fields."""
     brand: Optional[str] = None
     last4: Optional[str] = None
@@ -605,7 +606,8 @@ class CheckoutResponse(BaseModel):
 
 
 class CheckoutConfirmRequest(BaseModel):
-    session_id: str
+    # The transaction reference Paystack appends to the callback URL.
+    reference: str
 
 
 # ── Dashboard stats ───────────────────────────────────────────────
