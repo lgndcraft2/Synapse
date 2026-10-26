@@ -12,7 +12,7 @@ import { OPERATOR } from './lib/legal';
  * and EFFECTIVE_DATE in the same change. Keep backend internals out of it.
  */
 
-export const EFFECTIVE_DATE = '15 October 2026';
+export const EFFECTIVE_DATE = '26 October 2026';
 
 const SECTIONS: { id: string; title: string }[] = [
   { id: 'summary', title: 'The short version' },
@@ -50,6 +50,7 @@ const RETENTION: [string, string][] = [
   ['Reading sessions and feedback', 'Until you delete your account.'],
   ['Saved explanation history (paid plans)', 'Until you delete the entry, clear your history, or delete your account. Thumbnails are deleted automatically after 30 days.'],
   ['Page or document context used for an explanation', 'Held in a temporary cache for up to 1 hour, then discarded.'],
+  ['Suggested responses (Respond)', 'Not stored by us. They exist only on your screen until you close them.'],
   ['Text and images sent to an AI provider', 'Not stored by us after the response is returned, except as saved history on paid plans. The provider’s own retention terms apply (see AI processing).'],
   ['Sign-in sessions and email links', 'Expire automatically after a limited period.'],
   ['Usage counters', 'Reset at the end of each limit period. Records used to prevent abuse may be kept after account deletion, but are no longer linked to you.'],
@@ -123,8 +124,8 @@ export default function Privacy() {
             <li>the text you highlighted, or an image of the area you circled, which you confirm before it is sent;</li>
             <li>the surrounding paragraph, so the explanation makes sense in place;</li>
             <li>
-              more of the page or document as context, if page context is switched on. On email, messaging, and
-              banking sites this is off unless you turn it on for that site;
+              more of the page or document as context (its title, headings, and main text). On email, messaging,
+              and banking sites this is not sent: only the text near your selection is;
             </li>
             <li>for reformatting, the text of the section or page you asked to reformat;</li>
             <li>the address (URL) and title of the page;</li>
@@ -133,6 +134,18 @@ export default function Privacy() {
           <p>
             We use this content to produce your result. Apart from saved history on paid plans (below), we do not
             keep the text or images after the response has been returned.
+          </p>
+
+          <h3>Suggested responses</h3>
+          <p>
+            On paid plans, Respond suggests a reply to a message, an answer to a question, or tips about what you
+            highlighted or circled. It uses the same content listed above, plus any question you type. If you use it
+            on an email or message, the text you selected is sent to the AI provider to draft the reply.
+          </p>
+          <p>
+            A suggested reply goes into a text box on the page only when you press Insert, and you can edit it first.
+            Synapse never sends a message, submits a form, or presses a button for you. Suggested responses are not
+            saved, on any plan.
           </p>
 
           <h3>Explanation history</h3>
@@ -194,7 +207,7 @@ export default function Privacy() {
         <Section id="how-we-use">
           <p>We use personal information to:</p>
           <ul>
-            <li>provide the Service: produce explanations and reformatted pages, and keep your history and profile;</li>
+            <li>provide the Service: produce explanations, suggested responses, and reformatted pages, and keep your history and profile;</li>
             <li>personalise results to your reading profile and adapt that profile from your feedback;</li>
             <li>create and secure your account, keep you signed in, and send verification and password-reset emails;</li>
             <li>process payments, manage subscriptions, and apply plan limits;</li>
@@ -233,8 +246,8 @@ export default function Privacy() {
 
         <Section id="ai">
           <p>
-            Explanations and reformatting are produced by third-party AI models from Google (Gemini) and Anthropic
-            (Claude). The content described above is sent to the provider for each request, and the provider returns the
+            Explanations, suggested responses, and reformatting are produced by third-party AI models from Google
+            (Gemini) and Anthropic (Claude). The content described above is sent to the provider for each request, and the provider returns the
             result to us.
           </p>
           <p>
@@ -396,12 +409,14 @@ export default function Privacy() {
               The extension reads a page only when you use it there.
             </li>
             <li>
-              <strong>Active tab and screen capture:</strong> to capture the area you circle, after you confirm it.
+              <strong>Active tab:</strong> to capture the area you circle, after you confirm it.
             </li>
-            <li><strong>Scripting:</strong> to show the Synapse panel and reading tools on the page.</li>
-            <li><strong>Tabs:</strong> to open the Synapse PDF viewer and link the extension to your account.</li>
             <li><strong>Storage:</strong> to keep your session and settings in your browser.</li>
           </ul>
+          <p>
+            The extension only changes a page when you ask it to: it shows its panel and highlights, and, when you
+            press Insert, types a suggested reply into a text box. It never sends or submits anything on the page.
+          </p>
           <p>
             The use of information received from Chrome APIs adheres to the{' '}
             <a href="https://developer.chrome.com/docs/webstore/program-policies/" rel="noopener noreferrer">
