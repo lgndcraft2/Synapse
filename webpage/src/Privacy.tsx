@@ -405,11 +405,9 @@ export default function Privacy() {
           <p>The Synapse extension asks Chrome for these permissions:</p>
           <ul>
             <li>
-              <strong>Access to the sites you visit:</strong> so you can highlight, circle, and reformat on any page.
-              The extension reads a page only when you use it there.
-            </li>
-            <li>
-              <strong>Active tab:</strong> to capture the area you circle, after you confirm it.
+              <strong>Access to the sites you visit:</strong> so you can highlight, circle, and reformat on any page,
+              and to capture the area you circle, after you confirm it. The extension reads a page only when you use
+              it there.
             </li>
             <li><strong>Storage:</strong> to keep your session and settings in your browser.</li>
           </ul>
