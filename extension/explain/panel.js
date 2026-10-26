@@ -121,18 +121,6 @@
         </div>
         <button class="sp-tool-btn sxp-bionic" type="button" aria-pressed="false" title="Bold the start of each word">Bionic</button>
       </div>
-      <div class="sxp-context">
-        <button type="button" class="sxp-switch sxp-ctx-global" role="switch" aria-checked="true"
-          title="Send this page's headings and main text with each explanation so it fits the page. A text explanation with page or document context counts as 4.">
-          <span class="sxp-track" aria-hidden="true"></span><span>Use page context</span>
-        </button>
-        <div class="sxp-site synapse-hide">
-          <span class="sxp-site-note" aria-live="polite"></span>
-          <button type="button" class="sxp-switch sxp-ctx-site" role="switch" aria-checked="false">
-            <span class="sxp-track" aria-hidden="true"></span><span>Use page context on this site</span>
-          </button>
-        </div>
-      </div>
       <div class="sxp-scroll">
         <section class="sxp-current synapse-hide" aria-live="polite">
           <div class="sxp-current-head">
@@ -181,44 +169,11 @@
       renderHistory();
     });
 
-    el('.sxp-ctx-global').addEventListener('click', () => {
-      const cur = st.contextSettings;
-      SX.saveContextSettings({ ...cur, usePageContext: !cur.usePageContext });
-      syncContextControls();
-    });
-
-    el('.sxp-ctx-site').addEventListener('click', () => {
-      const cur = st.contextSettings;
-      const overrides = { ...(cur.siteOverrides || {}) };
-      if (overrides[st.hostname] === true) delete overrides[st.hostname];
-      else overrides[st.hostname] = true;
-      SX.saveContextSettings({ ...cur, siteOverrides: overrides });
-      syncContextControls();
-    });
-
     syncControls();
-    syncContextControls();
-    SX.loadContextSettings?.().then(syncContextControls);
     renderCurrent();
     renderHistory();
     return panel;
   };
-
-  function syncContextControls() {
-    if (!panel || !SX.contextPolicy) return;
-    const settings = st.contextSettings;
-    const policy = SX.contextPolicy();
-    el('.sxp-ctx-global').setAttribute('aria-checked', String(settings.usePageContext !== false));
-    const site = el('.sxp-site');
-    site.classList.toggle('synapse-hide', !policy.sensitive);
-    if (policy.sensitive) {
-      el('.sxp-site-note').textContent = policy.override === true
-        ? 'Page context is on for this site.'
-        : 'Page context is off on this site (email, messaging or banking). Only the text near your selection is sent.';
-      el('.sxp-ctx-site').setAttribute('aria-checked', String(policy.override === true));
-    }
-  }
-  SX.onContextSettingsChanged = syncContextControls;
 
   function syncControls() {
     if (!panel) return;

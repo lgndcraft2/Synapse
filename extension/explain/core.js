@@ -691,21 +691,6 @@ font:400 12px/1.55 ${FONT}!important;color:${C.g600}!important}
 #synapse-explain-panel kbd{font:600 11px/1 ui-monospace,Consolas,monospace!important;background:${C.g100}!important;
 border:1px solid ${C.g200}!important;border-bottom-width:2px!important;border-radius:5px!important;padding:2px 5px!important;color:${C.g900}!important}
 
-/* Page-context setting + per-site override */
-#synapse-explain-panel .sxp-context{display:block!important;padding:8px 18px 10px!important;border-bottom:1px solid ${C.g100}!important}
-#synapse-explain-panel .sxp-switch{all:unset;box-sizing:border-box!important;display:flex!important;align-items:center!important;gap:8px!important;
-cursor:pointer!important;font:500 12px/1.3 ${FONT}!important;color:${C.g900}!important;padding:2px 0!important;border-radius:6px!important}
-#synapse-explain-panel .sxp-switch:focus-visible{outline:2px solid ${C.green}!important;outline-offset:2px!important}
-#synapse-explain-panel .sxp-track{position:relative!important;width:28px!important;height:16px!important;border-radius:8px!important;
-background:${C.g200}!important;flex-shrink:0!important;display:block!important;transition:background .15s ease!important}
-#synapse-explain-panel .sxp-track::after{content:""!important;position:absolute!important;top:2px!important;left:2px!important;width:12px!important;
-height:12px!important;border-radius:50%!important;background:${C.white}!important;box-shadow:0 1px 2px rgba(0,0,0,.2)!important;
-transition:transform .15s ease!important}
-#synapse-explain-panel .sxp-switch[aria-checked="true"] .sxp-track{background:${C.green}!important}
-#synapse-explain-panel .sxp-switch[aria-checked="true"] .sxp-track::after{transform:translateX(12px)!important}
-#synapse-explain-panel .sxp-site{display:block!important;margin-top:8px!important;padding:8px 10px!important;border-radius:9px!important;
-background:${C.g50}!important;border:1px solid ${C.g100}!important}
-#synapse-explain-panel .sxp-site-note{display:block!important;font:400 11.5px/1.45 ${FONT}!important;color:${C.g600}!important;margin-bottom:6px!important}
 #synapse-explain-panel .sxp-ctx-used{display:block!important;padding:0 18px 8px!important;font:400 11px/1.4 ${FONT}!important;color:${C.g400}!important}
 #synapse-explain-panel .sxp-actions{display:flex!important;flex-wrap:wrap!important;gap:6px!important;margin:-4px 18px 14px!important}
 #synapse-explain-panel .sxp-action{all:unset;box-sizing:border-box!important;cursor:pointer!important;font:600 12px/1 ${FONT}!important;

@@ -746,7 +746,7 @@ test('highlight on a vague button sends element metadata, heading path and form'
   expect(req.context.page.outline).toEqual(['Settings', 'Profile', 'Connected accounts', 'Chase Checking']);
 });
 
-test('sensitive-looking host sends local context only until turned on for that site', async () => {
+test('sensitive-looking host sends local context only, unless a stored override turns it on', async () => {
   const sensitive = `http://mail.synapse.test:${port}`;
   await openArticle(sensitive);
   let before = requests.length;
@@ -759,14 +759,11 @@ test('sensitive-looking host sends local context only until turned on for that s
   expect(req.context_id).toBeNull();
 
   const panel = page.locator('#synapse-explain-panel');
-  await expect(panel.locator('.sxp-site-note')).toContainText('Page context is off on this site');
   await expect(panel.locator('.sxp-ctx-used')).toContainText('off on this site');
-  const siteSwitch = panel.locator('.sxp-ctx-site');
-  await expect(siteSwitch).toHaveAttribute('aria-checked', 'false');
-  await siteSwitch.click();
-  await expect(siteSwitch).toHaveAttribute('aria-checked', 'true');
-  const stored = await readStorage(worker(), 'explainContextSettings');
-  expect(stored.explainContextSettings.siteOverrides['mail.synapse.test']).toBe(true);
+  // The panel has no page-context switches; the stored setting still applies.
+  await expect(panel.locator('[role="switch"]')).toHaveCount(0);
+  await setContextSettings({ usePageContext: true, siteOverrides: { 'mail.synapse.test': true } });
+  await page.waitForTimeout(300);
 
   before = requests.length;
   await page.locator('#p3').click({ clickCount: 3 });
@@ -776,15 +773,9 @@ test('sensitive-looking host sends local context only until turned on for that s
   await setContextSettings({ usePageContext: true, siteOverrides: {} });
 });
 
-test('"Use page context" Off removes page context', async () => {
+test('a stored "Use page context" Off removes page context', async () => {
+  await setContextSettings({ usePageContext: false, siteOverrides: {} });
   await openArticle();
-  await page.locator('#synapse-history-btn').click();
-  const panel = page.locator('#synapse-explain-panel');
-  const sw = panel.locator('.sxp-ctx-global');
-  await expect(sw).toHaveAttribute('aria-checked', 'true');
-  await sw.click();
-  await expect(sw).toHaveAttribute('aria-checked', 'false');
-  await expect.poll(async () => (await readStorage(worker(), 'explainContextSettings')).explainContextSettings?.usePageContext).toBe(false);
 
   const before = requests.length;
   await page.locator('#p3').click({ clickCount: 3 });
@@ -792,8 +783,7 @@ test('"Use page context" Off removes page context', async () => {
   const req = await waitForRequests(before + 1);
   expect(req.context.local.surrounding_text).toContain('cell membrane');
   expect(req.context.page).toBeUndefined();
-  await sw.click();
-  await expect(sw).toHaveAttribute('aria-checked', 'true');
+  await setContextSettings({ usePageContext: true, siteOverrides: {} });
 });
 
 test('QUOTA_INSUFFICIENT_FOR_CONTEXT offers a local-only resend, once', async () => {
