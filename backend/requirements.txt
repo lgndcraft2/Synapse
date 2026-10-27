@@ -13,7 +13,10 @@ python-dotenv==1.0.1
 # Verifies Google's id_token (signature, aud, iss, exp) in the OAuth
 # callback. google-auth-oauthlib was also pinned but never imported — the
 # authorization-code exchange is done directly with httpx.
-google-auth==2.29.0
+# The [requests] extra is required: verification fetches Google's keys through
+# google.auth.transport.requests, and google-auth doesn't install requests on
+# its own. Without it every Google sign-in fails in the container.
+google-auth[requests]==2.29.0
 # S3-compatible object storage for explanation-history thumbnails. Imported
 # lazily, so the app still runs without it when EXPLAIN_STORAGE_* is unset.
 boto3==1.34.113
