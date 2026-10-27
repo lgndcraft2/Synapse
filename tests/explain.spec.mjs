@@ -110,6 +110,32 @@ const COMPOSE_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Co
 <script>window.__inputs = 0; document.getElementById('compose').addEventListener('input', () => { window.__inputs += 1; });</script>
 </body></html>`;
 
+// Webmail shaped like Zoho Mail: an empty search bar near the message, and a
+// reply composer that only exists once Reply is clicked, as a designMode
+// iframe (no contenteditable attribute anywhere).
+const WEBMAIL_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Webmail</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<header><input id="search" type="text" placeholder="Search mail" aria-label="Search"></header>
+<main>
+<p id="msg">Hi, are you free for a call tomorrow morning?</p>
+<button id="reply-btn" type="button">Reply</button>
+<div id="composer-slot"></div>
+</main>
+<script>
+window.openComposer = () => {
+  const frame = document.createElement('iframe');
+  frame.id = 'composer';
+  frame.title = 'Message body';
+  frame.style.cssText = 'width:600px;height:160px;border:1px solid #ccc';
+  document.getElementById('composer-slot').appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open(); doc.write('<!doctype html><html><body></body></html>'); doc.close();
+  doc.designMode = 'on';
+};
+document.getElementById('reply-btn').addEventListener('click', window.openComposer);
+</script>
+</body></html>`;
+
 // The same message above each real editor.
 const editorPage = (title, head, body, init) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${head}</head>
 <body style="font:16px/1.5 sans-serif;margin:40px">
@@ -172,6 +198,10 @@ function startServer() {
       if (req.method === 'GET' && url.pathname === '/compose.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(COMPOSE_PAGE);
+      }
+      if (req.method === 'GET' && url.pathname === '/webmail.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(WEBMAIL_PAGE);
       }
       if (req.method === 'GET' && url.pathname === '/reply.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -1711,6 +1741,41 @@ test('respond: Insert works in Quill and its model sees the text', async () => {
   await page.locator('.ql-editor').focus();
   await page.keyboard.press('Control+z');
   await expect.poll(() => page.evaluate(() => window.quill.getText().trim())).toBe('');
+});
+
+/** Opens the webmail page, uses its search bar, then asks Respond about #msg. */
+async function webmailRespond({ openReply }) {
+  await page.bringToFront();
+  await page.goto(`${base}/webmail.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  // The user searched earlier, then cleared it: an empty, recently focused search box.
+  await page.locator('#search').fill('ada');
+  await page.locator('#search').fill('');
+  if (openReply) await page.locator('#reply-btn').click();
+  // Highlighting with the mouse takes focus off the search box first.
+  await page.locator('#msg').click();
+  await selectForBubbles('#msg');
+  const before = requests.length;
+  await page.locator('#synapse-respond-bubble').click();
+  await waitForRequests(before + 1);
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  await panel.locator('.sxp-insert').click();
+  return panel;
+}
+
+test('respond: Insert never fills a search bar; with no reply box open it says to open one', async () => {
+  const panel = await webmailRespond({ openReply: false });
+  await expect(panel.locator('.sxp-draft .sxp-note')).toContainText('Open the reply box');
+  await expect(page.locator('#search')).toHaveValue('');
+});
+
+test('respond: Insert finds a reply composer inside a designMode iframe', async () => {
+  const panel = await webmailRespond({ openReply: true });
+  await expect(panel.locator('.sxp-draft .sxp-note')).toContainText('Check it before you send it');
+  const body = page.frameLocator('#composer').locator('body');
+  await expect.poll(() => body.innerText()).toBe(RESPOND_DRAFT);
+  await expect(page.locator('#search')).toHaveValue('');
 });
 
 test('circle confirm bar: Respond sends the crop with mode respond and the optional question', async () => {

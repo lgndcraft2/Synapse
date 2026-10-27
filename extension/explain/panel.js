@@ -299,7 +299,7 @@
     let target = SX.insertTargetUsable?.(view.insertTarget) ? view.insertTarget : null;
     if (!target && SX.findInsertTarget) target = SX.findInsertTarget(view.insertSource || null);
     if (!target) {
-      view.insertNote = { text: 'Click into the box you want filled, then press Insert.', error: true };
+      view.insertNote = { text: 'Open the reply box (or click into the box you want filled), then press Insert.', error: true };
     } else if (SX.insertText(target, String(text || '').trim())) {
       view.insertTarget = target;
       view.insertNote = { text: 'Inserted. Check it before you send it.' };

@@ -21,6 +21,11 @@ _rate_limited_keys: set[str] = set()
 _dead_keys: dict[str, float] = {}   # key -> monotonic time it may be retried
 _key_lock = asyncio.Lock()
 _DEAD_KEY_COOLDOWN_SECONDS = 3600
+# Google's side being briefly overloaded or down (most often a 503 on
+# gemini-2.5-flash). It is about the model, not the key, so no key is
+# penalised; the request just waits and goes again, once per delay.
+_TRANSIENT_STATUSES = {500, 502, 503, 504}
+_TRANSIENT_RETRY_DELAYS = (0.6, 1.5)
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _CLAUDE_BASE  = "https://api.anthropic.com/v1/messages"
 _CLAUDE_MODEL = "claude-sonnet-4-6"
@@ -86,21 +91,42 @@ async def _mark_dead(key: str, status_code: int) -> None:
 async def _gemini_generate(payload: dict, timeout: float) -> dict:
     """POST a generateContent payload, rotating past rate-limited and dead keys.
 
+    Transient server errors (5xx, dropped connections) are retried after a
+    short wait without counting against the key rotation.
+
     The key goes in a header, not the query string, so an HTTP error's message
     (which includes the URL) can be logged without leaking it.
     """
-    for attempt in range(len(settings.gemini_keys) + 1):
+    key_attempts = 0
+    transient_attempts = 0
+    while key_attempts <= len(settings.gemini_keys):
         key = await _get_next_gemini_key()
         if not key:
             raise RuntimeError("No working Gemini API keys are configured.")
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                _GEMINI_BASE,
-                headers={"x-goog-api-key": key},
-                json=payload,
-            )
+        can_retry = transient_attempts < len(_TRANSIENT_RETRY_DELAYS)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    _GEMINI_BASE,
+                    headers={"x-goog-api-key": key},
+                    json=payload,
+                )
+        except (httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            if not can_retry:
+                raise
+            logger.warning("Gemini connection failed (%s); retrying.", type(exc).__name__)
+            await asyncio.sleep(_TRANSIENT_RETRY_DELAYS[transient_attempts])
+            transient_attempts += 1
+            continue
 
+        if response.status_code in _TRANSIENT_STATUSES and can_retry:
+            logger.warning("Gemini answered HTTP %s; retrying.", response.status_code)
+            await asyncio.sleep(_TRANSIENT_RETRY_DELAYS[transient_attempts])
+            transient_attempts += 1
+            continue
+
+        key_attempts += 1
         if response.status_code == 429:
             async with _key_lock:
                 _rate_limited_keys.add(key)
