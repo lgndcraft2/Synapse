@@ -1152,6 +1152,17 @@ function detailCode(data) {
   return d && typeof d === "object" ? d.code || null : null;
 }
 
+/** Respond's candidate boxes, trimmed to the API's shape; null when fewer than two. */
+function answerFieldsForBackend(fields) {
+  if (!Array.isArray(fields) || fields.length < 2) return null;
+  return fields.slice(0, 12).map((f) => ({
+    label: String(f?.label || "").slice(0, 160),
+    prompt: String(f?.prompt || "").slice(0, 240),
+    kind: f?.kind === "single-line" ? "single-line" : "multi-line",
+    empty: f?.empty !== false
+  }));
+}
+
 async function handleExplain(msg, sender) {
   const { profile, providerConfig } = await getFullConfig();
   const baseUrl = normalizeBackendBaseUrl(providerConfig.backendBaseUrl);
@@ -1270,7 +1281,10 @@ async function handleExplain(msg, sender) {
         }
       : null,
     mode: respond ? "respond" : "explain",
-    question: respond ? String(msg.question || "").trim().slice(0, 500) || null : null
+    question: respond ? String(msg.question || "").trim().slice(0, 500) || null : null,
+    // The boxes the draft could go in, for the model to pick from. Their
+    // labels are page content, so they follow the page-context rules.
+    answer_fields: respond && allowRich ? answerFieldsForBackend(msg.answerFields) : null
   };
 
   let { response, data, networkError } = await postExplain(baseUrl, headers, body);
@@ -1370,6 +1384,7 @@ async function handleExplain(msg, sender) {
     mode: data.mode || "explain",
     respondKind: data.respond_kind || null,
     draft: typeof data.draft === "string" ? data.draft : null,
+    targetField: Number.isInteger(data.target_field) && body.answer_fields ? data.target_field : null,
     suggestsRespond: data.suggests_respond || null,
     ...(localEntry ? { localEntry } : {})
   };

@@ -49,6 +49,7 @@ const reformatQueue = []; // queued raw replies for POST /reformat: { status, ty
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
 let reexplainsServed = 0;
+let mockTargetField = null; // the box the mock model picks when answer_fields are sent
 let ctxCounter = 0;
 
 const ARTICLE = `<!doctype html><html><head><meta charset="utf-8"><title>Cells 101</title>
@@ -136,6 +137,28 @@ document.getElementById('reply-btn').addEventListener('click', window.openCompos
 </script>
 </body></html>`;
 
+// A quiz whose markup ties each question to its own box.
+const QUIZ_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Quiz</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main><form>
+<div class="item"><p id="s1">1. What is the capital of France?</p><input id="a1" type="text"></div>
+<div class="item"><p id="s2">2. Which planet is closest to the sun?</p><input id="a2" type="text"></div>
+<p><input type="email" placeholder="Email me my results"></p>
+</form></main>
+</body></html>`;
+
+// A flat quiz: both questions, then both boxes, in one container, so the
+// markup can't say which box answers which question.
+const FLAT_QUIZ_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Flat quiz</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main><div id="quiz">
+<p id="f1">1. What is the capital of France?</p>
+<p id="f2">2. Which planet is closest to the sun?</p>
+<textarea id="t1" aria-label="First answer"></textarea>
+<textarea id="t2" aria-label="Second answer"></textarea>
+</div></main>
+</body></html>`;
+
 // The same message above each real editor.
 const editorPage = (title, head, body, init) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${head}</head>
 <body style="font:16px/1.5 sans-serif;margin:40px">
@@ -199,6 +222,14 @@ function startServer() {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(COMPOSE_PAGE);
       }
+      if (req.method === 'GET' && url.pathname === '/quiz.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(QUIZ_PAGE);
+      }
+      if (req.method === 'GET' && url.pathname === '/flat-quiz.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(FLAT_QUIZ_PAGE);
+      }
       if (req.method === 'GET' && url.pathname === '/webmail.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(WEBMAIL_PAGE);
@@ -240,6 +271,7 @@ function startServer() {
             mode: 'respond',
             respond_kind: 'reply',
             draft: RESPOND_DRAFT,
+            target_field: body.answer_fields ? mockTargetField : null,
           },
         } : {
           status: 200,
@@ -1776,6 +1808,59 @@ test('respond: Insert finds a reply composer inside a designMode iframe', async 
   const body = page.frameLocator('#composer').locator('body');
   await expect.poll(() => body.innerText()).toBe(RESPOND_DRAFT);
   await expect(page.locator('#search')).toHaveValue('');
+});
+
+/** Respond on `selector` at `pathname`; returns the panel and the request sent. */
+async function respondOn(pathname, selector) {
+  await page.bringToFront();
+  await page.goto(`${base}${pathname}`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  await selectForBubbles(selector);
+  const before = requests.length;
+  await page.locator('#synapse-respond-bubble').click();
+  const req = await waitForRequests(before + 1);
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  return { panel, req };
+}
+
+test('respond: Insert follows the markup to the box under the highlighted question', async () => {
+  const { panel, req } = await respondOn('/quiz.html', '#s2');
+  // The page settled it, so the model isn't asked.
+  expect(req.answer_fields).toBeNull();
+  await panel.locator('.sxp-insert').click();
+  await expect(page.locator('#a2')).toHaveValue(RESPOND_DRAFT.replace('\n', ' '));
+  await expect(page.locator('#a1')).toHaveValue('');
+});
+
+test('respond: when the markup can\'t tell, the model picks the box', async () => {
+  mockTargetField = 1;
+  try {
+    const { panel, req } = await respondOn('/flat-quiz.html', '#f2');
+    // Both boxes go out, labelled, nearest first, with no typed text.
+    expect(req.answer_fields).toHaveLength(2);
+    expect(req.answer_fields.map((f) => f.label)).toEqual(['First answer', 'Second answer']);
+    expect(req.answer_fields[0]).toMatchObject({ kind: 'multi-line', empty: true });
+    await panel.locator('.sxp-insert').click();
+    // Nearest-first would have chosen #t1; the model's pick wins.
+    await expect(page.locator('#t2')).toHaveValue(RESPOND_DRAFT);
+    await expect(page.locator('#t1')).toHaveValue('');
+  } finally {
+    mockTargetField = null;
+  }
+});
+
+test('respond: a box the user clicks into after the draft appears wins', async () => {
+  mockTargetField = 1;
+  try {
+    const { panel } = await respondOn('/flat-quiz.html', '#f2');
+    await page.locator('#t1').click();
+    await panel.locator('.sxp-insert').click();
+    await expect(page.locator('#t1')).toHaveValue(RESPOND_DRAFT);
+    await expect(page.locator('#t2')).toHaveValue('');
+  } finally {
+    mockTargetField = null;
+  }
 });
 
 test('circle confirm bar: Respond sends the crop with mode respond and the optional question', async () => {

@@ -186,11 +186,18 @@
     const g = gather(sel);
     if (!g) return false;
     // Where an Insert would go, found while the page is as the user saw it.
-    const insertTarget = SX.findInsertTarget ? SX.findInsertTarget(g.range) : null;
+    // When the page leaves several boxes in play, the model picks among them,
+    // but only where page context may be sent (their labels are page content).
+    const plan = SX.planInsert ? SX.planInsert(g.range) : { target: null, choices: [] };
+    const policy = SX.contextPolicy ? SX.contextPolicy() : { allowed: false };
+    const choices = policy.allowed ? plan.choices : [];
     // Not painted green: respond results aren't saved, so there'd be nothing to reopen.
     SX.requestExplain(
-      { kind: 'text', text: G.truncate(g.text, 100000), anchor: g.anchor, context: g.context, document: g.document, mode: 'respond' },
-      { snippet: G.truncate(G.normalizeText(g.text), 140), insertSource: g.range, insertTarget }
+      {
+        kind: 'text', text: G.truncate(g.text, 100000), anchor: g.anchor, context: g.context, document: g.document, mode: 'respond',
+        ...(choices.length ? { answerFields: SX.describeInsertChoices(choices) } : {})
+      },
+      { snippet: G.truncate(G.normalizeText(g.text), 140), insertSource: g.range, insertTarget: plan.target, insertChoices: choices }
     );
     return true;
   };
