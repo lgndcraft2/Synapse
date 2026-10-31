@@ -398,6 +398,25 @@ class ExplainReexplain(BaseModel):
     parent_entry_id: Optional[uuid.UUID] = None
 
 
+class RespondAnswerField(BaseModel):
+    """A box on the page a Respond draft could go in: what the user would read
+    around it, never what is typed in it."""
+    label: str = ""
+    prompt: str = ""
+    kind: Literal["single-line", "multi-line"] = "multi-line"
+    empty: bool = True
+
+    @field_validator("label")
+    @classmethod
+    def _cap_label(cls, v):
+        return _cap_text(v, 160) or ""
+
+    @field_validator("prompt")
+    @classmethod
+    def _cap_prompt(cls, v):
+        return _cap_text(v, 240) or ""
+
+
 class ExplainRequest(BaseModel):
     """A highlighted passage (`kind="text"`) or a circled area (`"image"`).
 
@@ -433,6 +452,9 @@ class ExplainRequest(BaseModel):
     mode: Literal["explain", "respond"] = "explain"
     # Respond only: the user's own ask, e.g. "how do I say no politely?"
     question: Optional[str] = Field(None, max_length=500)
+    # Respond only: boxes the page couldn't choose between, for the model to
+    # pick the one the draft belongs in. Index-aligned with the extension's list.
+    answer_fields: Optional[list[RespondAnswerField]] = Field(None, max_length=12)
 
 
 class ExplainContextUploadRequest(BaseModel):
@@ -502,6 +524,9 @@ class ExplainResponse(BaseModel):
     # there is nothing to type, e.g. game moves).
     respond_kind: Optional[Literal["reply", "answer", "moves", "tips"]] = None
     draft: Optional[str] = None
+    # Respond only: index into the request's answer_fields the draft belongs
+    # in, or null when none clearly fits (or none were sent).
+    target_field: Optional[int] = None
     # Explain only: the material looks like it expects a reply or an answer,
     # so the extension can offer Respond.
     suggests_respond: Optional[Literal["reply", "answer"]] = None

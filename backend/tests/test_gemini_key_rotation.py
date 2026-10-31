@@ -35,15 +35,22 @@ _BAD_PAYLOAD = {
 
 @pytest.fixture
 def gemini_pool(monkeypatch):
-    """Configure a key pool and route each key to a canned response."""
-    behaviour: dict[str, tuple[int, dict]] = {}
+    """Configure a key pool and route each key to a canned response.
+
+    A key maps to one (status, body), or to a list of them answered in turn
+    (the last one repeats).
+    """
+    behaviour: dict[str, tuple[int, dict] | list[tuple[int, dict]]] = {}
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         key = request.headers.get("x-goog-api-key")
         assert "key=" not in str(request.url), "API key must not travel in the URL"
         calls.append(key)
-        status, body = behaviour[key]
+        answer = behaviour[key]
+        if isinstance(answer, list):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
+        status, body = answer
         return httpx.Response(status, json=body)
 
     real_client = httpx.AsyncClient
@@ -136,3 +143,38 @@ async def test_rate_limited_keys_are_still_retried_when_all_are_limited(gemini_p
 
     assert data == _OK
     assert "busy" not in ai._dead_keys
+
+
+_UNAVAILABLE = {"error": {"code": 503, "message": "The model is overloaded.", "status": "UNAVAILABLE"}}
+
+
+async def test_a_brief_503_is_retried_without_blaming_the_key(gemini_pool):
+    configure, calls = gemini_pool
+    configure(only=[(503, _UNAVAILABLE), (200, _OK)])
+
+    data = await ai._gemini_generate({"contents": []}, timeout=5)
+
+    assert data == _OK
+    assert calls == ["only", "only"]
+    assert ai._dead_keys == {}
+    assert ai._rate_limited_keys == set()
+
+
+async def test_a_lasting_503_gives_up_after_the_retries(gemini_pool):
+    configure, calls = gemini_pool
+    configure(a=(503, _UNAVAILABLE), b=(503, _UNAVAILABLE))
+
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        await ai._gemini_generate({"contents": []}, timeout=5)
+
+    assert caught.value.response.status_code == 503
+    assert len(calls) == 1 + len(ai._TRANSIENT_RETRY_DELAYS)
+    assert ai._dead_keys == {}
+
+
+async def test_a_500_on_a_single_key_is_retried(gemini_pool):
+    configure, calls = gemini_pool
+    configure(only=[(500, {"error": {"code": 500}}), (200, _OK)])
+
+    assert await ai._gemini_generate({"contents": []}, timeout=5) == _OK
+    assert calls == ["only", "only"]

@@ -49,6 +49,7 @@ const reformatQueue = []; // queued raw replies for POST /reformat: { status, ty
 const consoleErrors = [];
 const explainQueue = []; // { status, body } replies for the next POST /explain calls, in order
 let reexplainsServed = 0;
+let mockTargetField = null; // the box the mock model picks when answer_fields are sent
 let ctxCounter = 0;
 
 const ARTICLE = `<!doctype html><html><head><meta charset="utf-8"><title>Cells 101</title>
@@ -108,6 +109,54 @@ const COMPOSE_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Co
 <div id="compose" contenteditable="true" role="textbox" aria-label="Message body" style="min-height:80px;border:1px solid #ccc;padding:8px"></div>
 </main>
 <script>window.__inputs = 0; document.getElementById('compose').addEventListener('input', () => { window.__inputs += 1; });</script>
+</body></html>`;
+
+// Webmail shaped like Zoho Mail: an empty search bar near the message, and a
+// reply composer that only exists once Reply is clicked, as a designMode
+// iframe (no contenteditable attribute anywhere).
+const WEBMAIL_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Webmail</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<header><input id="search" type="text" placeholder="Search mail" aria-label="Search"></header>
+<main>
+<p id="msg">Hi, are you free for a call tomorrow morning?</p>
+<button id="reply-btn" type="button">Reply</button>
+<div id="composer-slot"></div>
+</main>
+<script>
+window.openComposer = () => {
+  const frame = document.createElement('iframe');
+  frame.id = 'composer';
+  frame.title = 'Message body';
+  frame.style.cssText = 'width:600px;height:160px;border:1px solid #ccc';
+  document.getElementById('composer-slot').appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open(); doc.write('<!doctype html><html><body></body></html>'); doc.close();
+  doc.designMode = 'on';
+};
+document.getElementById('reply-btn').addEventListener('click', window.openComposer);
+</script>
+</body></html>`;
+
+// A quiz whose markup ties each question to its own box.
+const QUIZ_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Quiz</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main><form>
+<div class="item"><p id="s1">1. What is the capital of France?</p><input id="a1" type="text"></div>
+<div class="item"><p id="s2">2. Which planet is closest to the sun?</p><input id="a2" type="text"></div>
+<p><input type="email" placeholder="Email me my results"></p>
+</form></main>
+</body></html>`;
+
+// A flat quiz: both questions, then both boxes, in one container, so the
+// markup can't say which box answers which question.
+const FLAT_QUIZ_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Flat quiz</title></head>
+<body style="font:16px/1.5 sans-serif;margin:40px">
+<main><div id="quiz">
+<p id="f1">1. What is the capital of France?</p>
+<p id="f2">2. Which planet is closest to the sun?</p>
+<textarea id="t1" aria-label="First answer"></textarea>
+<textarea id="t2" aria-label="Second answer"></textarea>
+</div></main>
 </body></html>`;
 
 // The same message above each real editor.
@@ -173,6 +222,18 @@ function startServer() {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(COMPOSE_PAGE);
       }
+      if (req.method === 'GET' && url.pathname === '/quiz.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(QUIZ_PAGE);
+      }
+      if (req.method === 'GET' && url.pathname === '/flat-quiz.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(FLAT_QUIZ_PAGE);
+      }
+      if (req.method === 'GET' && url.pathname === '/webmail.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(WEBMAIL_PAGE);
+      }
       if (req.method === 'GET' && url.pathname === '/reply.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(REPLY_PAGE);
@@ -210,6 +271,7 @@ function startServer() {
             mode: 'respond',
             respond_kind: 'reply',
             draft: RESPOND_DRAFT,
+            target_field: body.answer_fields ? mockTargetField : null,
           },
         } : {
           status: 200,
@@ -1711,6 +1773,94 @@ test('respond: Insert works in Quill and its model sees the text', async () => {
   await page.locator('.ql-editor').focus();
   await page.keyboard.press('Control+z');
   await expect.poll(() => page.evaluate(() => window.quill.getText().trim())).toBe('');
+});
+
+/** Opens the webmail page, uses its search bar, then asks Respond about #msg. */
+async function webmailRespond({ openReply }) {
+  await page.bringToFront();
+  await page.goto(`${base}/webmail.html`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  // The user searched earlier, then cleared it: an empty, recently focused search box.
+  await page.locator('#search').fill('ada');
+  await page.locator('#search').fill('');
+  if (openReply) await page.locator('#reply-btn').click();
+  // Highlighting with the mouse takes focus off the search box first.
+  await page.locator('#msg').click();
+  await selectForBubbles('#msg');
+  const before = requests.length;
+  await page.locator('#synapse-respond-bubble').click();
+  await waitForRequests(before + 1);
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  await panel.locator('.sxp-insert').click();
+  return panel;
+}
+
+test('respond: Insert never fills a search bar; with no reply box open it says to open one', async () => {
+  const panel = await webmailRespond({ openReply: false });
+  await expect(panel.locator('.sxp-draft .sxp-note')).toContainText('Open the reply box');
+  await expect(page.locator('#search')).toHaveValue('');
+});
+
+test('respond: Insert finds a reply composer inside a designMode iframe', async () => {
+  const panel = await webmailRespond({ openReply: true });
+  await expect(panel.locator('.sxp-draft .sxp-note')).toContainText('Check it before you send it');
+  const body = page.frameLocator('#composer').locator('body');
+  await expect.poll(() => body.innerText()).toBe(RESPOND_DRAFT);
+  await expect(page.locator('#search')).toHaveValue('');
+});
+
+/** Respond on `selector` at `pathname`; returns the panel and the request sent. */
+async function respondOn(pathname, selector) {
+  await page.bringToFront();
+  await page.goto(`${base}${pathname}`);
+  await expect(page.locator('#synapse-fab')).toBeVisible();
+  await selectForBubbles(selector);
+  const before = requests.length;
+  await page.locator('#synapse-respond-bubble').click();
+  const req = await waitForRequests(before + 1);
+  const panel = page.locator('#synapse-explain-panel');
+  await expect(panel.locator('.sxp-draft-text')).toHaveValue(RESPOND_DRAFT);
+  return { panel, req };
+}
+
+test('respond: Insert follows the markup to the box under the highlighted question', async () => {
+  const { panel, req } = await respondOn('/quiz.html', '#s2');
+  // The page settled it, so the model isn't asked.
+  expect(req.answer_fields).toBeNull();
+  await panel.locator('.sxp-insert').click();
+  await expect(page.locator('#a2')).toHaveValue(RESPOND_DRAFT.replace('\n', ' '));
+  await expect(page.locator('#a1')).toHaveValue('');
+});
+
+test('respond: when the markup can\'t tell, the model picks the box', async () => {
+  mockTargetField = 1;
+  try {
+    const { panel, req } = await respondOn('/flat-quiz.html', '#f2');
+    // Both boxes go out, labelled, nearest first, with no typed text.
+    expect(req.answer_fields).toHaveLength(2);
+    expect(req.answer_fields.map((f) => f.label)).toEqual(['First answer', 'Second answer']);
+    expect(req.answer_fields[0]).toMatchObject({ kind: 'multi-line', empty: true });
+    await panel.locator('.sxp-insert').click();
+    // Nearest-first would have chosen #t1; the model's pick wins.
+    await expect(page.locator('#t2')).toHaveValue(RESPOND_DRAFT);
+    await expect(page.locator('#t1')).toHaveValue('');
+  } finally {
+    mockTargetField = null;
+  }
+});
+
+test('respond: a box the user clicks into after the draft appears wins', async () => {
+  mockTargetField = 1;
+  try {
+    const { panel } = await respondOn('/flat-quiz.html', '#f2');
+    await page.locator('#t1').click();
+    await panel.locator('.sxp-insert').click();
+    await expect(page.locator('#t1')).toHaveValue(RESPOND_DRAFT);
+    await expect(page.locator('#t2')).toHaveValue('');
+  } finally {
+    mockTargetField = null;
+  }
 });
 
 test('circle confirm bar: Respond sends the crop with mode respond and the optional question', async () => {

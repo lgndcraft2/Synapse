@@ -59,14 +59,16 @@ def respond_calls(monkeypatch):
     calls = Recorder()
 
     async def fake_call_respond(text, image_base64, media_type, profile, feedback_summary, use_claude=False,
-                                context_text="", document_text="", question=None, previous_html=None):
+                                context_text="", document_text="", question=None, previous_html=None,
+                                answer_fields=None):
         calls.append({
             "text": text, "image": image_base64, "use_claude": use_claude,
-            "question": question, "previous_html": previous_html,
+            "question": question, "previous_html": previous_html, "answer_fields": answer_fields,
         })
         if calls.fail:
             raise RuntimeError("provider exploded")
-        return ai.RespondOutput("reply", "<div><p>Be warm and brief.</p></div>", "Hi Ada,\n\nYes, Friday works.")
+        target = 1 if answer_fields and len(answer_fields) > 1 else None
+        return ai.RespondOutput("reply", "<div><p>Be warm and brief.</p></div>", "Hi Ada,\n\nYes, Friday works.", target)
 
     monkeypatch.setattr(ai, "call_respond", fake_call_respond)
     return calls
@@ -827,6 +829,26 @@ async def test_respond_follow_up_sends_previous_help_and_request(client, respond
 
     bad = await _explain(client, _text_body(mode="respond", reexplain=_reexplain("simpler")), user["headers"])
     assert bad.status_code == 400
+
+
+async def test_respond_passes_answer_fields_and_returns_the_target(client, respond_calls, session_factory):
+    user = await _sign_in(client, session_factory, "fields", plan="lite")
+    fields = [
+        {"label": "Question 1", "prompt": "What is 2 + 2?", "kind": "single-line", "empty": True},
+        {"label": "Question 2", "prompt": "Name a primary colour.", "kind": "single-line", "empty": True},
+    ]
+    resp = await _explain(client, _text_body(mode="respond", answer_fields=fields), user["headers"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["target_field"] == 1
+    assert [f["label"] for f in respond_calls[0]["answer_fields"]] == ["Question 1", "Question 2"]
+
+    # Without fields there is no target.
+    resp = await _explain(client, _text_body(mode="respond"), user["headers"])
+    assert resp.json()["target_field"] is None
+    assert respond_calls[1]["answer_fields"] == []
+
+    too_many = _text_body(mode="respond", answer_fields=fields * 7)
+    assert (await _explain(client, too_many, user["headers"])).status_code == 422
 
 
 async def test_question_is_only_for_respond(client, ai_calls):
