@@ -304,6 +304,7 @@ async def explain(
                 document_text=document_text,
                 question=(reexplain.request if reexplain else None) or body.question,
                 previous_html=reexplain.previous_html if reexplain else None,
+                answer_fields=[f.model_dump() for f in body.answer_fields or []],
             )
             html = respond_out.html
         else:
@@ -419,6 +420,7 @@ async def explain(
         mode=body.mode,
         respond_kind=respond_out.kind if respond_out else None,
         draft=respond_out.draft if respond_out else None,
+        target_field=respond_out.target if respond_out else None,
         suggests_respond=suggests_respond,
     )
 

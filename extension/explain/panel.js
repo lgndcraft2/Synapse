@@ -296,7 +296,9 @@
   }
 
   function insertDraft(view, text) {
-    let target = SX.insertTargetUsable?.(view.insertTarget) ? view.insertTarget : null;
+    // A box the user clicked into after the draft appeared is their choice.
+    let target = SX.editableChosenSince?.(view.shownAt || 0) || null;
+    if (!target) target = SX.insertTargetUsable?.(view.insertTarget) ? view.insertTarget : null;
     if (!target && SX.findInsertTarget) target = SX.findInsertTarget(view.insertSource || null);
     if (!target) {
       view.insertNote = { text: 'Open the reply box (or click into the box you want filled), then press Insert.', error: true };
@@ -690,7 +692,7 @@
       ...(payload.capture ? { capture: payload.capture } : {}),
       // An explained circle offered for Respond re-looks at its kept crop.
       ...(payload.relookId ? { relookId: payload.relookId } : {}),
-      ...(mode === 'respond' ? { mode, question: payload.question || null } : {})
+      ...(mode === 'respond' ? { mode, question: payload.question || null, answerFields: payload.answerFields || null } : {})
     });
 
     if (res && res.ok && res.contextUsed === 'document') st.documentContextReady = true;
@@ -710,7 +712,7 @@
           }], vi: 0,
           suggestsRespond: mode === 'explain' ? res.suggestsRespond || null : null,
           insertSource: opts.insertSource || null,
-          insertTarget: opts.insertTarget || null,
+          insertTarget: pickedTarget(res, opts) || opts.insertTarget || null,
           // Kept so a re-explain sends the same source and context again.
           request: {
             text: payload.text || '', anchor: payload.anchor || null,
@@ -730,6 +732,14 @@
     }
     return { res, entry };
   };
+
+  /** The box the model said the draft belongs in, if it is still on the page. */
+  function pickedTarget(res, opts) {
+    const i = res && res.targetField;
+    const choices = opts.insertChoices || [];
+    if (!Number.isInteger(i) || i < 0 || i >= choices.length) return null;
+    return SX.insertTargetUsable?.(choices[i]) ? choices[i] : null;
+  }
 
   function errorActions(res, payload, opts) {
     const code = res && res.code;

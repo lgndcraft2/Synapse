@@ -11,7 +11,15 @@
 
   const TEXT_INPUT_TYPES = new Set(['', 'text', 'search', 'email', 'url', 'tel', 'number']);
   const CANDIDATES = 'textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"][aria-multiline="true"]';
+  // Any box an answer could be typed into, single-line inputs included.
+  const ANSWER_BOXES = 'textarea, input, [contenteditable]:not([contenteditable="false"]), [role="textbox"]';
   const SEARCH_RADIUS = 900; // px from the source; further boxes are probably unrelated
+  const MAX_CHOICES = 12;    // boxes offered to the model at most
+  const CONTACT_INPUT_TYPES = new Set(['email', 'url', 'tel']);
+  // The structural walk stops below these: everything on the page sits in
+  // them, so one box inside (a newsletter sign-up) says nothing about the
+  // selection.
+  const PAGE_ROOTS = 'body, main, [role="main"]';
 
   // Boxes a reply never belongs in: search and filter bars, recipient and
   // subject lines. Single-line inputs are judged by their labels too
@@ -146,12 +154,14 @@
   // Synapse's own buttons. Clicking or selecting anywhere else on the page
   // clears it, so a search typed earlier doesn't catch the next draft.
   let lastEditableCurrent = false;
+  let lastEditableAt = 0;
 
   function onFocusIn(e) {
     const el = editableRoot(deepTarget(e));
     if (el && !SX.isSynapseUI(el)) {
       lastEditable = el;
       lastEditableCurrent = true;
+      lastEditableAt = Date.now();
     }
   }
 
@@ -203,6 +213,47 @@
     return null;
   }
 
+  /** The body of a same-origin iframe that is itself an editor, else null. */
+  function frameEditor(frame) {
+    let doc = null;
+    try { doc = frame.contentDocument; } catch (_) { doc = null; }
+    if (!doc || !doc.body) return null;
+    if (doc.designMode === 'on' || doc.body.isContentEditable) {
+      watch(doc);
+      return doc.body;
+    }
+    return null;
+  }
+
+  /** A box Insert may fill without the user pointing at it. */
+  function answerable(el) {
+    if (!el || SX.isSynapseUI(el) || !isVisible(el) || isSearchLike(el)) return false;
+    // Sign-up and contact fields, never where an answer goes.
+    return !(el.tagName === 'INPUT' && CONTACT_INPUT_TYPES.has((el.getAttribute('type') || '').toLowerCase()));
+  }
+
+  /**
+   * Answerable boxes under `root` (an element or document), single-line
+   * inputs included, plus editors in same-origin iframes inside it.
+   */
+  function boxesWithin(root) {
+    const found = new Set();
+    for (const node of root.querySelectorAll(ANSWER_BOXES)) {
+      const el = editableRoot(node);
+      if (el) found.add(el);
+    }
+    for (const frame of root.querySelectorAll('iframe, frame')) {
+      const body = frameEditor(frame);
+      if (body) found.add(body);
+      else {
+        let doc = null;
+        try { doc = frame.contentDocument; } catch (_) { doc = null; }
+        if (doc && doc.documentElement) boxesWithin(doc).forEach((el) => found.add(el));
+      }
+    }
+    return [...found].filter(answerable);
+  }
+
   /** Multi-line boxes a draft could go in, across reachable documents. */
   function multilineCandidates() {
     const found = new Set();
@@ -216,22 +267,41 @@
         if (el) found.add(el);
       }
     }
-    return [...found].filter((el) => el.tagName !== 'INPUT' && !SX.isSynapseUI(el) && isVisible(el) && !isSearchLike(el));
+    return [...found].filter((el) => el.tagName !== 'INPUT' && answerable(el));
   }
 
   /**
-   * Where a draft should go. `source` is the selection Range or a viewport
-   * rect {x, y, width, height}. Prefers the box the user last typed in, then
-   * the best multi-line box: empty before filled, nearest first. Search,
-   * filter, recipient and subject boxes are never picked on their own; they
-   * get the draft only when the user clicked into one and went straight to
-   * Insert. Returns an element or null.
+   * The box the page itself ties to the selection, or the boxes it can't
+   * choose between. A question inside a <label> belongs to that label's
+   * control. Otherwise the smallest container around the selection that
+   * holds exactly one answerable box decides it: a quiz item, a form row, a
+   * message with its reply box. If the walk first reaches a container with
+   * several boxes, those are the choices.
+   * Returns { target } or { choices } (possibly empty).
    */
-  SX.findInsertTarget = function (source) {
-    if (lastEditable && isVisible(lastEditable) && (lastEditableCurrent || !isSearchLike(lastEditable))) {
-      return lastEditable;
-    }
+  function structuralMatch(range) {
+    let start = range && range.commonAncestorContainer;
+    if (start && start.nodeType !== 1) start = start.parentElement;
+    if (!start || start.ownerDocument !== document) return { choices: [] };
 
+    const label = start.closest('label');
+    const control = label && label.control ? editableRoot(label.control) : null;
+    if (control && answerable(control)) return { target: control };
+
+    const from = rectCenter(range.getBoundingClientRect());
+    for (let el = start; el && !el.matches(PAGE_ROOTS); el = el.parentElement) {
+      const boxes = boxesWithin(el);
+      if (boxes.length > 1) return { choices: boxes };
+      if (boxes.length === 1) {
+        // A lone box far away shares a wrapper, not a question.
+        return distance(from, topRect(boxes[0])) <= SEARCH_RADIUS ? { target: boxes[0] } : { choices: [] };
+      }
+    }
+    return { choices: [] };
+  }
+
+  /** Nearest-first multi-line guess, used when the page structure doesn't say. */
+  function nearestTarget(source) {
     const candidates = multilineCandidates();
     if (!candidates.length) return null;
 
@@ -249,6 +319,128 @@
     // is the only box there is, it is the one meant.
     if (!best && candidates.length === 1) best = candidates[0];
     return best;
+  }
+
+  /** The box the user is typing in, or clicked into and went straight to Insert from. */
+  function currentEditable() {
+    return lastEditable && lastEditableCurrent && isVisible(lastEditable) ? lastEditable : null;
+  }
+
+  /** A box the user last used that isn't a search bar, even if they clicked away since. */
+  function recentEditable() {
+    return lastEditable && isVisible(lastEditable) && !isSearchLike(lastEditable) ? lastEditable : null;
+  }
+
+  /**
+   * Where a draft should go. `source` is the selection Range or a viewport
+   * rect {x, y, width, height}. In order: the box the user's cursor is in;
+   * the box the page ties to the selection; the box the user last used;
+   * then the nearest multi-line box, empty before filled. Search, filter,
+   * recipient and subject boxes are never picked on their own; they get the
+   * draft only when the user clicked into one and went straight to Insert.
+   * Returns an element or null.
+   */
+  SX.findInsertTarget = function (source) {
+    return SX.planInsert(source).target;
+  };
+
+  /**
+   * findInsertTarget plus the boxes it couldn't choose between, for the
+   * model to pick from: { target, choices }. `choices` is empty unless the
+   * page structure left two or more boxes in play, and holds at most
+   * MAX_CHOICES, nearest first.
+   */
+  SX.planInsert = function (source) {
+    const current = currentEditable();
+    if (current) return { target: current, choices: [] };
+
+    const isRange = !!(source && typeof source.commonAncestorContainer !== 'undefined');
+    const match = isRange ? structuralMatch(source) : { choices: [] };
+    if (match.target) return { target: match.target, choices: [] };
+
+    const target = recentEditable() || nearestTarget(source);
+    let choices = match.choices || [];
+    if (choices.length > 1) {
+      const rect = sourceRect(source);
+      const from = rect ? rectCenter(rect) : null;
+      if (from) choices = choices.map((el) => [el, distance(from, topRect(el))]).sort((a, b) => a[1] - b[1]).map(([el]) => el);
+      choices = choices.slice(0, MAX_CHOICES);
+    } else {
+      choices = [];
+    }
+    return { target, choices };
+  };
+
+  /** The box the user clicked into after `since` (ms), if they're still on it. */
+  SX.editableChosenSince = function (since) {
+    return lastEditableAt > since ? currentEditable() : null;
+  };
+
+  // ── Describing boxes for the model ─────────────────────────────
+  // Only what a sighted user reads around a box: its label and the question
+  // or heading near it. Never what is typed in this or any other box.
+
+  function textOutsideBoxes(root, limit) {
+    const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || parent.closest('script, style, noscript, textarea, select, option, [contenteditable]:not([contenteditable="false"])')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (SX.isSynapseUI(parent)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let out = '';
+    for (let node = walker.nextNode(); node && out.length < limit; node = walker.nextNode()) {
+      out += ' ' + node.nodeValue;
+    }
+    return out.replace(/\s+/g, ' ').trim().slice(0, limit);
+  }
+
+  function labelOf(el) {
+    const host = boxOf(el);
+    const doc = el.ownerDocument;
+    const parts = [];
+    if (el.labels && el.labels.length) parts.push(...[...el.labels].map((l) => textOutsideBoxes(l, 120)));
+    const labelledBy = (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+    for (const id of labelledBy) {
+      const ref = doc.getElementById(id);
+      if (ref) parts.push(textOutsideBoxes(ref, 120));
+    }
+    for (const node of host === el ? [el] : [el, host]) {
+      for (const attr of ['aria-label', 'placeholder', 'title']) {
+        const v = node.getAttribute(attr);
+        if (v) parts.push(v);
+      }
+    }
+    if (!parts.length && el.getAttribute('name')) parts.push(el.getAttribute('name'));
+    return [...new Set(parts.map((p) => p.trim()).filter(Boolean))].join(' / ').slice(0, 160);
+  }
+
+  /** The nearest readable text around a box: usually the question it answers. */
+  function promptNear(el) {
+    let node = boxOf(el).parentElement;
+    for (let i = 0; node && i < 5; i++, node = node.parentElement) {
+      const text = textOutsideBoxes(node, 240);
+      if (text.length >= 15) return text;
+    }
+    return '';
+  }
+
+  function boxKind(el) {
+    if (el.tagName === 'INPUT') return 'single-line';
+    return 'multi-line';
+  }
+
+  /** [{ label, prompt, kind, empty }] for each box, in order. */
+  SX.describeInsertChoices = function (boxes) {
+    return boxes.map((el) => ({
+      label: labelOf(el),
+      prompt: promptNear(el),
+      kind: boxKind(el),
+      empty: isEmpty(el)
+    }));
   };
 
   /** True while `el` can still take the draft. */
