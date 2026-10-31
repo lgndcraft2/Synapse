@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { signOut as authSignOut } from '../lib/auth';
 import { pushLogoutToExtension } from '../lib/extensionBridge';
+import { CHROME_STORE_URL } from '../lib/links';
 import { Skeleton } from './ui';
 import { BrandLockup } from './Brand';
 import { Avatar } from './Avatar';
@@ -259,7 +260,12 @@ export function AppHeader({ user, authChecked = true, backTo }: AppHeaderProps) 
             <a href="/auth?tab=login" className="header-action">
               Log in
             </a>
-            <a href="/auth?tab=signup" className="header-action header-action-primary">
+            <a
+              href={CHROME_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="header-action header-action-primary"
+            >
               Get Extension
             </a>
           </div>

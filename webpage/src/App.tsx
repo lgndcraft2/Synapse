@@ -27,6 +27,7 @@ import { getSession, subscribeAuth } from './lib/auth';
 import { PLANS, TRIAL_DAYS, formatPriceShort } from './lib/plans';
 import { FAQS } from './lib/faq';
 import { BrandLockup } from './component/Brand';
+import { CHROME_STORE_URL } from './lib/links';
 
 // const navItems = ['Explain', 'Profile Engine', 'Solutions', 'How it Works'];
 
@@ -165,7 +166,7 @@ function App() {
             ) : (
               <a href="/auth?tab=login" className="nav-login" style={{textDecoration: 'none'}}>Login</a>
             )}
-            <a href="/auth?tab=signup" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
+            <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer" className="button button-primary nav-cta" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get Extension</a>
           </div>
           {/* <nav id="mobile-navigation" className={`mobile-nav ${mobileNavOpen ? 'is-open' : ''}`} aria-label="Mobile navigation">
             {navItems.map((item) => (
@@ -173,7 +174,7 @@ function App() {
                 {item}
               </a>
             ))}
-            <a className="button button-primary" href="/auth?tab=signup">
+            <a className="button button-primary" href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer">
               Get Extension
             </a>
           </nav> */}
@@ -191,7 +192,7 @@ function App() {
                 and explaining anything you highlight or circle.
               </p>
               <div className="button-row">
-                <a href="/auth?tab=signup" className="button button-primary" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get the Extension</a>
+                <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer" className="button button-primary" style={{textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}>Get the Extension</a>
                 <button className="button button-secondary">See how it works</button>
               </div>
               <div className="hero-signals" aria-label="Product promises">
