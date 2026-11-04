@@ -92,8 +92,6 @@ const OAUTH_ERRORS: Record<string, string> = {
   oauth_unconfigured: 'Google sign-in is not available right now.',
   oauth_unavailable: 'Sign-in is temporarily unavailable. Please try again shortly.',
   oauth_failed: 'Something went wrong during Google sign-in. Please try again.',
-  oauth_terms_required:
-    'No Synapse account uses that Google address yet. To create one, tick the box to accept the Terms and Privacy Policy, then sign up with Google.',
 };
 
 // ── Form state ────────────────────────────────────────────────────

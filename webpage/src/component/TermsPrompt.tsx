@@ -4,7 +4,8 @@ import { acceptCurrentTerms } from '../lib/auth';
 /**
  * Asks a signed-in user to accept the current Terms of Service and Privacy
  * Policy. Shown by AppHeader while user.needs_terms_acceptance is true: for
- * accounts created before acceptance was recorded, and for everyone after
+ * new Google accounts signed in without the signup checkbox, accounts
+ * created before acceptance was recorded, and for everyone after
  * TERMS_VERSION is bumped on the backend.
  *
  * Modal on purpose: the record is only meaningful if the person actually saw

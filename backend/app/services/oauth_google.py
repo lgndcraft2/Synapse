@@ -72,7 +72,7 @@ def build_authorize_url(next_path: str | None, accept_terms: bool = False) -> tu
     Return (redirect_url, signed_cookie_value) for the start of the flow.
 
     `accept_terms` is the signup page's checkbox. It rides in the signed
-    cookie so the callback can tell whether a brand-new account may be created.
+    cookie so the callback can record acceptance when creating or linking an account.
 
     Everything the callback needs to verify itself lives in the cookie. Nothing
     is stored server-side on purpose: the cookie *is* the proof that the

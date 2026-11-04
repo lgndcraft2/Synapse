@@ -629,9 +629,8 @@ async def google_start(
     """
     Begin the Google handshake.
 
-    `accept_terms` is the signup checkbox. Without it the flow can still sign
-    in an existing account, but the callback will not create a new one.
-
+    New Google identities get an account automatically. `accept_terms` carries
+    the signup checkbox; otherwise the signed-in user sees the in-app prompt.
 
     Must be reached by a top-level navigation, not fetch(): the browser has to
     accept a Set-Cookie and then follow a cross-origin redirect, and Google
@@ -696,13 +695,6 @@ async def google_callback(
                     db, existing, google_sub, claims.get("picture")
                 )
             else:
-                if not tx.get("terms"):
-                    # A new account needs the signup checkbox. "Continue with
-                    # Google" on the login screen has none, so send them to
-                    # signup rather than creating an account they never agreed to.
-                    raise goauth.OAuthError(
-                        "oauth_terms_required", "Terms not accepted for a new account."
-                    )
                 user = await provision_user(
                     db,
                     email=email,
@@ -710,7 +702,7 @@ async def google_callback(
                     avatar_url=claims.get("picture"),
                     google_id=google_sub,
                     email_verified=True,
-                    terms_version=settings.TERMS_VERSION,
+                    terms_version=settings.TERMS_VERSION if tx.get("terms") else None,
                 )
 
         if tx.get("terms") and user.needs_terms_acceptance:
@@ -753,9 +745,7 @@ async def google_callback(
 
     except goauth.OAuthError as exc:
         logger.warning("Google callback rejected: %s", exc.code)
-        # The terms bounce lands on signup, where the checkbox is.
-        tab = "tab=signup&" if exc.code == "oauth_terms_required" else ""
-        response = RedirectResponse(_frontend(f"/auth?{tab}error={exc.code}"), 303)
+        response = RedirectResponse(_frontend(f"/auth?error={exc.code}"), 303)
         return response
     except Exception:
         logger.exception("Unexpected failure in Google callback")
