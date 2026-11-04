@@ -20,6 +20,7 @@
     hostname: G.hostnameOf(H.pageUrl()),
     pageKey: G.pageKey(H.pageUrl()),
     history: [],            // entries for this hostname, newest first
+    turns: [],              // what was asked in this tab, oldest first; never stored
     historySource: 'local',
     highlights: new Map(),  // entry id (or `pending-<n>`) -> live Range
     requestSeq: 0,

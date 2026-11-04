@@ -6,6 +6,7 @@ import { PLAN_LABELS } from "./lib/plans";
 import { Pager, Skeleton } from "./component/ui";
 import { useOffsetPage } from "./lib/usePaging";
 import { AppFooter, AppHeader } from "./component/AppShell";
+import UsagePanel from "./component/UsagePanel";
 
 type SessionDifficulty = "hard" | "normal" | "flowing";
 
@@ -487,6 +488,8 @@ export default function Dashboard() {
             </section>
 
           </div>
+
+          {checkedAuth && <UsagePanel />}
         </main>
 
         {/* ── FOOTER (matches landing page) ──────────────────────── */}

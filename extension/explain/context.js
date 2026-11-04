@@ -249,8 +249,54 @@
     return { local: ctx.local };
   }
 
+  /** The readable text of a result's HTML. */
+  function plainText(html) {
+    return clean(String(html == null ? '' : html)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&'));
+  }
+
+  const TURN_CHARS = { source: 600, request: 300, answer: 1200 };
+  const TURNS_SENT = 6;
+
+  /** A saved history entry as a turn, read at its newest version. */
+  function turnFromEntry(entry) {
+    const versions = Array.isArray(entry.versions) ? entry.versions : [];
+    const latest = versions[versions.length - 1] || null;
+    return {
+      id: entry.id,
+      at: String((latest && latest.created_at) || entry.created_at || ''),
+      source: entry.source_text || (entry.kind === 'image' ? 'an area they circled' : ''),
+      request: (latest && latest.request) || null,
+      answer: plainText(latest ? latest.result_html : entry.result_html)
+    };
+  }
+
+  /**
+   * What already happened on this page, oldest first, for a follow-up to build
+   * on: this tab's live turns (Respond results are only ever here) plus saved
+   * history for the page, so the memory survives a reload.
+   */
+  function recentTurns(liveTurns, entries, isThisPage) {
+    const live = (liveTurns || []).filter(t => isThisPage(t.url));
+    const liveIds = new Set(live.map(t => t.id).filter(Boolean));
+    const saved = (entries || [])
+      .filter(e => isThisPage(e.url) && !liveIds.has(e.id))
+      .map(turnFromEntry);
+    return saved.concat(live)
+      .sort((a, b) => String(a.at).localeCompare(String(b.at)))
+      .slice(-TURNS_SENT)
+      .map(t => ({
+        source: cleanOrNull(t.source, TURN_CHARS.source),
+        request: cleanOrNull(t.request, TURN_CHARS.request),
+        answer: cleanOrNull(t.answer, TURN_CHARS.answer)
+      }));
+  }
+
   const api = {
     LIMITS, SENSITIVE_DOMAINS,
+    plainText, recentTurns,
     clean, centerSlice, buildOutline, buildHeadingPath, pickAccessibleName,
     isSensitiveHost, pageContextAllowed, capContext, localOnly, byteLength
   };

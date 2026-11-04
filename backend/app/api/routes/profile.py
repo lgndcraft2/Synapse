@@ -1,11 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import delete, select, func, and_, case
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.models import User, CognitiveProfile, ProfileHistory, FeedbackLog, ReadingSession
+from app.core.timeutils import as_aware
+from app.models.models import (
+    AIUsageEvent, User, CognitiveProfile, ProfileHistory, FeedbackLog, ReadingSession,
+    SiteActivity, ViewerOpen,
+)
 from app.services.ai import effective_reaction
-from app.schemas.schemas import ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut, Page
+from app.schemas.schemas import (
+    ProfileOut, ProfileUpdate, FeedbackBatch, DashboardStats, SessionOut, SiteUsage, SiteUsageCleared,
+    UsageDay, UsageStats, UsageTotals, Page,
+)
 from datetime import datetime, timedelta, timezone
 
 # ── Profile ───────────────────────────────────────────────────────
@@ -327,6 +334,110 @@ async def list_reading_sessions(
         total=total,
         has_more=offset + len(sessions) < total,
     )
+
+
+_TOP_SITES = 8
+
+# ai_usage_events.operation -> (the UsageTotals field, the UsageDay field).
+# SQ4R questions run behind a reformat, so they aren't an action of their own.
+_USAGE_OPERATIONS = {
+    "explain_text": ("highlights", "explains"),
+    "explain_image": ("circles", "explains"),
+    "respond_text": ("responds", "responds"),
+    "respond_image": ("responds", "responds"),
+    "reformat": ("reformats", "reformats"),
+    "document_reformat": ("documents", "reformats"),
+}
+
+
+@stats_router.get("/usage", response_model=UsageStats)
+async def get_usage_stats(
+    days: int = Query(30, ge=1, le=90),
+    # Minutes east of UTC, so hours and days read in the viewer's own time.
+    tz_offset: int = Query(0, ge=-840, le=840),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """What the caller did with Synapse: counts, peak hours and top sites.
+
+    Failed calls aren't counted. Grouped here rather than in SQL because the
+    buckets depend on the viewer's offset and the tests run on SQLite; the
+    window is short and ix_ai_usage_events_user_created serves the read.
+    """
+    offset = timedelta(minutes=tz_offset)
+    today = (datetime.now(timezone.utc) + offset).date()
+    first_day = today - timedelta(days=days - 1)
+    since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=timezone.utc) - offset
+
+    rows = (await db.execute(
+        select(AIUsageEvent.created_at, AIUsageEvent.operation, AIUsageEvent.source).where(
+            AIUsageEvent.user_id == current_user.id,
+            AIUsageEvent.succeeded.is_(True),
+            AIUsageEvent.created_at >= since,
+            AIUsageEvent.operation.in_(_USAGE_OPERATIONS),
+        )
+    )).all()
+
+    totals = dict.fromkeys(UsageTotals.model_fields, 0)
+    daily = {
+        first_day + timedelta(days=i): {"explains": 0, "responds": 0, "reformats": 0}
+        for i in range(days)
+    }
+    hours = [0] * 24
+    weekdays = [0] * 7
+    sources = {"page": 0, "pdf": 0, "document": 0}
+    for created_at, operation, source in rows:
+        local = as_aware(created_at) + offset
+        total_field, day_field = _USAGE_OPERATIONS[operation]
+        totals[total_field] += 1
+        if local.date() in daily:
+            daily[local.date()][day_field] += 1
+        hours[local.hour] += 1
+        weekdays[local.weekday()] += 1
+        sources[source or "page"] += 1
+
+    totals["pdf_opens"] = await db.scalar(
+        select(func.count()).select_from(ViewerOpen).where(
+            ViewerOpen.user_id == current_user.id, ViewerOpen.created_at >= since,
+        )
+    ) or 0
+
+    sites = (await db.execute(
+        select(SiteActivity)
+        .where(SiteActivity.user_id == current_user.id)
+        .order_by(
+            (SiteActivity.explains + SiteActivity.responds + SiteActivity.reformats).desc(),
+            SiteActivity.last_used_at.desc(),
+        )
+        .limit(_TOP_SITES)
+    )).scalars().all()
+
+    return UsageStats(
+        days=days,
+        totals=UsageTotals(**totals),
+        daily=[UsageDay(day=day, **counts) for day, counts in daily.items()],
+        hours=hours,
+        weekdays=weekdays,
+        sources=sources,
+        top_sites=[
+            SiteUsage(
+                hostname=site.hostname, explains=site.explains, responds=site.responds,
+                reformats=site.reformats, last_used_at=as_aware(site.last_used_at),
+            )
+            for site in sites
+        ],
+    )
+
+
+@stats_router.delete("/usage/sites", response_model=SiteUsageCleared)
+async def clear_site_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Forget which sites the caller has used Synapse on."""
+    result = await db.execute(delete(SiteActivity).where(SiteActivity.user_id == current_user.id))
+    await db.flush()
+    return SiteUsageCleared(deleted=result.rowcount or 0)
 
 
 @stats_router.get("/stats", response_model=DashboardStats)

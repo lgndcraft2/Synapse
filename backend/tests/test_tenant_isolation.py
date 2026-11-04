@@ -40,6 +40,7 @@ READ_ENDPOINTS = [
     "/api/v1/profile/history",
     "/api/v1/dashboard/sessions",
     "/api/v1/dashboard/stats",
+    "/api/v1/dashboard/usage",
     "/api/v1/support/tickets",
     "/api/v1/billing/status",
 ]

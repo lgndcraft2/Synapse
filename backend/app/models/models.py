@@ -436,6 +436,22 @@ class ExplanationHistory(Base):
     )
 
 
+class SiteActivity(Base):
+    """How much one user has used Synapse on one site, for their dashboard.
+
+    Counters only: no paths, titles or per-visit times. See
+    app/services/site_activity.py.
+    """
+    __tablename__ = "site_activity"
+
+    user_id:      Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    hostname:     Mapped[str]       = mapped_column(String, primary_key=True)
+    explains:     Mapped[int]       = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    responds:     Mapped[int]       = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    reformats:    Mapped[int]       = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_used_at: Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())
+
+
 class ViewerOpen(Base):
     """One document opened in the Synapse PDF viewer. Content-free.
 

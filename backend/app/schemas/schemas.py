@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Generic, Optional, Literal, TypeVar
-from datetime import datetime
+from datetime import date, datetime
 import uuid
 
 from app.core.avatars import AVATAR_IDS
@@ -218,6 +218,9 @@ class ReformatRequest(BaseModel):
     profile: Optional[CognitiveProfileSchema] = None
     # Anonymous callers only; ignored when signed in (the server log wins).
     recent_feedback: Optional[list[FeedbackEntry]] = Field(None, max_length=20)
+    # Count this site on the dashboard. The extension leaves it off on
+    # sensitive sites; older extensions don't send it, so they aren't counted.
+    site_stats: bool = False
 
 
 class ReformatResponse(BaseModel):
@@ -417,6 +420,29 @@ class RespondAnswerField(BaseModel):
         return _cap_text(v, 240) or ""
 
 
+class ExplainTurn(BaseModel):
+    """One earlier explain or respond on the same page, so a new one can build
+    on it. Over-long fields are truncated rather than rejected."""
+    source: Optional[str] = None
+    request: Optional[str] = None
+    answer: Optional[str] = None
+
+    @field_validator("source")
+    @classmethod
+    def _cap_source(cls, v):
+        return _cap_text(v, 600)
+
+    @field_validator("request")
+    @classmethod
+    def _cap_request(cls, v):
+        return _cap_text(v, 300)
+
+    @field_validator("answer")
+    @classmethod
+    def _cap_answer(cls, v):
+        return _cap_text(v, 1_200)
+
+
 class ExplainRequest(BaseModel):
     """A highlighted passage (`kind="text"`) or a circled area (`"image"`).
 
@@ -441,6 +467,11 @@ class ExplainRequest(BaseModel):
     # Anonymous callers only; ignored when signed in (the server log wins).
     recent_feedback: Optional[list[FeedbackEntry]] = Field(None, max_length=20)
     context: Optional[ExplainContext] = None
+    # What was already asked on this page, oldest first. Only the newest few
+    # are used, so a long session never fails on it.
+    recent_turns: list[ExplainTurn] = Field(default_factory=list, max_length=50)
+    # See ReformatRequest.site_stats.
+    site_stats: bool = False
     # From POST /explain/context. Format is checked in the route so that a
     # malformed id answers 400 CONTEXT_EXPIRED like any other unusable one.
     context_id: Optional[str] = Field(None, max_length=200)
@@ -649,6 +680,49 @@ class CheckoutConfirmRequest(BaseModel):
 
 
 # ── Dashboard stats ───────────────────────────────────────────────
+
+class UsageTotals(BaseModel):
+    highlights: int
+    circles: int
+    responds: int
+    reformats: int
+    documents: int
+    pdf_opens: int
+
+
+class UsageDay(BaseModel):
+    day: date
+    explains: int
+    responds: int
+    reformats: int
+
+
+class SiteUsage(BaseModel):
+    hostname: str
+    explains: int
+    responds: int
+    reformats: int
+    last_used_at: datetime
+
+
+class UsageStats(BaseModel):
+    """How the caller has used Synapse over the last `days` days, in the
+    viewer's own timezone. `top_sites` is all-time."""
+    days: int
+    totals: UsageTotals
+    daily: list[UsageDay]
+    # Actions per hour of the day, 0 to 23.
+    hours: list[int]
+    # Actions per day of the week, Monday first.
+    weekdays: list[int]
+    # Explains, responds and reformats by where they happened.
+    sources: dict[str, int]
+    top_sites: list[SiteUsage]
+
+
+class SiteUsageCleared(BaseModel):
+    deleted: int
+
 
 class DashboardStats(BaseModel):
     cards_this_week: int

@@ -12,7 +12,7 @@ import { OPERATOR } from './lib/legal';
  * and EFFECTIVE_DATE in the same change. Keep backend internals out of it.
  */
 
-export const EFFECTIVE_DATE = '26 October 2026';
+export const EFFECTIVE_DATE = '2 November 2026';
 
 const SECTIONS: { id: string; title: string }[] = [
   { id: 'summary', title: 'The short version' },
@@ -50,7 +50,8 @@ const RETENTION: [string, string][] = [
   ['Reading sessions and feedback', 'Until you delete your account.'],
   ['Saved explanation history (paid plans)', 'Until you delete the entry, clear your history, or delete your account. Thumbnails are deleted automatically after 30 days.'],
   ['Page or document context used for an explanation', 'Held in a temporary cache for up to 1 hour, then discarded.'],
-  ['Suggested responses (Respond)', 'Not stored by us. They exist only on your screen until you close them.'],
+  ['Suggested responses (Respond)', 'Not stored by us. They exist only in your browser tab until you close it or leave the page.'],
+  ['Counts of the sites you use Synapse on', 'Until you clear them from your dashboard or delete your account.'],
   ['Text and images sent to an AI provider', 'Not stored by us after the response is returned, except as saved history on paid plans. The provider’s own retention terms apply (see AI processing).'],
   ['Sign-in sessions and email links', 'Expire automatically after a limited period.'],
   ['Usage counters', 'Reset at the end of each limit period. Records used to prevent abuse may be kept after account deletion, but are no longer linked to you.'],
@@ -129,6 +130,10 @@ export default function Privacy() {
             </li>
             <li>for reformatting, the text of the section or page you asked to reformat;</li>
             <li>the address (URL) and title of the page;</li>
+            <li>
+              what you already asked on the same page and the answers you got, so a follow-up makes sense. This stops
+              when you turn page context off;
+            </li>
             <li>your reading profile settings, so the result suits you.</li>
           </ul>
           <p>
@@ -140,7 +145,8 @@ export default function Privacy() {
           <p>
             On paid plans, Respond suggests a reply to a message, an answer to a question, or tips about what you
             highlighted or circled. It uses the same content listed above, plus any question you type. If you use it
-            on an email or message, the text you selected is sent to the AI provider to draft the reply.
+            on an email or message, the text you selected is sent to the AI provider to draft the reply. If you are
+            signed in, your name and email address are sent too, so the draft is written as you.
           </p>
           <p>
             A suggested reply goes into a text box on the page only when you press Insert, and you can edit it first.
@@ -163,6 +169,11 @@ export default function Privacy() {
             feedback you give on results, such as your rating, any note you write, time spent, and how far you read.
             This powers your dashboard statistics and is how your profile adapts. We count how much you use the
             Service to apply plan limits.
+          </p>
+          <p>
+            Your dashboard shows how you use Synapse: how often you use each feature, at what times, and on which sites.
+            For the sites, we keep the site name and a count of what you did there, not the pages you read. Email,
+            messaging, and banking sites are not counted, and you can clear the list from your dashboard.
           </p>
           <p>
             We also keep technical records of AI requests that contain no page content, which we use to monitor cost
@@ -306,7 +317,8 @@ export default function Privacy() {
             Our website does not use advertising or analytics cookies. When you sign in, your session is stored in
             your browser’s local storage so you stay signed in. Clearing your site data signs you out. The extension
             uses the browser’s extension storage to keep your session, your settings (such as page context on or off),
-            your reading profile, and which results you have rated. Circled areas waiting for confirmation, and the
+            your reading profile, which results you have rated, and a list of the pages you reformatted (address, title,
+            and time) that you can clear from the extension. It stays on your device. Circled areas waiting for confirmation, and the
             last few circled areas (kept for up to an hour so a re-explain can look again), are held in the browser’s
             memory only and are cleared when the browser closes.
           </p>

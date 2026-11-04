@@ -115,6 +115,51 @@ chrome.runtime.sendMessage({ type: "GET_FEEDBACK" }, (res) => {
     `${counts.simple} simple, ${counts["off-topic"]} missed, ${notes} note${notes !== 1 ? "s" : ""}`;
 });
 
+const reformatList = document.getElementById("reformat-list");
+const reformatEmpty = document.getElementById("reformat-empty");
+const clearReformats = document.getElementById("clear-reformats");
+
+function timeAgo(iso) {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / 1440)}d ago`;
+}
+
+function renderReformats(entries) {
+  reformatList.replaceChildren();
+  reformatList.hidden = entries.length === 0;
+  reformatEmpty.hidden = entries.length > 0;
+  clearReformats.hidden = entries.length === 0;
+  for (const entry of entries) {
+    const item = document.createElement("li");
+    // Chrome won't open file:// from a link here, so local files are text only.
+    const title = document.createElement(/^https?:/i.test(entry.url) ? "a" : "span");
+    title.className = "reformat-title";
+    title.textContent = entry.title || entry.hostname || entry.url;
+    title.title = entry.url;
+    if (title.tagName === "A") {
+      title.href = entry.url;
+      title.target = "_blank";
+      title.rel = "noopener noreferrer";
+    }
+    const meta = document.createElement("span");
+    meta.className = "reformat-meta";
+    meta.textContent = `${entry.hostname} · ${timeAgo(entry.created_at)}`;
+    item.append(title, meta);
+    reformatList.append(item);
+  }
+}
+
+chrome.runtime.sendMessage({ type: "GET_REFORMAT_HISTORY" }, (res) => {
+  renderReformats(res?.entries || []);
+});
+
+clearReformats?.addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "CLEAR_REFORMAT_HISTORY" }, () => renderReformats([]));
+});
+
 dismissBtn?.addEventListener("click", () => {
   updateBanner.style.display = "none";
 });

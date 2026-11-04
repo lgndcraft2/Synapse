@@ -1,0 +1,424 @@
+{
+  "document": {
+    "title": "Synapse design system, product usage guide, and product demo brief",
+    "version": "1.0",
+    "date": "2026-11-02",
+    "source_of_truth": [
+      "extension/popup.css",
+      "extension/onboarding.css",
+      "extension/content.js",
+      "extension/explain/*.js",
+      "extension/viewer/viewer.html",
+      "webpage/src/styles.css",
+      "webpage/src/App.tsx",
+      "webpage/src/Dashboard.tsx",
+      "docs/explain-plan.md",
+      "README.md"
+    ],
+    "accuracy_note": "This brief distinguishes shipped explain, circle, respond, document, PDF, history, and side-reader behavior from the parked article-mode in-place rewrite behavior."
+  },
+  "product_concept": {
+    "name": "Synapse",
+    "category": "Cognitive accessibility and adaptive reading assistant",
+    "one_line_positioning": "Synapse reshapes information around the way a person actually reads, then explains anything they highlight or circle.",
+    "brand_promise": "The internet was not built for your brain. Synapse is.",
+    "emotional_goal": "Turn dense, intimidating information into something approachable, personal, and actionable without making the user leave the page.",
+    "product_principles": [
+      "Personalization is about cognitive strategy, not just font size or contrast.",
+      "The user chooses what deserves attention; Synapse does not take over the page.",
+      "The exact source remains visible and traceable.",
+      "Every explanation can become simpler, more detailed, or more specific.",
+      "The user reviews generated replies before anything is inserted or sent.",
+      "Privacy boundaries are visible and stricter on email, messaging, and banking sites.",
+      "Feedback makes the profile more useful over time."
+    ],
+    "core_capabilities": [
+      "Highlight text to explain it in context.",
+      "Circle text, diagrams, equations, charts, images, or non-selectable content to explain it.",
+      "Re-explain a result as simpler, more detailed, or in response to a custom request.",
+      "Generate a reply, answer, moves, or tips from selected content.",
+      "Insert a reviewed response into a nearby Gmail, Outlook, textarea, input, or contenteditable field.",
+      "Rebuild a web page or document in a side reader for the user's brain.",
+      "Read and explain PDFs in the bundled Synapse PDF viewer.",
+      "Keep a site-based explanation history and return the user to the original source.",
+      "Use bionic reading and a temporary reading-feel setting.",
+      "Learn from feedback and profile changes."
+    ]
+  },
+  "design_system": {
+    "overall_direction": "Warm cognitive-tool editorialism: calm, high-legibility surfaces with a precise green action color, small moments of gold emphasis, and an understated paper/grid atmosphere on the webpage.",
+    "design_relationship": "The extension is compact, immediate, and friendly. The webpage is editorial, spacious, reflective, and product-led. They share Synapse green and a quiet, intelligent tone but should not look like the same viewport resized.",
+    "extension": {
+      "mood": ["friendly", "focused", "lightweight", "trustworthy", "quietly intelligent"],
+      "font_family": "-apple-system, Segoe UI, system-ui, sans-serif",
+      "body_size": "13px in popup; 11px to 14px for compact labels and controls; 12px to 15px for reading results",
+      "type_treatment": {
+        "labels": "10px, semibold, uppercase, 0.07em letter spacing, muted gray",
+        "brand": "Compact bold sans-serif, tight letter spacing",
+        "content": "Dark gray, comfortable line height, short readable blocks",
+        "status": "Small, calm, green status text",
+        "bionic_reading": "Bold the beginning of words in explanation results when enabled"
+      },
+      "colors": {
+        "green": "#1D9E75",
+        "green_dark": "#0F6E56",
+        "green_light": "#E1F5EE",
+        "green_mid": "#9FE1CB",
+        "green_deep": "#085041",
+        "gold": "#F5C842",
+        "white": "#FFFFFF",
+        "gray_50": "#FAFAFA",
+        "gray_100": "#F4F4F4",
+        "gray_200": "#E8E8E8",
+        "gray_400": "#AAAAAA",
+        "gray_600": "#666666",
+        "gray_900": "#111111",
+        "error": "#E74C3C"
+      },
+      "shape": {
+        "popup_controls": "7px to 8px radius",
+        "in_page_panel": "18px radius",
+        "floating_button": "52px circular FAB",
+        "small_buttons": "8px to 10px radius",
+        "cards": "18px radius for explanation cards; avoid heavy framing"
+      },
+      "depth": "Soft shadows rather than hard borders: white surfaces over the host page, with green glow on the FAB and generous panel shadow.",
+      "interaction_motion": {
+        "panel": "Scale from .88 and translate upward into place with a fast spring-like cubic-bezier.",
+        "fab": "Scale slightly on hover and pulse its shadow while analysis is running.",
+        "loading": "Small green spinner with a short linear rotation.",
+        "highlight": "Paint selected source green, then briefly pulse it when the result arrives.",
+        "circle": "Live green polyline with a translucent green fill and crosshair cursor.",
+        "feedback": "Compact selected states, then replace the feedback controls with a short thank-you message.",
+        "reduced_motion": "Respect prefers-reduced-motion when returning to a source or animating emphasis."
+      },
+      "key_components": [
+        "52px bottom-right green floating action button with Synapse mark and optional gold active dot.",
+        "Bottom-right explanation panel with Synapse / Explain header, reading-feel selector, Bionic toggle, current result, response tools, and On this site history.",
+        "Selection bubble beside highlighted text with Explain and Respond actions.",
+        "Circle overlay with live trace, exact-crop confirmation bar, Confirm / Retry / Cancel actions.",
+        "Small FAB menu with Circle something plus Rebuild this page or Read this document.",
+        "PDF viewer toolbar with Circle, Explanations, Read with Synapse, zoom, page navigation, and Open original.",
+        "Popup for cognitive profile, format, chunk size, nesting, examples-first, vocabulary, headers, notes, account, billing, usage, and learning history.",
+        "Three-step onboarding with green brand panel, gold active step dot, card options, segmented controls, and a final activation state."
+      ],
+      "content_rules": [
+        "Never obscure the host page more than necessary.",
+        "Keep the source visible when showing an explanation.",
+        "Use concise action labels: Explain, Respond, Confirm, Retry, Cancel, Insert, Copy.",
+        "Loading copy should be human and specific: Explaining..., Working on a response..., Rebuilding for your brain....",
+        "Use green for successful comprehension and action, gold for active focus, and red only for errors."
+      ]
+    },
+    "webpage": {
+      "mood": ["editorial", "human", "grounded", "accessible", "quietly confident"],
+      "font_family": {
+        "body": "Atkinson Hyperlegible Next",
+        "display": "Source Serif 4",
+        "code_and_telemetry": "Fira Code"
+      },
+      "type_treatment": {
+        "display": "Source Serif 4, large and confident, tight line height but zero negative letter spacing",
+        "body": "Atkinson Hyperlegible Next, generous line height and strong scanability",
+        "eyebrows": "Uppercase, bold, letter-spaced labels",
+        "buttons": "Uppercase, bold, small editorial controls",
+        "dashboard": "Serif headings paired with hyperlegible body and utility text"
+      },
+      "colors": {
+        "background": "#FCF9F8",
+        "surface_lowest": "#FFFFFF",
+        "surface_low": "#F6F3F2",
+        "surface_container": "#F0EDED",
+        "surface_high": "#EAE7E7",
+        "surface_variant": "#E4E2E1",
+        "primary": "#004635",
+        "primary_container": "#1B5E4B",
+        "primary_fixed": "#AEF0D7",
+        "primary_fixed_dim": "#93D4BB",
+        "accent": "#8A4B24",
+        "accent_soft": "#F2DFD1",
+        "on_background": "#1B1C1C",
+        "on_surface_variant": "#404944",
+        "secondary": "#5E5F5B",
+        "outline": "#707974",
+        "outline_variant": "#BFC9C3"
+      },
+      "layout": {
+        "max_width": "1140px",
+        "desktop_page_margin": "40px",
+        "hero": "12-column grid, copy spans 7 columns, visual spans 5 columns",
+        "topbar": "Sticky translucent paper navigation with blur and a thin dark border",
+        "sections": "Full-width bands with constrained inner content; avoid nested card stacks",
+        "texture": "Subtle 40px geometric background pattern plus a fading 96px grid near the top",
+        "responsive": "Collapse grids at tablet/mobile widths while keeping readable fixed-format controls"
+      },
+      "shape_and_depth": {
+        "default_radius": "2px for primary buttons and editorial controls; dashboard utilities may use small rounded corners",
+        "shadow": "Tactile offset shadow on selected dashboard cards and hover states",
+        "borders": "Visible thin graphite/green borders give the interface an editorial print-tool quality",
+        "imagery": "Prefer product UI compositions, real page content, and legible interface states over abstract decoration"
+      },
+      "page_concept": {
+        "hero": "Large serif statement, short explanatory copy, two calls to action, product promises, and a before/after visual of dense text becoming clear reading blocks.",
+        "problem": "Explain the failure of one-size-fits-all accessibility and frame cognitive friction as a product problem, not a user defect.",
+        "features": "Show adaptive layouts, highlight-to-explain, circle-to-explain, re-explain, PDF support, history, context limits, and the learning loop.",
+        "how_it_works": "Onboard, browse, and let the profile learn through reading behavior and feedback.",
+        "pricing": "Clear plan comparison with a calm, useful upgrade path rather than aggressive conversion styling.",
+        "dashboard": "A personal activity room: reading day selector, welcome, active cognitive profile, adjustment history, stats, feedback breakdown, sessions, billing, and profile controls.",
+        "observer": "A restrained operator console using charts, metric cards, feature adoption, runtime health, AI usage, users, and audit history.",
+        "account_pages": "The same paper, serif, green, and tactile-border language extends across auth, profile, billing, subscription, support, terms, privacy, and refunds."
+      }
+    },
+    "shared_rules": [
+      "Green means Synapse action, comprehension, or successful adaptation.",
+      "Keep text high contrast and never rely on color alone for state.",
+      "Prefer legible, labeled controls over unexplained decoration.",
+      "Use motion to show cause and effect: selection, capture, explanation, insertion, and learning.",
+      "Keep user agency explicit before capture, before insertion, and before sending any external message.",
+      "Use Lucide icons on the webpage and the existing Synapse mark in the extension.",
+      "Avoid purple gradients, generic SaaS dashboards, and excessive rounded-card nesting."
+    ]
+  },
+  "extension_usage": {
+    "installation": [
+      "Open chrome://extensions and enable Developer mode for a local unpacked build.",
+      "Choose Load unpacked and select the repository's extension directory, not the repository root.",
+      "For a store installation, install Synapse from the Chrome Web Store and open the dashboard to connect the session."
+    ],
+    "first_run_onboarding": [
+      {
+        "step": 0,
+        "name": "Welcome",
+        "user_action": "Click Get started.",
+        "purpose": "Explain section cards, learning from feedback, and full-page reading support."
+      },
+      {
+        "step": 1,
+        "name": "Reading type",
+        "user_action": "Choose Load Reducer, Comprehension Gap, or Hyperfocus Reader.",
+        "purpose": "Choose the cognitive strategy: reduce overload, recover meaning, or organize sustained reading."
+      },
+      {
+        "step": 2,
+        "name": "Reading style",
+        "user_action": "Choose bullet points, short paragraphs, numbered steps, or plain prose; choose chunk length; choose examples-first; choose whether vocabulary should be simplified.",
+        "purpose": "Set the shape and order of future explanations and rebuilds."
+      },
+      {
+        "step": 3,
+        "name": "Fine-tune",
+        "user_action": "Choose maximum list nesting, section headers, and optional personal notes, then click Save & start using Synapse.",
+        "purpose": "Add constraints and personal context without requiring a diagnosis."
+      },
+      {
+        "step": "done",
+        "name": "Activation",
+        "user_action": "Open a page and use the green Synapse button in the bottom-right corner.",
+        "purpose": "Move from setup into an immediate reading action."
+      }
+    ],
+    "popup_settings": {
+      "profile": ["Load Reducer", "Comprehension Gap", "Hyperfocus Reader"],
+      "format": ["Bullet points and lists", "Short paragraphs", "Numbered steps", "Plain flowing prose"],
+      "controls": ["Chunk size: short, medium, long", "Nesting: 1, 2, or 3 levels", "Examples first", "Simplify vocabulary", "Section headers", "Free-form user notes"],
+      "account": "The popup reports sign-in, links to the dashboard, shows billing and usage status, and exposes learning history with a clear action.",
+      "profile_learning": "Feedback from explanation cards and sessions contributes to the user's cognitive profile."
+    },
+    "main_page_flow": [
+      "Open any supported webpage. Synapse adds a bottom-right green circular FAB without changing the host page's DOM layout.",
+      "Click the FAB. On an ordinary page, choose Circle something or Rebuild this page. On a document, choose Circle something or Read this document. On a PDF, optionally open the Synapse viewer.",
+      "For a direct gesture, hold Alt+S, move the pointer around the target, and release either Alt or S. The gesture is ignored inside editable controls.",
+      "For the mouse flow, click Circle something, click to begin, trace around the target, and click again or drag-release to finish.",
+      "Synapse extracts readable DOM text inside the convex hull and captures a hull-masked screenshot for charts, diagrams, images, canvas, and cross-origin content.",
+      "A confirmation bar shows the exact crop or a text snippet before anything leaves the browser. Confirm with Enter, retry with R, or cancel with Esc.",
+      "After confirmation, the bottom-right panel shows a loading state and then the explanation. The circled source remains visible and is briefly emphasized when the result arrives.",
+      "The panel can show a readable result, context usage, a thumbnail for image captures, feedback, re-explain actions, response actions, and history for the current site."
+    ],
+    "highlight_to_explain": [
+      "Select a sentence, term, paragraph, question, email, or form label outside an editable field.",
+      "A small Synapse bubble appears beside the selection. It offers Explain and Respond; Respond is suggested when the text looks like a question, appears on a sensitive host, or is near an input.",
+      "Click Explain or use Alt+Shift+E. The selected text becomes a persistent Synapse-green highlight using the CSS Custom Highlight API.",
+      "The explanation opens in the bottom-right panel with local context and, where allowed, page or document context.",
+      "Click the green source later to reopen the saved explanation without another API call. Click a history entry to return to its source."
+    ],
+    "circle_to_explain": [
+      "Use Alt+S or the floating button to enter circle mode.",
+      "Trace around a visual, equation, diagram, chart, image, non-selectable text, or mixed text-and-image area.",
+      "Review the masked crop. No screenshot is sent and no quota is used until Confirm.",
+      "Confirm to explain the circled area, Retry to redraw, or Cancel to discard it.",
+      "The result is labeled Circle in history and may include a thumbnail. If the area cannot be read, Synapse explains that and offers a retry without charging quota."
+    ],
+    "reformat_and_document_reading": [
+      "On an ordinary readable page, choose Rebuild this page from the FAB menu. The page itself is not overwritten; a side reader presents the rebuilt content.",
+      "On text, CSV, Markdown, or PDF documents, choose Read this document. PDFs open in the bundled Synapse PDF viewer so highlight and circle work against document context.",
+      "The reader adapts structure to the profile: headings, chunks, bullets or steps, examples-first ordering, vocabulary choices, and optional bionic reading.",
+      "The older in-place section-card and full-page-swap article mode remains in source but is parked behind FEATURES.articleMode = false."
+    ],
+    "respond_in_email_or_gmail": [
+      "In Gmail or another supported mail surface, select the incoming message or question you want to act on.",
+      "Click Respond in the selection bubble or use Alt+Shift+R. Synapse generates a suggested reply, answer, moves, or tips based on the selection and available local context.",
+      "The panel labels the result Suggested reply or Answer to type and places it in an editable draft area.",
+      "Edit the draft if needed, then click Insert to place it into the nearby composer. Synapse uses real input events so Gmail, Outlook, React editors, and contenteditable fields receive it correctly.",
+      "Alternatively click Copy and paste it manually.",
+      "Synapse never clicks Send, presses Enter to submit, or sends a message. The person reviews and sends it themselves.",
+      "Respond results are deliberately not saved as normal explanation history."
+    ],
+    "panel_controls": [
+      "Today's reading feel: Hard day, Normal, or Flowing.",
+      "Bionic toggle to bold word beginnings in explanation output.",
+      "Simpler, More detail, or custom follow-up re-explain actions.",
+      "Respond tools such as Draft a reply or Answer this when appropriate.",
+      "Insert and Copy for generated drafts.",
+      "On this site history with return-to-source behavior and deletion controls where available."
+    ],
+    "privacy_and_limits": [
+      "Normal sites may provide local context plus page context when enabled.",
+      "Email, messaging, and banking sites use local context only by default; the panel exposes a Use page context setting.",
+      "Circle capture shows a preview and waits for confirmation before transmission.",
+      "Images are not stored in ordinary telemetry; paid thumbnail retention is time-limited.",
+      "Free users have limited history and capture quotas; paid tiers unlock more history and image capacity.",
+      "Nothing runs on chrome:// pages or Chrome's built-in PDF viewer."
+    ]
+  },
+  "webpage_usage": {
+    "public_site": [
+      "Hero communicates the cognitive-accessibility promise and presents Get the Extension plus See how it works.",
+      "Feature sections explain highlight, circle, re-explain, PDF reading, history, and context limits.",
+      "The learning loop is framed as Observe, Adapt, Refine.",
+      "Pricing and account flows lead to authentication, billing, and checkout."
+    ],
+    "dashboard": [
+      "Sign in to see the personal reading dashboard.",
+      "Set How are you reading today? to Hard Day, Normal, or Flowing; the choice persists locally and is sent into the extension session.",
+      "Review the current active profile and cycle or edit it.",
+      "Review recent profile adjustments, cards generated, pages visited, words processed, time saved, feedback breakdown, and reading sessions.",
+      "Manage billing, subscription, account profile, support, and connected extension session."
+    ],
+    "operator_view": "Authorized users can inspect traffic, latency, AI provider usage, feature adoption, users, payments, support, and audit history in Observer."
+  },
+  "product_demo_video_prompt": {
+    "title": "Synapse: Make the web work for your brain",
+    "use_with": "Claude Design or a product-video generation workflow",
+    "format": "90 to 120 seconds, polished product demo, 16:9 master with safe 9:16 crops",
+    "tone": ["upbeat", "lively", "warm", "smart", "human", "confidence-building"],
+    "creative_direction": "Create a fast, joyful product demo that feels like a real person discovering relief while reading. Use crisp UI capture, lively motion graphics, quick match cuts, cursor choreography, green trace lines, gold focus accents, and small bursts of kinetic type. The energy should be optimistic and active, never frantic or infantilizing. Make comprehension feel like a visible transformation.",
+    "visual_identity": {
+      "extension_palette": ["#1D9E75", "#0F6E56", "#E1F5EE", "#F5C842", "#FFFFFF", "#111111", "#F4F4F4"],
+      "web_palette": ["#FCF9F8", "#004635", "#1B5E4B", "#AEF0D7", "#8A4B24", "#5E5F5B"],
+      "typography": "Use Source Serif 4 for large editorial statements, Atkinson Hyperlegible Next for product copy and captions, and the compact system sans-serif feel for extension UI.",
+      "surfaces": "Paper-like webpage background with a very subtle grid; clean white extension panels with soft shadow; never use a purple gradient or generic dark SaaS dashboard.",
+      "motion_language": "Springy panel entrances, smooth source-to-result lines, purposeful cursor trails, 2D green trace animations, count-up metrics, staggered cards, and quick but readable state transitions.",
+      "sound": "Bright modern electronic bed with light percussion, soft clicks for UI actions, a warm confirmation chime for successful explanations, and a brief whoosh for page reformatting. Keep voiceover clear above music."
+    },
+    "story": "Start with a dense web page that feels visually noisy. Show the user struggling for a beat, then introduce Synapse as a calm green layer that follows their intent. Demonstrate the three headline actions: rebuild a page, highlight to explain, and circle to explain. Finish with Respond in Gmail, where the generated draft is inserted but the user remains in control of Send. Close on the dashboard learning loop and the line: Read in a way that works for you.",
+    "shot_list": [
+      {
+        "time": "00:00-00:08",
+        "scene": "Cold open: cognitive overload",
+        "visual": "A realistic browser window shows a dense article with long paragraphs, nested links, a chart, and an intimidating question. The camera pushes in slightly while text layers drift a few pixels out of alignment. Keep the content legible and believable, not abstract lorem ipsum.",
+        "animation": "Subtle jitter in the dense page, then freeze on a selected sentence. Use a quick rack focus from the page to the cursor.",
+        "voiceover": "The web is full of useful information. It just does not always arrive in a form your brain can use.",
+        "on_screen_copy": "Information overload is not a reading failure."
+      },
+      {
+        "time": "00:08-00:16",
+        "scene": "Brand reveal and profile",
+        "visual": "The Synapse green mark draws itself as three clean strokes. Cut to the onboarding screen: green brand rail on the left, gold active step dot, white content area on the right. Show the three profile choices briefly: Load Reducer, Comprehension Gap, Hyperfocus Reader.",
+        "animation": "The brand strokes draw on, the active dot pops once, and the selected Load Reducer card slides into emphasis.",
+        "voiceover": "Synapse starts by learning how you actually process information, not by forcing you into a fixed preset.",
+        "on_screen_copy": "A reading profile built around you"
+      },
+      {
+        "time": "00:16-00:29",
+        "scene": "Reformat a page",
+        "visual": "Return to the dense article. Click the bottom-right green FAB. Its compact menu opens with Circle something and Rebuild this page. Choose Rebuild this page. The original page remains visible at left while a clean side reader assembles at right with headings, short chunks, bullets, and a clear reading hierarchy.",
+        "animation": "The FAB pulses once, menu items reveal upward with a small stagger, then the side reader sweeps in. Animate dense lines collapsing into three readable blocks, then settle the blocks with a soft green edge.",
+        "voiceover": "With one click, Synapse rebuilds the page for your reading profile. The source stays intact. The experience gets clearer.",
+        "on_screen_copy": "Rebuild this page"
+      },
+      {
+        "time": "00:29-00:42",
+        "scene": "Highlight to explain",
+        "visual": "On a realistic policy or research page, select a difficult sentence. A small circular Synapse bubble appears beside the selection with Explain and Respond actions. Click Explain. The selected passage turns Synapse green and the bottom-right Explain panel opens.",
+        "animation": "Use a bright but restrained selection sweep, a gentle bubble pop, a green highlight wipe, a loading spinner, then a short source pulse when the result arrives. The result should visibly contain a heading, concise paragraphs, and a highlighted term.",
+        "voiceover": "See something unclear? Highlight it. Synapse explains the passage in context and keeps the answer connected to where it came from.",
+        "on_screen_copy": "Highlight to explain"
+      },
+      {
+        "time": "00:42-00:56",
+        "scene": "Circle anything",
+        "visual": "Show a chart and a diagram that cannot be cleanly selected. Click Circle something from the FAB menu. Trace a lively green loop around the chart. The outline follows the pointer, fills the selected hull with a translucent green wash, and reveals the confirmation bar with an exact crop preview.",
+        "animation": "Animate the trace at real pointer speed, keep the line organic but clean, then snap the confirmation bar into the viewport. Make Confirm, Retry, and Cancel visibly keyboard-friendly.",
+        "voiceover": "For charts, diagrams, images, and anything you cannot select, just circle it. You preview exactly what Synapse will use before you confirm.",
+        "on_screen_copy": "Circle anything"
+      },
+      {
+        "time": "00:56-01:05",
+        "scene": "Explain the circle",
+        "visual": "Click Confirm. The crop preview folds into the bottom-right panel, which labels the result Circle and shows a concise visual explanation. Briefly show the history item with a small thumbnail and the source outline on the page.",
+        "animation": "Use a green confirmation ripple, crop-to-panel motion, spinner-to-result morph, and a tiny history count increment.",
+        "voiceover": "Confirm, and the visual becomes an explanation you can understand, revisit, and connect back to the source.",
+        "on_screen_copy": "Confirm when it looks right"
+      },
+      {
+        "time": "01:05-01:16",
+        "scene": "Make the answer fit",
+        "visual": "In the explanation panel, click Simpler. Show the result version changing. Then toggle Bionic and briefly switch Today's reading feel from Normal to Hard day. Keep the panel compact and real: Synapse / Explain header, controls, result, and On this site history.",
+        "animation": "Crossfade the result versions, bold word starts with a quick readable sweep, and animate the active segmented control with a green fill.",
+        "voiceover": "Still not quite right? Ask for simpler, more detail, or a specific angle. Synapse adapts in the moment.",
+        "on_screen_copy": "Re-explain your way"
+      },
+      {
+        "time": "01:16-01:30",
+        "scene": "Respond in Gmail",
+        "visual": "Cut to a realistic Gmail-like inbox and open message. Select the question in the message. The Synapse bubble suggests Respond first. Click Respond. The panel shows Working on a response, then Suggested reply with an editable draft and Insert / Copy buttons. Click Insert and show the draft appearing in the nearby compose box. Keep the Send button visible but untouched.",
+        "animation": "Use the selection bubble to bridge from message to panel, animate the draft typing into the composer with a natural line-by-line reveal, then add a small green check beside Insert. Do not animate a click on Send.",
+        "voiceover": "In email, Synapse can turn a question into a suggested reply, then place it in your composer for review. You stay in control. Synapse never sends it for you.",
+        "on_screen_copy": "Draft a reply. Review. Send yourself."
+      },
+      {
+        "time": "01:30-01:40",
+        "scene": "PDF and document reading",
+        "visual": "Show a PDF opening in the Synapse viewer. The toolbar has Circle, Explanations, Read with Synapse, zoom, and page navigation. Click Read with Synapse and show the document reorganizing into a readable side reader. Briefly highlight a paragraph inside the PDF.",
+        "animation": "Page thumbnails slide into place, the reader mode button changes state, and the PDF highlight pulses green. Keep the PDF viewer recognizable and functional.",
+        "voiceover": "The same flow works in PDFs and documents, with the document itself available as context.",
+        "on_screen_copy": "Works where the hard reading happens"
+      },
+      {
+        "time": "01:40-01:52",
+        "scene": "Learning dashboard",
+        "visual": "Transition from the extension to the webpage dashboard. Show the warm paper background, serif Welcome back heading, How are you reading today? control, active profile, adjustment log, stats, and feedback breakdown. Then cut to the public webpage hero with the before/after visual.",
+        "animation": "Use green source lines from extension history to dashboard metrics, count up Pages Visited, Words Processed, and Time Saved, then settle into the editorial hero.",
+        "voiceover": "Every interaction helps Synapse tune the experience, so the web gets more usable with you over time.",
+        "on_screen_copy": "Observe. Adapt. Refine."
+      },
+      {
+        "time": "01:52-02:00",
+        "scene": "End card",
+        "visual": "Clean paper background with the Synapse wordmark, green mark, Chrome extension call to action, and a small final montage of highlight, circle, and reply states.",
+        "animation": "Three small UI snapshots orbit or slide into a tidy horizontal rhythm, then stop. Keep the last frame still long enough to read.",
+        "voiceover": "Synapse. Read in a way that works for you.",
+        "on_screen_copy": "Synapse | Get the extension"
+      }
+    ],
+    "production_constraints": [
+      "Use realistic, legible browser content; do not use unreadable placeholder squiggles for the main product moments.",
+      "Do not imply that the old in-place section-card rewrite is currently active. Show Rebuild this page as a side reader or use the onboarding language only as a historical capability reference.",
+      "Do not show Synapse automatically sending an email. The user must click Insert, review the draft, and separately send it.",
+      "Do not show page context silently leaving a sensitive site. Make the confirmation and context boundary visually clear if privacy is shown.",
+      "Do not show a screenshot leaving the browser before the circle confirmation step.",
+      "Keep the green FAB bottom-right, the explanation panel bottom-right, and the selection bubbles adjacent to their source.",
+      "Preserve accessibility affordances in the animation: keyboard labels Enter, R, Esc, Alt+S, Alt+Shift+E, and Alt+Shift+R may appear briefly as small utility captions.",
+      "Keep all UI text within its containers at desktop and mobile crops. Avoid overlapping captions and controls.",
+      "Use motion to explain a state change, not decoration. Give each important result at least one readable beat before cutting away.",
+      "End with a calm, confident product frame rather than a loud sales animation."
+    ],
+    "deliverables": [
+      "16:9 master video at 1920x1080",
+      "9:16 social crop at 1080x1920 with safe central UI framing",
+      "Optional 30-second cut focused on highlight, circle, and Gmail Respond",
+      "Captioned version with burned-in high-contrast subtitles",
+      "UI-only version without voiceover for product landing page autoplay"
+    ]
+  }
+}

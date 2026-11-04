@@ -10,6 +10,7 @@ from app.schemas.schemas import (
     DocumentReformatRequest,
 )
 from app.services.rate_limit import check_rate_limit
+from app.services.site_activity import record_site_use
 from app.services.ai import (
     call_gemini, call_claude,
     generate_sq4r_questions,
@@ -243,6 +244,8 @@ async def reformat_page(
         )
         db.add(session)
         await db.flush()
+        if body.site_stats:
+            await record_site_use(db, user, body.page_url, "reformat")
 
     return ReformatResponse(
         html=html,

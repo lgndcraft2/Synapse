@@ -454,6 +454,8 @@ test('selecting text shows the bubble; clicking it explains with page context an
   expect(req.anchor.quote).toContain('Mitochondria are membrane-bound organelles');
   expect(req.page_url).toBe(`${base}/article.html`);
   expect(req.source).toBe('page');
+  expect(req.site_stats).toBe(true);
+  expect(req.recent_turns).toEqual([]);
   expect(req.fingerprint).toMatch(/^ext-/);
 
   // Local context: heading path and surrounding text.
@@ -545,6 +547,7 @@ test('"Rebuild this page" shows the page rebuilt in the reader and leaves the pa
   await expect.poll(() => pageReads.length).toBe(before + 1);
   const req = pageReads[before];
   expect(req.mode).toBe('fullpage');
+  expect(req.site_stats).toBe(true);
   expect(req.page_url).toBe(`${base}/article.html`);
   // The full length rides along so the observer can count clipped pages.
   expect(req.source_characters).toBeGreaterThanOrEqual(req.page_text.length);
@@ -552,6 +555,10 @@ test('"Rebuild this page" shows the page rebuilt in the reader and leaves the pa
   expect(req.page_text).toContain('Ribosomes read messenger RNA');
   // Navigation and form controls are not page content.
   expect(req.page_text).not.toContain('Navigation link text');
+  const stored = await readStorage(worker(), 'reformatHistoryLocal');
+  expect(stored.reformatHistoryLocal).toEqual([
+    expect.objectContaining({ url: `${base}/article.html`, title: 'Cells 101', hostname: '127.0.0.1' }),
+  ]);
 
   // The site's own content is never replaced.
   expect(await page.locator('main').innerHTML()).toBe(originalMain);
@@ -816,6 +823,7 @@ test('sensitive-looking host sends local context only, unless a stored override 
   await page.locator('#synapse-bubble').click();
   let req = await waitForRequests(before + 1);
   expect(req.page_url).toBe(`${sensitive}/article.html`);
+  expect(req.site_stats).toBe(false);
   expect(req.context.local.surrounding_text).toContain('Ribosomes');
   expect(req.context.page).toBeUndefined();
   expect(req.context_id).toBeNull();
@@ -832,6 +840,7 @@ test('sensitive-looking host sends local context only, unless a stored override 
   await page.locator('#synapse-bubble').click();
   req = await waitForRequests(before + 1);
   expect(req.context.page.main_text).toContain('cell membrane');
+  expect(req.site_stats).toBe(false);
   await setContextSettings({ usePageContext: true, siteOverrides: {} });
 });
 
@@ -845,6 +854,7 @@ test('a stored "Use page context" Off removes page context', async () => {
   const req = await waitForRequests(before + 1);
   expect(req.context.local.surrounding_text).toContain('cell membrane');
   expect(req.context.page).toBeUndefined();
+  expect(req.recent_turns).toEqual([]);
   await setContextSettings({ usePageContext: true, siteOverrides: {} });
 });
 
@@ -1644,6 +1654,7 @@ test('respond: a follow-up resends with the request and the previous help', asyn
   expect(req.reexplain.mode).toBe('specific');
   expect(req.reexplain.request).toBe('Make it more formal');
   expect(req.reexplain.previous_html).toContain('Mock help for text');
+  expect(req.recent_turns.some((turn) => turn.answer?.includes('Draft:'))).toBe(true);
   expect(req.reexplain.parent_entry_id).toBeNull();
   await expect(panel.locator('.sxp-result')).toContainText('Mock follow-up help');
   await expect(panel.locator('.sxp-ver')).toHaveCount(2);
@@ -1672,12 +1683,14 @@ test('respond: free and signed-out users get friendly copy and a way forward', a
   await page.locator('#synapse-respond-bubble').click();
   const panel = page.locator('#synapse-explain-panel');
   await expect(panel.locator('.sxp-error')).toContainText('Thinker Lite and Deep Thinker');
-  // No dashboard runs during the suite, so check where the new tab was sent.
-  const asked = context.waitForEvent('request', (r) => r.url().endsWith('/billing'));
+  const billingUrl = 'http://localhost:5173/billing';
+  await context.route(billingUrl, (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Plans</h1>' }));
   const opened = context.waitForEvent('page');
   await panel.locator('.sxp-action', { hasText: 'See plans' }).click();
-  await asked;
-  await (await opened).close();
+  const billingPage = await opened;
+  await expect(billingPage).toHaveURL(billingUrl);
+  await billingPage.close();
+  await context.unroute(billingUrl);
 
   await page.bringToFront();
   explainQueue.push({ status: 401, body: { detail: { code: 'RESPOND_REQUIRES_SIGN_IN', message: 'Sign in to use Respond.' } } });
@@ -1889,4 +1902,24 @@ test('no console errors from the extension during the run', async () => {
   // The 4xx tests log the browser's own network line for the mock API; ignore resource-load noise.
   const ours = consoleErrors.filter((t) => !/Failed to load resource|favicon/i.test(t));
   expect(ours).toEqual([]);
+});
+
+test('popup displays local reformat history and clears it', async () => {
+  await writeStorage(worker(), {
+    reformatHistoryLocal: [{
+      url: `${base}/article.html`, title: 'Cells 101', hostname: '127.0.0.1', created_at: new Date().toISOString(),
+    }],
+  });
+  const popup = await context.newPage();
+  try {
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(popup.locator('#reformat-list a')).toHaveText('Cells 101');
+    await expect(popup.locator('#reformat-list a')).toHaveAttribute('href', `${base}/article.html`);
+    await popup.locator('#clear-reformats').click();
+    await expect(popup.locator('#reformat-empty')).toBeVisible();
+    await expect(popup.locator('#reformat-list')).toBeHidden();
+    expect((await readStorage(worker(), 'reformatHistoryLocal')).reformatHistoryLocal).toBeUndefined();
+  } finally {
+    await popup.close();
+  }
 });
