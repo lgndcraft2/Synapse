@@ -12,6 +12,44 @@ test('loads in Node without a DOM and exposes only the pure API', () => {
   assert.equal(globalThis.SynapseExplain, undefined);
 });
 
+test('plainText strips tags and decodes entities', () => {
+  assert.equal(CX.plainText('<div><p>Fish &amp; chips</p><p>2 &lt; 3</p></div>'), 'Fish & chips 2 < 3');
+  assert.equal(CX.plainText(null), '');
+});
+
+test('recentTurns merges saved and live turns for this page, oldest first', () => {
+  const here = (url) => url === 'https://a.test/x';
+  const entries = [
+    { id: 'e1', url: 'https://a.test/x', source_text: 'first', result_html: '<p>one</p>', created_at: '2026-01-01T00:00:00Z' },
+    { id: 'e2', url: 'https://a.test/other', source_text: 'elsewhere', result_html: '<p>no</p>', created_at: '2026-01-02T00:00:00Z' },
+    { id: 'e3', url: 'https://a.test/x', source_text: 'seen live', result_html: '<p>dup</p>', created_at: '2026-01-03T00:00:00Z' },
+  ];
+  const live = [
+    { id: 'e3', url: 'https://a.test/x', at: '2026-01-03T00:00:00Z', source: 'seen live', request: null, answer: 'three' },
+    { id: null, url: 'https://a.test/x', at: '2026-01-04T00:00:00Z', source: 'a mail', request: 'shorter', answer: 'four' },
+    { id: null, url: 'https://a.test/gone', at: '2026-01-05T00:00:00Z', source: 'other tab page', request: null, answer: 'no' },
+  ];
+  assert.deepEqual(CX.recentTurns(live, entries, here), [
+    { source: 'first', request: null, answer: 'one' },
+    { source: 'seen live', request: null, answer: 'three' },
+    { source: 'a mail', request: 'shorter', answer: 'four' },
+  ]);
+});
+
+test('recentTurns reads a saved entry at its newest version and keeps six', () => {
+  const entry = {
+    id: 'e', url: 'u', kind: 'image', source_text: '', result_html: '<p>old</p>', created_at: '2026-01-01',
+    versions: [{ request: 'simpler', result_html: '<p>new</p>', created_at: '2026-01-02' }],
+  };
+  assert.deepEqual(CX.recentTurns([], [entry], () => true), [
+    { source: 'an area they circled', request: 'simpler', answer: 'new' },
+  ]);
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, url: 'u', at: String(i), source: `s${i}`, answer: 'a' }));
+  const kept = CX.recentTurns(many, [], () => true);
+  assert.equal(kept.length, 6);
+  assert.equal(kept[5].source, 's8');
+});
+
 test('centerSlice returns short text whole', () => {
   assert.deepEqual(CX.centerSlice('hello world', 2, 4, 100), { text: 'hello world', offset: 0 });
   assert.deepEqual(CX.centerSlice('', 0, 0, 10), { text: '', offset: 0 });

@@ -358,6 +358,8 @@ if os.path.exists(static_path):
 # GET  /api/v1/profile                — get cognitive profile
 # PATCH /api/v1/profile               — update cognitive profile
 # GET  /api/v1/profile/history        — profile change log
+# GET  /api/v1/dashboard/usage         — feature counts, peak hours, top sites
+# DELETE /api/v1/dashboard/usage/sites — forget the caller's site counts
 # POST /api/v1/feedback               — submit feedback batch
 # GET  /api/v1/dashboard/stats        — dashboard stats
 # GET  /api/v1/billing/status         — billing status

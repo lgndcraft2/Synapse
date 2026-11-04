@@ -34,11 +34,11 @@ def ai_calls(monkeypatch):
     calls = Recorder()
 
     async def fake_call_explain(text, image_base64, media_type, profile, feedback_summary, use_claude=False,
-                                context_text="", document_text="", reexplain=None):
+                                context_text="", document_text="", reexplain=None, recent_turns=""):
         calls.append({
             "text": text, "image": image_base64, "media_type": media_type, "use_claude": use_claude,
             "context_text": context_text, "document_text": document_text, "reexplain": reexplain,
-            "feedback_summary": feedback_summary,
+            "feedback_summary": feedback_summary, "recent_turns": recent_turns,
         })
         if calls.fail:
             raise RuntimeError("provider exploded at https://provider.example/?key=secret")
@@ -60,10 +60,11 @@ def respond_calls(monkeypatch):
 
     async def fake_call_respond(text, image_base64, media_type, profile, feedback_summary, use_claude=False,
                                 context_text="", document_text="", question=None, previous_html=None,
-                                answer_fields=None):
+                                answer_fields=None, recent_turns="", identity=""):
         calls.append({
             "text": text, "image": image_base64, "use_claude": use_claude,
             "question": question, "previous_html": previous_html, "answer_fields": answer_fields,
+            "recent_turns": recent_turns, "identity": identity,
         })
         if calls.fail:
             raise RuntimeError("provider exploded")

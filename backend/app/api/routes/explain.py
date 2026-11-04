@@ -22,7 +22,6 @@ import logging
 import uuid
 from datetime import datetime
 from time import perf_counter
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from redis.exceptions import RedisError
@@ -41,6 +40,7 @@ from app.schemas.schemas import (
     ExplanationHistoryDeleted, ExplanationHistoryOut, ExplanationHistoryPage,
 )
 from app.services import ai, explain_context, explain_storage
+from app.services.site_activity import hostname_for, record_site_use
 from app.services.explain_limits import (
     _caller_identity, check_explain_burst, refund_free_reexplain, refund_image_capture,
     reserve_image_capture, take_free_reexplain,
@@ -110,28 +110,6 @@ def _context_unavailable() -> HTTPException:
             "message": "Document context is temporarily unavailable.",
         },
     )
-
-
-# History "site" for local (file://) documents, which have no host. The
-# extension uses the same name (LOCAL_FILES_HOST in extension/lib/geometry.js).
-LOCAL_FILES_HOST = "local-files"
-
-
-def _hostname_for(page_url: str | None) -> str | None:
-    """Lowercased host of an http(s) URL, LOCAL_FILES_HOST for file:// URLs,
-    or None when there isn't a usable one."""
-    if not page_url:
-        return None
-    try:
-        parsed = urlparse(page_url.strip())
-        host = parsed.hostname
-    except ValueError:
-        return None
-    if parsed.scheme == "file":
-        return LOCAL_FILES_HOST
-    if parsed.scheme not in ("http", "https") or not host:
-        return None
-    return host.lower()
 
 
 async def _require_user(request: Request, db: AsyncSession) -> User:
@@ -220,6 +198,7 @@ async def explain(
         raise _invalid("context is too large.")
     context_text = ai.format_explain_context(context)
     has_page_context = bool(body.context and body.context.page and body.context.page.has_content())
+    recent_turns = ai.format_recent_turns([turn.model_dump() for turn in body.recent_turns])
 
     # ── 2. Identify user, length check, document context ──────────
     user = await get_optional_user(request, db)
@@ -286,7 +265,7 @@ async def explain(
     operation = f"{body.mode}_{body.kind}"
     # Older extensions don't send a source; a document context implies one.
     source = body.source or ("document" if body.context_id else "page")
-    input_characters = len(text) + len(context_text) + len(document_text)
+    input_characters = len(text) + len(context_text) + len(document_text) + len(recent_turns)
     image_args = (
         body.image_base64 if image_bytes is not None else None,
         body.image_media_type if image_bytes is not None else None,
@@ -305,6 +284,8 @@ async def explain(
                 question=(reexplain.request if reexplain else None) or body.question,
                 previous_html=reexplain.previous_html if reexplain else None,
                 answer_fields=[f.model_dump() for f in body.answer_fields or []],
+                recent_turns=recent_turns,
+                identity=ai.format_user_identity(user.name, user.email),
             )
             html = respond_out.html
         else:
@@ -314,6 +295,7 @@ async def explain(
                 context_text=context_text,
                 document_text=document_text,
                 reexplain=reexplain.model_dump(include={"mode", "request", "previous_html"}) if reexplain else None,
+                recent_turns=recent_turns,
             )
             html, suggests_respond = ai.pop_respond_marker(html)
     except Exception:
@@ -345,10 +327,13 @@ async def explain(
         duration_ms=(perf_counter() - ai_started) * 1_000, succeeded=True,
     )
 
+    if user and body.site_stats:
+        await record_site_use(db, user, body.page_url, "respond" if respond else "explain")
+
     # ── 6. Paid history ───────────────────────────────────────────
     # Respond results are one-off and may hold private mail, so never saved.
     history_entry = None
-    hostname = _hostname_for(body.page_url)
+    hostname = hostname_for(body.page_url)
     paid = bool(not respond and user and hostname and await _active_paid_plan(db, user))
     parent = None
     if paid and reexplain and reexplain.parent_entry_id:

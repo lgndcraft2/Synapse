@@ -560,6 +560,7 @@
   async function reexplain(view, mode, requestText) {
     if (view.redoing || !view.request) return;
     const req = view.request;
+    const pageUrl = req.pageUrl || H.pageUrl();
     const previous = view.versions[view.vi || 0];
     view.redoing = true;
     view.redoError = '';
@@ -572,12 +573,13 @@
       kind: view.kind,
       text: req.text || '',
       anchor: req.anchor || null,
-      pageUrl: req.pageUrl || H.pageUrl(),
+      pageUrl,
       pageTitle: req.pageTitle || H.pageTitle(),
       sessionDifficulty: S.sessionDifficulty,
       context: req.context || null,
       document: req.localOnly ? null : (req.document || null),
       localOnly: !!req.localOnly,
+      recentTurns: pageTurns(pageUrl),
       ...(isRespond(view) ? { mode: 'respond' } : {}),
       reexplain: {
         mode,
@@ -601,6 +603,7 @@
       view.relookFellBack = view.kind === 'image' && res.kind === 'text';
       view.askDraft = '';
       const entry = res.historyEntry || res.localEntry || null;
+      rememberTurn({ id: entry?.id, kind: view.kind, source: req.text, request: requestText, res, pageUrl });
       if (entry) {
         // A paid entry deleted meanwhile comes back as a new entry; follow it.
         view.entryId = entry.id;
@@ -657,6 +660,28 @@
     SX.openPanel({ skipRefresh: true });
   };
 
+  // ── Memory of this page ────────────────────────────────────────
+  const MAX_LIVE_TURNS = 12;
+
+  function pageTurns(pageUrl) {
+    const CX = globalThis.SynapseContext;
+    const key = G.pageKey(pageUrl);
+    return CX.recentTurns(st.turns, st.history, url => !!url && G.pageKey(url) === key);
+  }
+
+  function rememberTurn({ id, kind, source, request, res, pageUrl }) {
+    const CX = globalThis.SynapseContext;
+    const answer = CX.plainText(res.html);
+    st.turns = st.turns.concat({
+      id: id || null,
+      url: pageUrl,
+      at: new Date().toISOString(),
+      source: source || (kind === 'image' ? 'an area they circled' : ''),
+      request: request || null,
+      answer: res.draft ? `${answer} Draft: ${res.draft}` : answer
+    }).slice(-MAX_LIVE_TURNS);
+  }
+
   // ── Request flow ───────────────────────────────────────────────
   /**
    * Sends EXPLAIN and drives the panel. Never cancels: an older request that
@@ -669,6 +694,8 @@
    */
   SX.requestExplain = async function (payload, opts = {}) {
     const requestId = ++st.requestSeq;
+    const pageUrl = H.pageUrl();
+    const pageTitle = H.pageTitle();
     st.currentRequestId = requestId;
     const kind = payload.kind || (payload.capture || payload.captureId ? 'image' : 'text');
     const mode = payload.mode === 'respond' ? 'respond' : 'explain';
@@ -682,12 +709,13 @@
       kind,
       text: payload.text || '',
       anchor: payload.anchor || null,
-      pageUrl: H.pageUrl(),
-      pageTitle: H.pageTitle(),
+      pageUrl,
+      pageTitle,
       sessionDifficulty: S.sessionDifficulty,
       context: payload.context || null,
       document: payload.localOnly ? null : (payload.document || null),
       localOnly: !!payload.localOnly,
+      recentTurns: pageTurns(pageUrl),
       ...(payload.captureId ? { captureId: payload.captureId } : {}),
       ...(payload.capture ? { capture: payload.capture } : {}),
       // An explained circle offered for Respond re-looks at its kept crop.
@@ -698,6 +726,7 @@
     if (res && res.ok && res.contextUsed === 'document') st.documentContextReady = true;
     const entry = res && res.ok ? (res.historyEntry || res.localEntry || null) : null;
     if (entry) SX.upsertHistory(entry, { skipPaint: true });
+    if (res && res.ok) rememberTurn({ id: entry?.id, kind, source: payload.text, request: payload.question, res, pageUrl });
     opts.onResult?.(res, entry);
 
     if (requestId === st.currentRequestId) {
@@ -717,7 +746,7 @@
           request: {
             text: payload.text || '', anchor: payload.anchor || null,
             context: payload.context || null, document: payload.localOnly ? null : (payload.document || null),
-            localOnly: !!payload.localOnly, pageUrl: H.pageUrl(), pageTitle: H.pageTitle()
+            localOnly: !!payload.localOnly, pageUrl, pageTitle
           },
           relookId: res.relookId || null,
           shownAt: Date.now()

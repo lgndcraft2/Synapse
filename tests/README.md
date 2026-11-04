@@ -27,6 +27,7 @@ cd backend && python -m pytest
 
 - **Nothing touches a shared or persistent database.** The suite used to register a real Supabase account on every run — `synapse.e2e.<timestamp>@example.com` — and leave user, profile, billing and feedback rows behind forever. It now seeds its own SQLite file and deletes it on the next run.
 - **No mailbox required.** The seeded account is created already verified. Signup and the verification link are covered by `backend/tests/test_auth_flows.py`.
+- **No shared Redis.** Setup overrides Redis with an unavailable loopback endpoint, so authentication uses fresh per-process fallback counters instead of inheriting credentials from `backend/.env`.
 - **Vite runs on 3000, not 5173**, so your own dev server can keep running during a test run. Both origins are already in the extension manifest's `externally_connectable`, so the handoff works either way.
 - The suite uses Playwright's bundled Chromium, not `channel: 'chrome'`. Chrome 137+ ignores `--load-extension` in official builds and would silently launch without the extension.
 - The suite is serial and stateful. Each test builds on the session established by the previous one — so **one failure skips everything after it**. That is worth knowing: for a long time test 2 clicked `#backend-url` and `#save-provider-btn`, neither of which exists in `popup.html`, which meant tests 3-11 had not run at all.

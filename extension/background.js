@@ -324,6 +324,7 @@ async function callBackendReformat(pageText, profile, providerConfig, options = 
       page_title: options.pageTitle || "",
       session_difficulty: options.sessionDifficulty || "normal",
       mode: options.mode || "cards",
+      site_stats: !CX.isSensitiveHost(G.hostnameOf(options.pageUrl || "")),
       // The page's length before it was cut to fit; lets the observer count clipped pages.
       ...(Number.isFinite(options.sourceChars) ? { source_characters: options.sourceChars } : {}),
       fingerprint,
@@ -1090,6 +1091,32 @@ function updateLocalHistory(mutator) {
   return result;
 }
 
+// The pages this device reformatted, newest first: where and when, never the
+// page's text or the result. One row per page, however many sections it took.
+const REFORMAT_HISTORY_KEY = "reformatHistoryLocal";
+const REFORMAT_HISTORY_MAX = 50;
+let reformatHistoryChain = Promise.resolve();
+
+function recordReformat(pageUrl, pageTitle) {
+  if (!/^(https?|file):/i.test(pageUrl || "")) return Promise.resolve();
+  const run = async () => {
+    const stored = await storageGet(REFORMAT_HISTORY_KEY);
+    const list = Array.isArray(stored[REFORMAT_HISTORY_KEY]) ? stored[REFORMAT_HISTORY_KEY] : [];
+    const key = G.pageKey(pageUrl);
+    const entry = {
+      url: pageUrl,
+      title: pageTitle || "",
+      hostname: G.hostnameOf(pageUrl),
+      created_at: new Date().toISOString()
+    };
+    const rest = list.filter(e => G.pageKey(e.url) !== key);
+    await storageSet({ [REFORMAT_HISTORY_KEY]: [entry, ...rest].slice(0, REFORMAT_HISTORY_MAX) });
+  };
+  const result = reformatHistoryChain.then(run, run);
+  reformatHistoryChain = result.catch(() => {});
+  return result;
+}
+
 async function readLocalHistory(hostname) {
   const stored = await storageGet(LOCAL_HISTORY_KEY);
   const list = Array.isArray(stored[LOCAL_HISTORY_KEY]) ? stored[LOCAL_HISTORY_KEY] : [];
@@ -1264,6 +1291,9 @@ async function handleExplain(msg, sender) {
     page_title: msg.pageTitle || "",
     session_difficulty: msg.sessionDifficulty || "normal",
     context: context || null,
+    // Turning page context off also turns off memory of the page.
+    recent_turns: policy.reason === "setting" || !Array.isArray(msg.recentTurns) ? [] : msg.recentTurns,
+    site_stats: !policy.sensitive,
     context_id: contextId,
     // Aggregate telemetry only: which surface the explain came from.
     source: !msg.document ? "page" : msg.document.mediaType === "application/pdf" ? "pdf" : "document",
@@ -1611,11 +1641,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           mode: msg.mode,
           sourceChars: msg.sourceChars
         });
+        if (result.html) await recordReformat(msg.pageUrl, msg.pageTitle).catch(() => {});
         sendResponse(result);
       } catch (err) {
         sendResponse({ error: err.message });
       }
     });
+    return true;
+  }
+
+  if (msg.type === "GET_REFORMAT_HISTORY") {
+    storageGet(REFORMAT_HISTORY_KEY).then(stored => sendResponse({ entries: stored[REFORMAT_HISTORY_KEY] || [] }));
+    return true;
+  }
+
+  if (msg.type === "CLEAR_REFORMAT_HISTORY") {
+    chrome.storage.local.remove(REFORMAT_HISTORY_KEY, () => sendResponse({ ok: true }));
     return true;
   }
 
@@ -1787,7 +1828,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         }).catch(() => {});
       })
       .finally(() => {
-        chrome.storage.local.remove([SESSION_KEY, "cognitiveProfile"], () => sendResponse({ ok: true }));
+        chrome.storage.local.remove([SESSION_KEY, "cognitiveProfile", REFORMAT_HISTORY_KEY], () => sendResponse({ ok: true }));
       });
     return true;
   }

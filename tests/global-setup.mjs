@@ -122,6 +122,8 @@ export default async function globalSetup() {
     // allowed explicitly — otherwise every request dies at the CORS preflight
     // with a 400 and the symptom is an inert login button.
     ALLOWED_ORIGINS: FRONTEND_URL,
+    UPSTASH_REDIS_URL: 'redis://127.0.0.1:1/0',
+    UPSTASH_REDIS_TOKEN: 'e2e-unused-redis-token',
     // Redis is absent in CI; the auth limiter fails open to a per-process
     // fallback, which is what we want under test.
     TRUSTED_PROXY_COUNT: '0',

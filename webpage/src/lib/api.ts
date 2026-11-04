@@ -257,6 +257,56 @@ export async function getDashboardStats() {
   return response.json();
 }
 
+export interface UsageStats {
+  days: number;
+  totals: {
+    highlights: number;
+    circles: number;
+    responds: number;
+    reformats: number;
+    documents: number;
+    pdf_opens: number;
+  };
+  daily: { day: string; explains: number; responds: number; reformats: number }[];
+  hours: number[];
+  weekdays: number[];
+  sources: Record<string, number>;
+  top_sites: {
+    hostname: string;
+    explains: number;
+    responds: number;
+    reformats: number;
+    last_used_at: string;
+  }[];
+}
+
+/** `tzOffset` is minutes east of UTC, so hours read in the viewer's own time. */
+export async function getUsageStats(days: number, tzOffset: number): Promise<UsageStats> {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(
+    `${BACKEND_URL}/api/v1/dashboard/usage${query({ days, tz_offset: tzOffset })}`,
+    { headers: authHeaders },
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch usage stats');
+  }
+
+  return response.json();
+}
+
+export async function clearSiteUsage(): Promise<void> {
+  const authHeaders = await getAuthHeader();
+  const response = await authedFetch(`${BACKEND_URL}/api/v1/dashboard/usage/sites`, {
+    method: 'DELETE',
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to clear site usage');
+  }
+}
+
 /** Internal aggregate traffic and account metrics for authorised operators. */
 export async function getObserverOverview() {
   const authHeaders = await getAuthHeader();

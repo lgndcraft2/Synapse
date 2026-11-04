@@ -221,3 +221,25 @@ button.secondary:hover { background: #d2f0e4; }
   border-radius: 7px;
   padding: 8px 10px;
 }
+
+.reformat-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.reformat-list li { padding: 6px 0; }
+.reformat-title {
+  display: block;
+  font-size: 12px;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reformat-meta {
+  display: block;
+  font-size: 11px;
+  opacity: 0.65;
+}
