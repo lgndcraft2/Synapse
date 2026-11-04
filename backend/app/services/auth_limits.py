@@ -30,9 +30,9 @@ logger = logging.getLogger("synapse.auth")
 
 # (max_attempts, window_seconds)
 LIMITS: dict[str, tuple[int, int]] = {
-    "login_ip": (20, 15 * 60),
-    "login_email": (5, 15 * 60),
-    "register_ip": (5, 3600),
+    "login_ip": (30, 3600),
+    "login_email": (30, 3600),
+    "register_ip": (30, 3600),
     "forgot_email": (3, 3600),
     "forgot_ip": (10, 3600),
     "verify_user": (5, 3600),

@@ -1,11 +1,10 @@
 """
 Recording agreement to the Terms of Service and Privacy Policy.
 
-Every way an account comes into existence must carry an acceptance: the
-password signup (the checkbox, sent as accept_terms) and the Google callback
-(the same checkbox, carried in the signed state cookie). Accounts that predate
-the record, or accepted an older version, are asked again through
-/auth/terms/accept.
+Password signup requires the checkbox. Google sign-in creates accounts
+automatically and records acceptance only when the signed state cookie carries
+the signup checkbox. Other new Google users, legacy accounts and users who
+accepted an older version complete the in-app prompt through /auth/terms/accept.
 """
 
 from urllib.parse import parse_qs, urlparse
@@ -126,7 +125,7 @@ async def _google_callback(client, monkeypatch, *, accept_terms: bool, sub: str,
     )
 
 
-async def test_google_without_the_checkbox_creates_no_account(
+async def test_google_without_the_checkbox_creates_account_and_signs_in(
     client, monkeypatch, session_factory, fake_redis
 ):
     resp = await _google_callback(
@@ -134,11 +133,30 @@ async def test_google_without_the_checkbox_creates_no_account(
     )
     assert resp.status_code == 303
     location = resp.headers["location"]
-    # Sent to signup, where the checkbox is.
-    assert "tab=signup" in location and "error=oauth_terms_required" in location
+    assert "/auth/callback?code=" in location
+    handoff = parse_qs(urlparse(location).query)["code"][0]
+    exchanged = await client.post("/api/v1/auth/google/exchange", json={"code": handoff})
+    assert exchanged.status_code == 200, exchanged.text
+    body = exchanged.json()
+    assert body["access_token"] and body["refresh_token"]
+    assert body["user"]["email"] == "gnew@example.com"
+    assert body["user"]["needs_terms_acceptance"] is True
 
     async with session_factory() as db:
-        assert await db.scalar(select(User).where(User.email == "gnew@example.com")) is None
+        user = await db.scalar(select(User).where(User.email == "gnew@example.com"))
+        assert user is not None
+        assert user.google_id == "g-new"
+        assert user.email_verified is True
+        assert user.terms_version is None
+        assert user.terms_accepted_at is None
+
+    auth = {"Authorization": f"Bearer {body['access_token']}"}
+    me = await client.get("/api/v1/auth/me", headers=auth)
+    assert me.status_code == 200
+    assert me.json()["id"] == body["user"]["id"]
+    accepted = await client.post("/api/v1/auth/terms/accept", headers=auth)
+    assert accepted.status_code == 200
+    assert accepted.json()["needs_terms_acceptance"] is False
 
 
 async def test_google_with_the_checkbox_records_acceptance(

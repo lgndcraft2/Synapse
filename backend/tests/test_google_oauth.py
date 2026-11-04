@@ -19,8 +19,7 @@ from app.services import oauth_google as goauth
 
 
 def _start(client):
-    # As from the signup page with the terms box ticked, so the happy-path
-    # tests may create accounts. test_terms_acceptance covers the unticked case.
+    # Start from signup with acceptance recorded in the signed state cookie.
     return client.get(
         "/api/v1/auth/google/start?next=/dashboard&accept_terms=true", follow_redirects=False
     )
@@ -157,15 +156,19 @@ async def test_user_denial_is_reported_distinctly(client):
     assert "error=oauth_denied" in resp.headers["location"]
 
 
+@pytest.mark.parametrize("accept_terms", [True, False], ids=["signup", "login"])
 async def test_successful_callback_creates_a_user_and_hands_off(
-    client, monkeypatch, session_factory, fake_redis
+    client, monkeypatch, session_factory, fake_redis, accept_terms
 ):
     """The happy path, with Google stubbed at the two network boundaries."""
     from sqlalchemy import select
-    from app.models.models import User
+    from app.models.models import Billing, CognitiveProfile, User
     import app.api.routes.auth as auth_routes
 
-    start = await _start(client)
+    start = await client.get(
+        f"/api/v1/auth/google/start?next=/dashboard&accept_terms={str(accept_terms).lower()}",
+        follow_redirects=False,
+    )
     cookie = start.cookies.get(goauth.COOKIE_NAME)
     state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
 
@@ -204,6 +207,10 @@ async def test_successful_callback_creates_a_user_and_hands_off(
         assert user.email_verified is True
         # No password set, so the UI shows "Google" rather than offering a reset.
         assert user.auth_provider == "google"
+        assert user.needs_terms_acceptance is not accept_terms
+        assert await db.scalar(select(CognitiveProfile).where(CognitiveProfile.user_id == user.id))
+        billing = await db.scalar(select(Billing).where(Billing.user_id == user.id))
+        assert billing is not None and billing.plan == "free"
 
     handoff = location.split("code=")[1]
     exchanged = await client.post("/api/v1/auth/google/exchange", json={"code": handoff})

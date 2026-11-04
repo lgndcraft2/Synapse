@@ -280,8 +280,8 @@ export async function exchangeOAuthCode(code: string): Promise<Session> {
  * its consent screen to XHR.
  */
 export function startGoogleLogin(next: string, acceptTerms = false): void {
-  // acceptTerms is the signup checkbox. Without it the backend still signs in
-  // an existing account but will not create a new one.
+  // acceptTerms records the signup checkbox. New Google users without it
+  // are still signed in and see the in-app terms prompt.
   const terms = acceptTerms ? '&accept_terms=true' : '';
   const url = `${BACKEND_URL}/api/v1/auth/google/start?next=${encodeURIComponent(next)}${terms}`;
   window.location.href = url;
