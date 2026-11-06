@@ -3341,6 +3341,7 @@ h2 {
 .dash .block { display: block; }
 .dash .hidden { display: none; }
 .dash .flex-col { flex-direction: column; }
+.dash .flex-1 { flex: 1 1 0%; }
 .dash .flex-grow { flex-grow: 1; }
 .dash .flex-wrap { flex-wrap: wrap; }
 
@@ -3456,6 +3457,8 @@ h2 {
 .dash .overflow-hidden { overflow: hidden; }
 .dash .opacity-50 { opacity: 0.5; }
 .dash .cursor-pointer { cursor: pointer; }
+.dash .pointer-events-none { pointer-events: none; }
+.dash .whitespace-nowrap { white-space: nowrap; }
 
 .dash .subscription-action {
   width: auto;
@@ -3479,12 +3482,15 @@ h2 {
 }
 @media (min-width: 768px) {
   .dash .md\:inline-flex { display: inline-flex; }
+  .dash .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dash .md\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .dash .md\:grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .dash .md\:col-span-4 { grid-column: span 4 / span 4; }
   .dash .md\:col-span-5 { grid-column: span 5 / span 5; }
   .dash .md\:col-span-6 { grid-column: span 6 / span 6; }
   .dash .md\:col-span-7 { grid-column: span 7 / span 7; }
+  .dash .md\:col-span-12 { grid-column: span 12 / span 12; }
   .dash .md\:col-start-9 { grid-column-start: 9; }
 }
 
