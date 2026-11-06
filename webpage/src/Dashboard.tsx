@@ -228,12 +228,12 @@ export default function Dashboard() {
 
             {/* Session readiness widget */}
             <section>
-              <div className="inline-flex items-center gap-4 p-2 rounded-xl shadow-tactile"
-                style={{ backgroundColor: "#f6f3f2", border: "1px solid #3d3d38" }}>
+              <div className="inline-flex flex-wrap items-center gap-4 p-2 rounded-xl shadow-tactile"
+                style={{ backgroundColor: "#f6f3f2", border: "1px solid #3d3d38", maxWidth: "100%" }}>
                 <span className="text-xs font-semibold uppercase tracking-wider ml-2" style={{ color: "#5e5f5b", letterSpacing: "0.05em" }}>
                   How are you reading today?
                 </span>
-                <div className="flex gap-1">
+                <div className="flex gap-1 shrink-0">
                   {(["hard", "normal", "flowing"] as SessionDifficulty[]).map((val) => (
                     <button
                       key={val}
@@ -266,7 +266,7 @@ export default function Dashboard() {
               style={{ backgroundColor: "#f6f3f2", border: "1px solid #3d3d38" }}>
               <div className="absolute top-0 right-0 w-32 h-32 rounded-bl-full opacity-50"
                 style={{ backgroundColor: "#e4e2e1", zIndex: 0 }} />
-              <div className="relative flex justify-between items-start mb-6">
+              <div className="relative flex flex-wrap justify-between items-start gap-3 mb-6">
                 <div>
                   <span className="block mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: "#5e5f5b", letterSpacing: "0.08em" }}>
                     Current Active Profile
